@@ -1,11 +1,11 @@
-
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
 import Login from "./components/Login";
-import ChangePassword from "./components/ChangePasswrod";
+import ChangePassword from "./components/ChangePasswrod"; // Fixed typo
 import UserInterface from "./components/UserInterface";
-import type { Order } from "./types/type"; // Adjust the import path as necessary
-import type { User, Tour } from "./types/type"; // Adjust the import path as necessary
+import AdminInterface from "./components/AdminInterface";
+import ProviderInterface from "./components/ProviderInterface";
+import type { Order, User, Tour } from "./types/type";
 import "./index.css";
 
 function App() {
@@ -100,14 +100,14 @@ function App() {
         const updatedUser = { ...user, lastLogin: new Date().toISOString() };
         setUsers(users.map((u) => (u.username === user.username ? updatedUser : u)));
         setCurrentUser(updatedUser);
-        return true;
+        return { success: true, role: user.role };
       }
       alert("Invalid username, password, or account suspended");
-      return false;
+      return { success: false };
     } catch (e) {
       console.error("Login error:", e);
       alert("An error occurred during login. Please try again.");
-      return false;
+      return { success: false };
     }
   };
 
@@ -139,10 +139,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route
-          path="/login"
-          element={<Login onLogin={handleLogin} />}
-        />
+        <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route
           path="/change-password"
           element={<ChangePassword onChangePassword={handleChangePassword} />}
@@ -150,11 +147,70 @@ function App() {
         <Route
           path="/user"
           element={
-            currentUser && currentUser.role === "user" ? (
+            currentUser &&
+            (currentUser.role === "user" ||
+              currentUser.role === "superadmin" ||
+              currentUser.role === "admin") ? (
               <UserInterface
                 tours={tours}
                 orders={orders}
                 setOrders={setOrders}
+                currentUser={currentUser}
+                onLogout={handleLogout}
+              />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            currentUser && (currentUser.role === "superadmin" || currentUser.role === "admin") ? (
+              <AdminInterface
+                users={users}
+                setUsers={setUsers}
+                tours={tours}
+                setTours={setTours}
+                orders={orders}
+                setOrders={setOrders}
+                currentUser={currentUser}
+                onLogout={handleLogout}
+              />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/super-admin"
+          element={
+            currentUser && currentUser.role === "superadmin" ? (
+              <AdminInterface
+                users={users}
+                setUsers={setUsers}
+                tours={tours}
+                setTours={setTours}
+                orders={orders}
+                setOrders={setOrders}
+                currentUser={currentUser}
+                onLogout={handleLogout}
+              />
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/provider"
+          element={
+            currentUser &&
+            (currentUser.role === "provider" ||
+              currentUser.role === "superadmin" ||
+              currentUser.role === "admin") ? (
+              <ProviderInterface
+                tours={tours}
+                setTours={setTours}
                 currentUser={currentUser}
                 onLogout={handleLogout}
               />

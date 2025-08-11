@@ -1,13 +1,12 @@
-
 export interface User {
   username: string;
   password: string;
   role: "superadmin" | "admin" | "user" | "provider";
-  company?: string;
   access: "active" | "suspended";
   createdBy: string;
   createdAt: string;
   lastLogin: string | null;
+  company?: string;
 }
 
 export interface Tour {
@@ -18,12 +17,6 @@ export interface Tour {
   services: { name: string; price: number }[];
   createdBy: string;
   createdAt: string;
-}
-
-export interface Order {
-  tour: string;
-  departureDate: string;
-  passengers: Passenger[];
 }
 
 export interface Passenger {
@@ -44,4 +37,12 @@ export interface Passenger {
   email: string;
   phone: string;
   passportUpload?: File;
+}
+
+export interface Order {
+  tour: string;
+  departureDate: string;
+  passengers: Passenger[];
+  createdBy: string;
+  createdAt: string;
 }

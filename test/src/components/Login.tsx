@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 interface LoginProps {
-  onLogin: (username: string, password: string) => boolean;
+  onLogin: (username: string, password: string) => { success: boolean; role?: string };
 }
 
 function Login({ onLogin }: LoginProps) {
@@ -13,8 +13,21 @@ function Login({ onLogin }: LoginProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (onLogin(username.trim(), password.trim())) {
-      navigate("/user");
+    const result = onLogin(username.trim(), password.trim());
+    if (result.success && result.role) {
+      switch (result.role) {
+        case "superadmin":
+          navigate("/super-admin");
+          break;
+        case "admin":
+          navigate("/admin");
+          break;
+        case "provider":
+          navigate("/provider");
+          break;
+        default:
+          navigate("/user");
+      }
     }
   };
 
@@ -22,7 +35,7 @@ function Login({ onLogin }: LoginProps) {
     <div className="login-container" style={{ maxWidth: "400px", margin: "100px auto" }}>
       <div className="card p-4">
         <h2 className="text-center mb-4">Login</h2>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} autoComplete="off">
           <div className="mb-3">
             <label htmlFor="username" className="form-label">
               Username
@@ -48,6 +61,7 @@ function Login({ onLogin }: LoginProps) {
               placeholder="Enter password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               required
             />
           </div>

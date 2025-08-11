@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import type { User } from "../types/type"; // Use type-only import
+import type { User } from "../types/type";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 interface NavbarProps {
@@ -12,29 +12,30 @@ function Navbar({ role, onLogout }: NavbarProps) {
 
   const navItems = {
     superadmin: [
-      { label: "Super Admin", path: "/super-admin" },
-      { label: "Admin", path: "/admin" },
-      { label: "User", path: "/user" },
-      { label: "Provider", path: "/provider" },
+      { label: "Super Admin Dashboard", path: "/super-admin" },
+      { label: "Admin Dashboard", path: "/admin" },
+      { label: "User Interface", path: "/user" },
+      { label: "Provider Interface", path: "/provider" },
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
     admin: [
-      { label: "Admin", path: "/admin" },
-      { label: "User", path: "/user" },
+      { label: "Admin Dashboard", path: "/admin" },
+      { label: "User Interface", path: "/user" },
+      { label: "Provider Interface", path: "/provider" },
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
     user: [
-      { label: "User", path: "/user" },
+      { label: "User Interface", path: "/user" },
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
     provider: [
-      { label: "Provider", path: "/provider" },
+      { label: "Provider Interface", path: "/provider" },
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
   };
 
   return (
-    <nav className="navbar navbar-expand-lg">
+    <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
       <div className="container-fluid">
         <a className="navbar-brand" href="#">
           {role.charAt(0).toUpperCase() + role.slice(1)} Dashboard
@@ -44,6 +45,9 @@ function Navbar({ role, onLogout }: NavbarProps) {
           type="button"
           data-bs-toggle="collapse"
           data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
         >
           <span className="navbar-toggler-icon"></span>
         </button>
