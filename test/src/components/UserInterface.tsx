@@ -26,7 +26,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     "Albania",
     // Add other countries as needed
     "Zimbabwe",
-  ].filter((c) => !["Mongolia", "Russia", "China"].includes(c)).sort();
+  ];
 
   const updateDepartureDates = (tourName: string) => {
     const tour = tours.find((t) => t.name === tourName);
