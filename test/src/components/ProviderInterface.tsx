@@ -19,6 +19,7 @@ function ProviderInterface({
   onLogout,
 }: ProviderInterfaceProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>("");
 
   const updateOrderStatus = (orderId: string, status: string) => {
     setOrders(
@@ -28,6 +29,18 @@ function ProviderInterface({
     );
     alert("Order status updated!");
   };
+
+  // Get unique departure dates
+  const uniqueDates = Array.from(
+    new Set(orders.map((order) => new Date(order.departureDate).toLocaleDateString()))
+  ).sort();
+
+  // Filter orders based on selected date
+  const filteredOrders = selectedDate
+    ? orders.filter(
+        (order) => new Date(order.departureDate).toLocaleDateString() === selectedDate
+      )
+    : orders;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -91,10 +104,26 @@ function ProviderInterface({
 
         {/* Orders Management */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-            <FileText className="w-5 h-5 mr-2" />
-            {selectedOrder ? "Order Details" : "All Orders"}
-          </h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <FileText className="w-5 h-5 mr-2" />
+              {selectedOrder ? "Order Details" : "All Orders"}
+            </h3>
+            {!selectedOrder && (
+              <select
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              >
+                <option value="">All Dates</option>
+                {uniqueDates.map((date) => (
+                  <option key={date} value={date}>
+                    {date}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           {selectedOrder ? (
             <div>
@@ -197,10 +226,14 @@ function ProviderInterface({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              {orders.length === 0 ? (
+              {filteredOrders.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">No orders available yet.</p>
+                  <p className="text-gray-500">
+                    {selectedDate
+                      ? `No orders found for ${selectedDate}.`
+                      : "No orders available yet."}
+                  </p>
                 </div>
               ) : (
                 <table className="min-w-full divide-y divide-gray-200">
@@ -227,7 +260,7 @@ function ProviderInterface({
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {orders.map((order) => (
+                    {filteredOrders.map((order) => (
                       <tr key={order.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           #{order.id}
@@ -309,7 +342,8 @@ function ProviderInterface({
                       <strong>Seats:</strong> {tour.seats}
                     </p>
                     <p>
-                      <strong>Dates:</strong> {tour.dates.map((d) => new Date(d).toLocaleDateString()).join(", ")}
+                      <strong>Dates:</strong>{" "}
+                      {tour.dates.map((d) => new Date(d).toLocaleDateString()).join(", ")}
                     </p>
                     <p>
                       <strong>Hotels:</strong> {tour.hotels.join(", ")}
