@@ -1,4 +1,6 @@
 export interface User {
+  id: string;
+  userId: string;
   username: string;
   password: string;
   role: "superadmin" | "admin" | "user" | "provider";
@@ -10,6 +12,9 @@ export interface User {
 }
 
 export interface Tour {
+  id: string;
+  title: string;
+  description: string;
   name: string;
   dates: string[];
   seats: number;
@@ -19,7 +24,22 @@ export interface Tour {
   createdAt: string;
 }
 
+export interface Order {
+  id: string;
+  tourId: string;
+  userId: string;
+  status: string;
+  tour: string;
+  departureDate: string;
+  passengers: Passenger[];
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface Passenger {
+  id: string;
+  userId: string;
+  name: string;
   roomAllocation: string;
   serialNo: string;
   lastName: string;
@@ -37,12 +57,4 @@ export interface Passenger {
   email: string;
   phone: string;
   passportUpload?: File;
-}
-
-export interface Order {
-  tour: string;
-  departureDate: string;
-  passengers: Passenger[];
-  createdBy: string;
-  createdAt: string;
 }

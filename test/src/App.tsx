@@ -1,21 +1,23 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
 import Login from "./components/Login";
-import ChangePassword from "./components/ChangePasswrod"; // Fixed typo
+import ChangePassword from "./components/ChangePassword";
 import UserInterface from "./components/UserInterface";
 import AdminInterface from "./components/AdminInterface";
 import ProviderInterface from "./components/ProviderInterface";
-import type { Order, User, Tour } from "./types/type";
+import type { Order, User as UserType, Tour } from "./types/type";
 import "./index.css";
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(() => {
+  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
+  const [users, setUsers] = useState<UserType[]>(() => {
     const stored = localStorage.getItem("users");
     return stored
       ? JSON.parse(stored)
       : [
           {
+            id: "user-1",
+            userId: "user-1",
             username: "super",
             password: "superpass",
             role: "superadmin",
@@ -25,6 +27,8 @@ function App() {
             lastLogin: null,
           },
           {
+            id: "user-2",
+            userId: "user-2",
             username: "enerel",
             password: "enerelgtc",
             role: "admin",
@@ -35,6 +39,8 @@ function App() {
             lastLogin: null,
           },
           {
+            id: "user-3",
+            userId: "user-3",
             username: "happyworld",
             password: "happyworldpass",
             role: "user",
@@ -45,6 +51,8 @@ function App() {
             lastLogin: null,
           },
           {
+            id: "user-4",
+            userId: "user-4",
             username: "sanyaholiday",
             password: "holidaypass",
             role: "provider",
@@ -61,6 +69,9 @@ function App() {
       ? JSON.parse(stored)
       : [
           {
+            id: "tour-1",
+            title: "Beach Tour",
+            description: "Relax and enjoy a tropical beach adventure with guided tours and spa services.",
             name: "Beach Tour",
             dates: ["2025-09-01", "2025-09-15"],
             seats: 50,
@@ -70,6 +81,24 @@ function App() {
               { name: "Tour Guide", price: 50 },
             ],
             createdBy: "system",
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: "tour-2",
+            title: "Golden Eagle Trans-Siberian Express",
+            description: "Experience the iconic Trans-Siberian railway with luxurious amenities.",
+            name: "Golden Eagle Trans-Siberian Express",
+            dates: ["2025-09-15", "2025-10-01", "2025-10-15"],
+            seats: 20,
+            hotels: ["Shangri-La Ulaanbaatar", "Kempinski Hotel Khan Palace", "Blue Sky Hotel & Tower"],
+            services: [
+              { name: "Airport Transfer", price: 50 },
+              { name: "City Tour", price: 75 },
+              { name: "Traditional Dinner", price: 40 },
+              { name: "Horse Riding Experience", price: 120 },
+              { name: "Gobi Desert Excursion", price: 200 },
+            ],
+            createdBy: "admin",
             createdAt: new Date().toISOString(),
           },
         ];
@@ -88,7 +117,14 @@ function App() {
   }, [tours]);
 
   useEffect(() => {
-    localStorage.setItem("orders", JSON.stringify(orders));
+    const ordersToSave = orders.map((order) => ({
+      ...order,
+      passengers: order.passengers.map((p) => ({
+        ...p,
+        passportUpload: undefined, // Exclude File object
+      })),
+    }));
+    localStorage.setItem("orders", JSON.stringify(ordersToSave));
   }, [orders]);
 
   const handleLogin = (username: string, password: string) => {
@@ -209,6 +245,8 @@ function App() {
               currentUser.role === "superadmin" ||
               currentUser.role === "admin") ? (
               <ProviderInterface
+                orders={orders}
+                setOrders={setOrders}
                 tours={tours}
                 setTours={setTours}
                 currentUser={currentUser}
