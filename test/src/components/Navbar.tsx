@@ -25,7 +25,7 @@ function Navbar({ role, onLogout }: NavbarProps) {
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
     user: [
-      { label: "User Interface", path: "/user" },
+      { label: "User Interface", path: "/user" }, 
       { label: "Logout", action: () => { onLogout(); navigate("/login"); } },
     ],
     provider: [

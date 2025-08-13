@@ -1,198 +1,133 @@
+// src/App.tsx
 import { useState, useEffect } from "react";
-import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { supabase } from "./supabaseClient";
+import type { Session } from "@supabase/supabase-js";
 import Login from "./components/Login";
 import ChangePassword from "./components/ChangePassword";
 import UserInterface from "./components/UserInterface";
 import AdminInterface from "./components/AdminInterface";
 import ProviderInterface from "./components/ProviderInterface";
-import type { Order, User as UserType, Tour } from "./types/type";
+import type { User as UserType, Tour, Order } from "./types/type";
 import "./index.css";
-
+import MockLogin from "./MockLogin";
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
-  const [users, setUsers] = useState<UserType[]>(() => {
-    const stored = localStorage.getItem("users");
-    return stored
-      ? JSON.parse(stored)
-      : [
-          {
-            id: "user-1",
-            userId: "user-1",
-            username: "super",
-            password: "superpass",
-            role: "superadmin",
-            access: "active",
-            createdBy: "system",
-            createdAt: new Date().toISOString(),
-            lastLogin: null,
-          },
-          {
-            id: "user-2",
-            userId: "user-2",
-            username: "enerel",
-            password: "enerelgtc",
-            role: "admin",
-            company: "GTC",
-            access: "active",
-            createdBy: "system",
-            createdAt: new Date().toISOString(),
-            lastLogin: null,
-          },
-          {
-            id: "user-3",
-            userId: "user-3",
-            username: "happyworld",
-            password: "happyworldpass",
-            role: "user",
-            company: "Happy World",
-            access: "active",
-            createdBy: "system",
-            createdAt: new Date().toISOString(),
-            lastLogin: null,
-          },
-          {
-            id: "user-4",
-            userId: "user-4",
-            username: "sanyaholiday",
-            password: "holidaypass",
-            role: "provider",
-            access: "active",
-            createdBy: "system",
-            createdAt: new Date().toISOString(),
-            lastLogin: null,
-          },
-        ];
-  });
-  const [tours, setTours] = useState<Tour[]>(() => {
-    const stored = localStorage.getItem("tours");
-    return stored
-      ? JSON.parse(stored)
-      : [
-          {
-            id: "tour-1",
-            title: "Beach Tour",
-            description: "Relax and enjoy a tropical beach adventure with guided tours and spa services.",
-            name: "Beach Tour",
-            dates: ["2025-09-01", "2025-09-15"],
-            seats: 50,
-            hotels: ["Hotel A", "Hotel B"],
-            services: [
-              { name: "Spa", price: 100 },
-              { name: "Tour Guide", price: 50 },
-            ],
-            createdBy: "system",
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: "tour-2",
-            title: "Golden Eagle Trans-Siberian Express",
-            description: "Experience the iconic Trans-Siberian railway with luxurious amenities.",
-            name: "Golden Eagle Trans-Siberian Express",
-            dates: ["2025-09-15", "2025-10-01", "2025-10-15"],
-            seats: 20,
-            hotels: ["Shangri-La Ulaanbaatar", "Kempinski Hotel Khan Palace", "Blue Sky Hotel & Tower"],
-            services: [
-              { name: "Airport Transfer", price: 50 },
-              { name: "City Tour", price: 75 },
-              { name: "Traditional Dinner", price: 40 },
-              { name: "Horse Riding Experience", price: 120 },
-              { name: "Gobi Desert Excursion", price: 200 },
-            ],
-            createdBy: "admin",
-            createdAt: new Date().toISOString(),
-          },
-        ];
-  });
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const stored = localStorage.getItem("orders");
-    return stored ? JSON.parse(stored) : [];
-  });
+  const [useMock, setUseMock] = useState(true); // <-- Toggle between mock & Supabase
+  const [session, setSession] = useState<Session | null>(null);
+  const [users, setUsers] = useState<UserType[]>([]);
+  const [tours, setTours] = useState<Tour[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
 
+  // --- Listen to auth changes (Supabase only) ---
   useEffect(() => {
-    localStorage.setItem("users", JSON.stringify(users));
-  }, [users]);
+    if (!useMock) {
+      supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
 
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+      });
+
+      return () => data.subscription?.unsubscribe?.();
+    }
+  }, [useMock]);
+
+  // --- Fetch data when logged in (Supabase only) ---
   useEffect(() => {
-    localStorage.setItem("tours", JSON.stringify(tours));
-  }, [tours]);
+    if (!useMock && session) fetchData();
+  }, [session, useMock]);
 
-  useEffect(() => {
-    const ordersToSave = orders.map((order) => ({
-      ...order,
-      passengers: order.passengers.map((p) => ({
-        ...p,
-        passportUpload: undefined, // Exclude File object
-      })),
-    }));
-    localStorage.setItem("orders", JSON.stringify(ordersToSave));
-  }, [orders]);
+  const fetchData = async () => {
+    const { data: usersData } = await supabase.from("users").select("*");
+    setUsers(usersData || []);
 
-  const handleLogin = (username: string, password: string) => {
-    try {
-      const user = users.find(
-        (u) => u.username === username && u.password === password && u.access !== "suspended"
-      );
-      if (user) {
-        const updatedUser = { ...user, lastLogin: new Date().toISOString() };
-        setUsers(users.map((u) => (u.username === user.username ? updatedUser : u)));
-        setCurrentUser(updatedUser);
-        return { success: true, role: user.role };
-      }
-      alert("Invalid username, password, or account suspended");
-      return { success: false };
-    } catch (e) {
-      console.error("Login error:", e);
-      alert("An error occurred during login. Please try again.");
-      return { success: false };
+    const { data: toursData } = await supabase.from("tours").select("*");
+    setTours(toursData || []);
+
+    const { data: ordersData } = await supabase.from("orders").select("*, passengers(*)");
+    setOrders(ordersData || []);
+  };
+
+  const handleLogout = async () => {
+    if (!useMock) {
+      await supabase.auth.signOut();
+      setSession(null);
+    } else {
+      setUsers([]);
+      setTours([]);
+      setOrders([]);
     }
   };
 
-  const handleChangePassword = (username: string, newPassword: string) => {
+  const handleChangePassword = async (newPassword: string): Promise<boolean> => {
+    if (!session) return false;
+
     try {
-      const userIndex = users.findIndex((u) => u.username === username);
-      if (userIndex !== -1) {
-        setUsers(
-          users.map((u, i) =>
-            i === userIndex ? { ...u, password: newPassword } : u
-          )
-        );
-        alert("Password changed successfully");
-        return true;
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        alert("Failed to change password: " + error.message);
+        return false;
       }
-      alert("User not found");
-      return false;
-    } catch (e) {
-      console.error("Change password error:", e);
-      alert("An error occurred during password change. Please try again.");
+      alert("Password updated successfully!");
+      return true;
+    } catch (err) {
+      console.error(err);
+      alert("An unexpected error occurred.");
       return false;
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-  };
+  if (useMock) {
+    return (
+      <div>
+        <button
+          className="fixed top-2 right-2 bg-gray-700 text-white px-3 py-1 rounded z-50"
+          onClick={() => setUseMock(false)}
+        >
+          Switch to Supabase
+        </button>
+        <MockLogin
+          users={users}
+          setUsers={setUsers}
+          tours={tours}
+          setTours={setTours}
+          orders={orders}
+          setOrders={setOrders}
+        />
+      </div>
+    );
+  }
+
+  if (!session) return <Login />;
+
+  const user = session.user;
+  const userMetadata = user.user_metadata as Partial<UserType>;
+  const role = userMetadata.role || "user";
 
   return (
     <Router>
+      <button
+        className="fixed top-2 right-2 bg-gray-700 text-white px-3 py-1 rounded z-50"
+        onClick={() => setUseMock(true)}
+      >
+        Switch to Mock
+      </button>
+
       <Routes>
-        <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route
           path="/change-password"
           element={<ChangePassword onChangePassword={handleChangePassword} />}
         />
+
         <Route
           path="/user"
           element={
-            currentUser &&
-            (currentUser.role === "user" ||
-              currentUser.role === "superadmin" ||
-              currentUser.role === "admin") ? (
+            ["user", "admin", "superadmin"].includes(role) ? (
               <UserInterface
                 tours={tours}
                 orders={orders}
                 setOrders={setOrders}
-                currentUser={currentUser}
+                currentUser={userMetadata as UserType}
                 onLogout={handleLogout}
               />
             ) : (
@@ -200,10 +135,11 @@ function App() {
             )
           }
         />
+
         <Route
           path="/admin"
           element={
-            currentUser && (currentUser.role === "superadmin" || currentUser.role === "admin") ? (
+            ["admin", "superadmin"].includes(role) ? (
               <AdminInterface
                 users={users}
                 setUsers={setUsers}
@@ -211,7 +147,7 @@ function App() {
                 setTours={setTours}
                 orders={orders}
                 setOrders={setOrders}
-                currentUser={currentUser}
+                currentUser={userMetadata as UserType}
                 onLogout={handleLogout}
               />
             ) : (
@@ -219,38 +155,17 @@ function App() {
             )
           }
         />
-        <Route
-          path="/super-admin"
-          element={
-            currentUser && currentUser.role === "superadmin" ? (
-              <AdminInterface
-                users={users}
-                setUsers={setUsers}
-                tours={tours}
-                setTours={setTours}
-                orders={orders}
-                setOrders={setOrders}
-                currentUser={currentUser}
-                onLogout={handleLogout}
-              />
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
+
         <Route
           path="/provider"
           element={
-            currentUser &&
-            (currentUser.role === "provider" ||
-              currentUser.role === "superadmin" ||
-              currentUser.role === "admin") ? (
+            ["provider", "admin", "superadmin"].includes(role) ? (
               <ProviderInterface
-                orders={orders}
-                setOrders={setOrders}
                 tours={tours}
                 setTours={setTours}
-                currentUser={currentUser}
+                orders={orders}
+                setOrders={setOrders}
+                currentUser={userMetadata as UserType}
                 onLogout={handleLogout}
               />
             ) : (
@@ -258,7 +173,9 @@ function App() {
             )
           }
         />
+
         <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/login" element={<Navigate to="/user" />} />
       </Routes>
     </Router>
   );

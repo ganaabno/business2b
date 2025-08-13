@@ -1,63 +1,54 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
 
 interface ChangePasswordProps {
-  onChangePassword: (username: string, newPassword: string) => boolean;
+  onChangePassword: (newPassword: string) => Promise<boolean>;
 }
 
-function ChangePassword({ onChangePassword }: ChangePasswordProps) {
-  const [username, setUsername] = useState("");
+export default function ChangePassword({ onChangePassword }: ChangePasswordProps) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+
     if (newPassword.length < 6) {
-      alert("Password must be at least 6 characters long.");
+      setError("Password must be at least 6 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      alert("Passwords do not match.");
+      setError("Passwords do not match.");
       return;
     }
-    if (onChangePassword(username.trim(), newPassword.trim())) {
-      setUsername("");
-      setNewPassword("");
-      setConfirmPassword("");
-      navigate("/login");
+
+    setLoading(true);
+    const success = await onChangePassword(newPassword.trim());
+    setLoading(false);
+
+    if (success) {
+      alert("Password changed successfully!");
+      navigate("/user");
+    } else {
+      setError("Failed to change password.");
     }
   };
 
   return (
-    <div className="login-container" style={{ maxWidth: "400px", margin: "100px auto" }}>
+    <div style={{ maxWidth: 400, margin: "100px auto" }}>
       <div className="card p-4">
         <h2 className="text-center mb-4">Change Password</h2>
+        {error && <div className="alert alert-danger">{error}</div>}
         <form onSubmit={handleSubmit} autoComplete="off">
           <div className="mb-3">
-            <label htmlFor="changeUsername" className="form-label">
-              Username
-            </label>
+            <label htmlFor="newPassword" className="form-label">New Password</label>
             <input
-              type="text"
-              className="form-control"
-              id="changeUsername"
-              placeholder="Enter username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="newPassword" className="form-label">
-              New Password
-            </label>
-            <input
+              id="newPassword"
               type="password"
               className="form-control"
-              id="newPassword"
-              placeholder="Enter new password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
@@ -65,34 +56,25 @@ function ChangePassword({ onChangePassword }: ChangePasswordProps) {
             />
           </div>
           <div className="mb-3">
-            <label htmlFor="confirmPassword" className="form-label">
-              Confirm Password
-            </label>
+            <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
             <input
+              id="confirmPassword"
               type="password"
               className="form-control"
-              id="confirmPassword"
-              placeholder="Confirm new password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
               required
             />
           </div>
-          <button type="submit" className="btn btn-primary w-100">
-            Change Password
-          </button>
-          <button
-            type="button"
-            className="btn btn-link w-100 mt-2"
-            onClick={() => navigate("/login")}
-          >
-            Back to Login
+          <button type="submit" className="btn btn-primary w-100" disabled={loading}>
+            {loading ? "Changing..." : "Change Password"}
           </button>
         </form>
+        <button className="btn btn-link w-100 mt-3" onClick={() => navigate("/user")} disabled={loading}>
+          Back
+        </button>
       </div>
     </div>
   );
 }
-
-export default ChangePassword;

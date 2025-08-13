@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   MapPin,
   Calendar,
@@ -7,19 +7,19 @@ import {
   Trash2,
   Download,
   Save,
-  Plane,
   Hotel,
   Mail,
   Phone,
   CreditCard,
   FileText,
-  Clock,
   DollarSign,
   Upload,
   Eye,
-  User
+  User,
+  AlertTriangle
 } from "lucide-react";
 import type { Tour, Order, User as UserType, Passenger } from "../types/type";
+import { supabase } from "../supabaseClient";
 
 interface UserInterfaceProps {
   tours: Tour[];
@@ -34,6 +34,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
   const [departureDate, setDepartureDate] = useState("");
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [activeStep, setActiveStep] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState("");
 
   const countries = [
     "Mongolia", "Russia", "China", "Afghanistan", "Albania", "Algeria", "Argentina", "Armenia",
@@ -53,33 +54,39 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       ...passengers,
       {
         id: `passenger-${Date.now()}-${passengers.length}`,
-        userId: currentUser.id || `user-${Date.now()}`,
+        order_id: "",
+        user_id: currentUser.id,
         name: "",
-        roomAllocation: "",
-        serialNo: "",
-        lastName: "",
-        firstName: "",
-        dateOfBirth: "",
+        room_allocation: "",
+        serial_no: "",
+        last_name: "",
+        first_name: "",
+        date_of_birth: "",
         age: 0,
         gender: "",
-        passportNumber: "",
-        passportExpiry: "",
+        passport_number: "",
+        passport_expiry: "",
         nationality: "",
         roomType: "",
         hotel: "",
-        additionalServices: [],
+        additional_services: [],
         price: 0,
         email: "",
         phone: "",
+        passport_upload: "",
+        allergy: "",
+        emergency_phone: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
     ]);
   };
 
-  const updatePassenger = (index: number, field: keyof Passenger, value: any) => {
+  const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
     const updatedPassengers = [...passengers];
     updatedPassengers[index] = { ...updatedPassengers[index], [field]: value };
 
-    if (field === "dateOfBirth" && value) {
+    if (field === "date_of_birth" && value) {
       const dob = new Date(value);
       const today = new Date();
       let age = today.getFullYear() - dob.getFullYear();
@@ -89,7 +96,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       }
       updatedPassengers[index].age = age;
     }
-    if (field === "additionalServices") {
+    if (field === "additional_services") {
       const tour = tours.find((t) => t.name === selectedTour);
       if (tour) {
         const price = (value as string[])
@@ -100,9 +107,20 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
         updatedPassengers[index].price = price;
       }
     }
-    if (field === "firstName" || field === "lastName") {
-      updatedPassengers[index].name = `${updatedPassengers[index].firstName} ${updatedPassengers[index].lastName}`.trim();
+    if (field === "first_name" || field === "last_name") {
+      updatedPassengers[index].name = `${updatedPassengers[index].first_name} ${updatedPassengers[index].last_name}`.trim();
     }
+    if (field === "passport_upload" && value instanceof File) {
+      const { data, error } = await supabase.storage
+        .from('passports')
+        .upload(`passport_${Date.now()}_${value.name}`, value);
+      if (error) {
+        alert("Passport upload failed: " + error.message);
+      } else {
+        updatedPassengers[index].passport_upload = data.path;
+      }
+    }
+    updatedPassengers[index].updated_at = new Date().toISOString();
     setPassengers(updatedPassengers);
   };
 
@@ -110,7 +128,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     setPassengers(passengers.filter((_, i) => i !== index));
   };
 
-  const saveOrder = () => {
+  const saveOrder = async () => {
     if (!selectedTour || !departureDate || passengers.length === 0) {
       alert("Please select a tour, departure date, and add at least one passenger.");
       return;
@@ -122,23 +140,66 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       return;
     }
 
-    const newOrder: Order = {
-      id: `order-${Date.now()}`,
-      tourId: tourData.id,
-      userId: currentUser.id || `user-${Date.now()}`,
+    const newOrder: Omit<Order, "id" | "passengers"> = {
+      user_id: currentUser.id,
+      tour_id: tourData.id,
+      phone: passengers[0].phone,
+      last_name: passengers[0].last_name,
+      first_name: passengers[0].first_name,
+      age: passengers[0].age,
+      gender: passengers[0].gender,
+      passport_number: passengers[0].passport_number,
+      passport_expire: passengers[0].passport_expiry,
+      passport_copy: passengers[0].passport_upload,
+      commission: passengers.reduce((sum, p) => sum + p.price, 0) * 0.05,
+      created_by: currentUser.id,
+      createdBy: currentUser.id, // <-- add this
+      tour: tourData.title,      // <-- add this
+      edited_by: "",
+      edited_at: "",
+      travel_choice: selectedTour,
       status: "pending",
-      tour: selectedTour,
-      departureDate,
-      passengers,
-      createdBy: currentUser.username,
-      createdAt: new Date().toISOString(),
+      hotel: passengers[0].hotel,
+      room_number: passengers[0].room_allocation,
+      payment_method: paymentMethod,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      departureDate: departureDate,
     };
 
-    setOrders([...orders, newOrder]);
+
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .insert(newOrder)
+      .select()
+      .single();
+
+    if (orderError) {
+      alert("Error saving order: " + orderError.message);
+      return;
+    }
+
+    const orderId = orderData.id;
+    const passengersWithOrderId = passengers.map((p) => ({
+      ...p,
+      order_id: orderId,
+    }));
+
+    const { error: passengerError } = await supabase
+      .from('passengers')
+      .insert(passengersWithOrderId);
+
+    if (passengerError) {
+      alert("Error saving passengers: " + passengerError.message);
+      return;
+    }
+
+    setOrders([...orders, { ...orderData, passengers: passengersWithOrderId }]);
     alert("Order saved successfully!");
     setPassengers([]);
     setSelectedTour("");
     setDepartureDate("");
+    setPaymentMethod("");
     setActiveStep(1);
   };
 
@@ -146,14 +207,14 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     const headers = [
       "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
       "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
-      "Additional Services", "Price", "Email", "Phone"
+      "Additional Services", "Price", "Email", "Phone", "Allergy", "Emergency Phone"
     ];
 
     const rows = passengers.map((p) =>
       [
-        p.roomAllocation, p.serialNo, p.lastName, p.firstName, p.dateOfBirth, p.age,
-        p.gender, p.passportNumber, p.passportExpiry, p.nationality, p.roomType, p.hotel,
-        p.additionalServices.join(","), p.price, p.email, p.phone
+        p.room_allocation, p.serial_no, p.last_name, p.first_name, p.date_of_birth, p.age,
+        p.gender, p.passport_number, p.passport_expiry, p.nationality, p.roomType, p.hotel,
+        p.additional_services.join(","), p.price, p.email, p.phone, p.allergy, p.emergency_phone
       ].map((v) => `"${v}"`).join(",")
     );
 
@@ -171,7 +232,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     const headers = [
       "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
       "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
-      "Additional Services", "Price", "Email", "Phone"
+      "Additional Services", "Price", "Email", "Phone", "Allergy", "Emergency Phone"
     ];
 
     const csv = headers.join(",");
@@ -204,29 +265,35 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       const newPassengers = data.map((row, idx) => {
         const passenger: Passenger = {
           id: `passenger-${Date.now()}-${idx}`,
-          userId: currentUser.id || `user-${Date.now()}`,
+          order_id: "",
+          user_id: currentUser.id,
           name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
-          roomAllocation: row["Room Allocation"],
-          serialNo: row["Serial No"],
-          lastName: row["Last Name"],
-          firstName: row["First Name"],
-          dateOfBirth: row["Date of Birth"],
+          room_allocation: row["Room Allocation"],
+          serial_no: row["Serial No"],
+          last_name: row["Last Name"],
+          first_name: row["First Name"],
+          date_of_birth: row["Date of Birth"],
           age: 0,
           gender: row["Gender"],
-          passportNumber: row["Passport Number"],
-          passportExpiry: row["Passport Expiry"],
+          passport_number: row["Passport Number"],
+          passport_expiry: row["Passport Expiry"],
           nationality: row["Nationality"],
           roomType: row["Room Type"],
           hotel: row["Hotel"],
-          additionalServices: row["Additional Services"] ? row["Additional Services"].split(",").map((s: string) => s.trim()) : [],
+          additional_services: row["Additional Services"] ? row["Additional Services"].split(",").map((s: string) => s.trim()) : [],
           price: 0,
           email: row["Email"],
           phone: row["Phone"],
+          passport_upload: "",
+          allergy: row["Allergy"],
+          emergency_phone: row["Emergency Phone"],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
 
         // Compute age
-        if (passenger.dateOfBirth) {
-          const dob = new Date(passenger.dateOfBirth);
+        if (passenger.date_of_birth) {
+          const dob = new Date(passenger.date_of_birth);
           const today = new Date();
           let age = today.getFullYear() - dob.getFullYear();
           const monthDiff = today.getMonth() - dob.getMonth();
@@ -238,8 +305,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
 
         // Compute price
         const tour = tours.find((t) => t.name === selectedTour);
-        if (tour && passenger.additionalServices) {
-          passenger.price = passenger.additionalServices.reduce((sum, service) => {
+        if (tour && passenger.additional_services) {
+          passenger.price = passenger.additional_services.reduce((sum, service) => {
             const svc = tour.services.find((s) => s.name === service);
             return sum + (svc ? svc.price : 0);
           }, 0);
@@ -356,7 +423,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                             <div className="ml-4">
                               <div className="text-sm font-medium text-gray-900">Booking #{order.id}</div>
                               <div className="text-sm text-gray-500">
-                                {new Date(order.createdAt).toLocaleDateString()}
+                                {new Date(order.created_at).toLocaleDateString()}
                               </div>
                             </div>
                           </div>
@@ -364,7 +431,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center text-sm text-gray-900">
                             <MapPin className="w-4 h-4 mr-1 text-gray-400" />
-                            {order.tour}
+                            {order.travel_choice}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -380,7 +447,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {order.createdBy}
+                          {order.created_by}
                         </td>
                       </tr>
                     ))}
@@ -526,6 +593,16 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                   <Download className="w-4 h-4 mr-2" />
                   Download Template
                 </button>
+                <label className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload CSV
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".csv"
+                    onChange={handleUploadCSV}
+                  />
+                </label>
                 <button
                   onClick={addPassenger}
                   className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -568,8 +645,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Room #"
-                          value={passenger.roomAllocation}
-                          onChange={(e) => updatePassenger(index, "roomAllocation", e.target.value)}
+                          value={passenger.room_allocation}
+                          onChange={(e) => updatePassenger(index, "room_allocation", e.target.value)}
                         />
                       </div>
 
@@ -579,8 +656,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Serial #"
-                          value={passenger.serialNo}
-                          onChange={(e) => updatePassenger(index, "serialNo", e.target.value)}
+                          value={passenger.serial_no}
+                          onChange={(e) => updatePassenger(index, "serial_no", e.target.value)}
                         />
                       </div>
 
@@ -590,8 +667,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="John"
-                          value={passenger.firstName}
-                          onChange={(e) => updatePassenger(index, "firstName", e.target.value)}
+                          value={passenger.first_name}
+                          onChange={(e) => updatePassenger(index, "first_name", e.target.value)}
                         />
                       </div>
 
@@ -601,8 +678,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Doe"
-                          value={passenger.lastName}
-                          onChange={(e) => updatePassenger(index, "lastName", e.target.value)}
+                          value={passenger.last_name}
+                          onChange={(e) => updatePassenger(index, "last_name", e.target.value)}
                         />
                       </div>
 
@@ -611,8 +688,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         <input
                           type="date"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          value={passenger.dateOfBirth}
-                          onChange={(e) => updatePassenger(index, "dateOfBirth", e.target.value)}
+                          value={passenger.date_of_birth}
+                          onChange={(e) => updatePassenger(index, "date_of_birth", e.target.value)}
                         />
                       </div>
 
@@ -661,8 +738,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="A12345678"
-                          value={passenger.passportNumber}
-                          onChange={(e) => updatePassenger(index, "passportNumber", e.target.value)}
+                          value={passenger.passport_number}
+                          onChange={(e) => updatePassenger(index, "passport_number", e.target.value)}
                         />
                       </div>
 
@@ -671,8 +748,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         <input
                           type="date"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          value={passenger.passportExpiry}
-                          onChange={(e) => updatePassenger(index, "passportExpiry", e.target.value)}
+                          value={passenger.passport_expiry}
+                          onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)}
                         />
                       </div>
 
@@ -711,11 +788,11 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         <select
                           multiple
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
-                          value={passenger.additionalServices}
+                          value={passenger.additional_services}
                           onChange={(e) =>
                             updatePassenger(
                               index,
-                              "additionalServices",
+                              "additional_services",
                               Array.from(e.target.selectedOptions, (option) => option.value)
                             )
                           }
@@ -760,7 +837,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                             onChange={(e) =>
                               updatePassenger(
                                 index,
-                                "passportUpload",
+                                "passport_upload",
                                 e.target.files ? e.target.files[0] : undefined
                               )
                             }
@@ -768,10 +845,32 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                           <div className="flex items-center justify-center px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer">
                             <Upload className="w-4 h-4 mr-2 text-gray-400" />
                             <span className="text-gray-600">
-                              {passenger.passportUpload ? passenger.passportUpload.name : "Upload"}
+                              {passenger.passport_upload ? "Uploaded" : "Upload"}
                             </span>
                           </div>
                         </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Allergy</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Any allergies?"
+                          value={passenger.allergy}
+                          onChange={(e) => updatePassenger(index, "allergy", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Emergency Phone</label>
+                        <input
+                          type="tel"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Emergency contact"
+                          value={passenger.emergency_phone}
+                          onChange={(e) => updatePassenger(index, "emergency_phone", e.target.value)}
+                        />
                       </div>
 
                       <div>
@@ -794,25 +893,13 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
               >
                 Back to Tour Selection
               </button>
-              <div className="flex gap-4">
-                <label className="flex items-center px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload CSV
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".csv"
-                    onChange={handleUploadCSV}
-                  />
-                </label>
-                <button
-                  onClick={() => setActiveStep(3)}
-                  disabled={passengers.length === 0}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                >
-                  Review Booking
-                </button>
-              </div>
+              <button
+                onClick={() => setActiveStep(3)}
+                disabled={passengers.length === 0}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                Review Booking
+              </button>
             </div>
           </div>
         )}
@@ -864,6 +951,29 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       <p className="text-lg font-bold text-gray-900">${totalPrice}</p>
                     </div>
                   </div>
+
+                  <div className="flex items-center p-4 bg-indigo-50 rounded-lg">
+                    <CreditCard className="w-8 h-8 text-indigo-600 mr-3" />
+                    <div>
+                      <h4 className="font-medium text-gray-900">Payment Method</h4>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mt-1"
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                      >
+                        <option value="">Select Payment Method</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Bank">Bank</option>
+                        <option value="StorePay">StorePay</option>
+                        <option value="Pocket">Pocket</option>
+                        <option value="DariFinance">DariFinance</option>
+                        <option value="Hutul Nomuun">Hutul Nomuun</option>
+                        <option value="MonPay">MonPay</option>
+                        <option value="Barter">Barter</option>
+                        <option value="Loan">Loan</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -879,7 +989,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">
-                            {passenger.firstName} {passenger.lastName}
+                            {passenger.first_name} {passenger.last_name}
                           </p>
                           <p className="text-sm text-gray-600">
                             {passenger.nationality} • Room: {passenger.roomType} • Hotel: {passenger.hotel}
@@ -889,7 +999,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       <div className="text-right">
                         <p className="font-medium text-gray-900">${passenger.price}</p>
                         <p className="text-sm text-gray-600">
-                          {passenger.additionalServices.length} services
+                          {passenger.additional_services.length} services
                         </p>
                       </div>
                     </div>
@@ -919,7 +1029,8 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
 
                 <button
                   onClick={saveOrder}
-                  className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex-1"
+                  disabled={paymentMethod === ""}
+                  className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
                 >
                   <Save className="w-4 h-4 mr-2" />
                   Confirm Booking

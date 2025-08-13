@@ -1,15 +1,16 @@
 import { useState } from "react";
 import {
-  User as UserIcon,
+  Users,
   MapPin,
   FileText,
   Trash2,
   Plus,
   Edit,
-  Eye,
   Save,
 } from "lucide-react";
 import type { User as UserType, Tour, Order } from "../types/type";
+import { supabase } from "../supabaseClient";
+import Navbar from "./Navbar";
 
 interface AdminInterfaceProps {
   users: UserType[];
@@ -32,20 +33,8 @@ function AdminInterface({
   currentUser,
   onLogout,
 }: AdminInterfaceProps) {
-  const [newUser, setNewUser] = useState({
-    id: "",
-    userId: "",
-    username: "",
-    password: "",
-    role: "user" as UserType["role"],
-    company: "",
-    access: "active" as UserType["access"],
-    createdBy: currentUser.username,
-    createdAt: new Date().toISOString(),
-    lastLogin: null as string | null,
-  });
+  const [selectedTab, setSelectedTab] = useState<"users" | "tours" | "orders">("orders");
   const [newTour, setNewTour] = useState({
-    id: "",
     title: "",
     description: "",
     name: "",
@@ -53,65 +42,33 @@ function AdminInterface({
     seats: 0,
     hotels: [] as string[],
     services: [] as { name: string; price: number }[],
-    createdBy: currentUser.username,
-    createdAt: new Date().toISOString(),
   });
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
-  const [editingTour, setEditingTour] = useState<Tour | null>(null);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  const addUser = () => {
-    if (!newUser.username || !newUser.password) {
-      alert("Username and password are required.");
+  const handleAddTour = async () => {
+    if (!newTour.title || !newTour.name || newTour.seats <= 0) {
+      alert("Please fill in all required tour fields.");
       return;
     }
-    const id = `user-${Date.now()}`;
-    setUsers([
-      ...users,
-      { ...newUser, id, userId: id, createdBy: currentUser.username, createdAt: new Date().toISOString() },
-    ]);
-    setNewUser({
-      id: "",
-      userId: "",
-      username: "",
-      password: "",
-      role: "user",
-      company: "",
-      access: "active",
-      createdBy: currentUser.username,
-      createdAt: new Date().toISOString(),
-      lastLogin: null,
-    });
-    alert("User added successfully!");
-  };
 
-  const updateUser = () => {
-    if (!editingUser) return;
-    setUsers(
-      users.map((u) =>
-        u.id === editingUser.id ? { ...editingUser, createdBy: currentUser.username } : u
-      )
-    );
-    setEditingUser(null);
-    alert("User updated successfully!");
-  };
+    const { data, error } = await supabase
+      .from("tours")
+      .insert({
+        ...newTour,
+        created_by: currentUser.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-  const deleteUser = (id: string) => {
-    if (confirm("Are you sure you want to delete this user?")) {
-      setUsers(users.filter((u) => u.id !== id));
-      alert("User deleted successfully!");
-    }
-  };
-
-  const addTour = () => {
-    if (!newTour.name || !newTour.title || !newTour.description) {
-      alert("Tour name, title, and description are required.");
+    if (error) {
+      alert("Error adding tour: " + error.message);
       return;
     }
-    const id = `tour-${Date.now()}`;
-    setTours([...tours, { ...newTour, id }]);
+
+    setTours([...tours, data]);
     setNewTour({
-      id: "",
       title: "",
       description: "",
       name: "",
@@ -119,418 +76,409 @@ function AdminInterface({
       seats: 0,
       hotels: [],
       services: [],
-      createdBy: currentUser.username,
-      createdAt: new Date().toISOString(),
     });
     alert("Tour added successfully!");
   };
 
-  const updateTour = () => {
-    if (!editingTour) return;
-    setTours(tours.map((t) => (t.id === editingTour.id ? editingTour : t)));
-    setEditingTour(null);
-    alert("Tour updated successfully!");
-  };
-
-  const deleteTour = (id: string) => {
-    if (confirm("Are you sure you want to delete this tour?")) {
-      setTours(tours.filter((t) => t.id !== id));
-      alert("Tour deleted successfully!");
+  const handleDeleteTour = async (tourId: string) => {
+    const { error } = await supabase.from("tours").delete().eq("id", tourId);
+    if (error) {
+      alert("Error deleting tour: " + error.message);
+      return;
     }
+    setTours(tours.filter((tour) => tour.id !== tourId));
+    alert("Tour deleted successfully!");
   };
 
-  const updateOrderStatus = (orderId: string, status: string) => {
-    setOrders(
-      orders.map((o) =>
-        o.id === orderId ? { ...o, status, createdBy: currentUser.username } : o
-      )
-    );
-    alert("Order status updated!");
+  const handleUpdateUser = async (user: UserType) => {
+    const { error } = await supabase
+      .from("users")
+      .update({
+        ...user,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      alert("Error updating user: " + error.message);
+      return;
+    }
+    setUsers(users.map((u) => (u.id === user.id ? user : u)));
+    setEditingUser(null);
+    alert("User updated successfully!");
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {currentUser.role === "superadmin" ? "Super Admin" : "Admin"} Dashboard
-            </h1>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </div>
+      <Navbar role={currentUser.role} onLogout={onLogout} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {currentUser.role === "superadmin" && (
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Manage Users</h2>
-            <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-              <h3 className="text-md font-medium text-gray-900 mb-4">
-                {editingUser ? "Edit User" : "Add New User"}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Username"
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                  value={editingUser ? editingUser.username : newUser.username}
-                  onChange={(e) =>
-                    editingUser
-                      ? setEditingUser({ ...editingUser, username: e.target.value })
-                      : setNewUser({ ...newUser, username: e.target.value })
-                  }
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                  value={editingUser ? editingUser.password : newUser.password}
-                  onChange={(e) =>
-                    editingUser
-                      ? setEditingUser({ ...editingUser, password: e.target.value })
-                      : setNewUser({ ...newUser, password: e.target.value })
-                  }
-                />
-                <select
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                  value={editingUser ? editingUser.role : newUser.role}
-                  onChange={(e) =>
-                    editingUser
-                      ? setEditingUser({ ...editingUser, role: e.target.value as UserType["role"] })
-                      : setNewUser({ ...newUser, role: e.target.value as UserType["role"] })
-                  }
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                  <option value="provider">Provider</option>
-                  <option value="superadmin">Super Admin</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Company (optional)"
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                  value={editingUser ? editingUser.company : newUser.company}
-                  onChange={(e) =>
-                    editingUser
-                      ? setEditingUser({ ...editingUser, company: e.target.value })
-                      : setNewUser({ ...newUser, company: e.target.value })
-                  }
-                />
-                <select
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                  value={editingUser ? editingUser.access : newUser.access}
-                  onChange={(e) =>
-                    editingUser
-                      ? setEditingUser({ ...editingUser, access: e.target.value as UserType["access"] })
-                      : setNewUser({ ...newUser, access: e.target.value as UserType["access"] })
-                  }
-                >
-                  <option value="active">Active</option>
-                  <option value="suspended">Suspended</option>
-                </select>
-              </div>
-              <div className="mt-4">
-                <button
-                  onClick={editingUser ? updateUser : addUser}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  {editingUser ? "Update User" : "Add User"}
-                </button>
-                {editingUser && (
-                  <button
-                    onClick={() => setEditingUser(null)}
-                    className="ml-2 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="text-md font-medium text-gray-900 mb-4">Users</h3>
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Access</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id}>
-                      <td className="px-6 py-4 whitespace-nowrap">{user.username}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{user.role}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{user.company || "N/A"}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{user.access}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => setEditingUser(user)}
-                          className="text-blue-600 hover:text-blue-800 mr-2"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteUser(user.id)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Manage Tours</h2>
-          <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-            <h3 className="text-md font-medium text-gray-900 mb-4">
-              {editingTour ? "Edit Tour" : "Add New Tour"}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Tour Name"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.name : newTour.name}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, name: e.target.value })
-                    : setNewTour({ ...newTour, name: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Tour Title"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.title : newTour.title}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, title: e.target.value })
-                    : setNewTour({ ...newTour, title: e.target.value })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Description"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.description : newTour.description}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, description: e.target.value })
-                    : setNewTour({ ...newTour, description: e.target.value })
-                }
-              />
-              <input
-                type="number"
-                placeholder="Seats"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.seats : newTour.seats}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, seats: parseInt(e.target.value) || 0 })
-                    : setNewTour({ ...newTour, seats: parseInt(e.target.value) || 0 })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Dates (comma-separated)"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.dates.join(",") : newTour.dates.join(",")}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, dates: e.target.value.split(",").map((d) => d.trim()) })
-                    : setNewTour({ ...newTour, dates: e.target.value.split(",").map((d) => d.trim()) })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Hotels (comma-separated)"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={editingTour ? editingTour.hotels.join(",") : newTour.hotels.join(",")}
-                onChange={(e) =>
-                  editingTour
-                    ? setEditingTour({ ...editingTour, hotels: e.target.value.split(",").map((h) => h.trim()) })
-                    : setNewTour({ ...newTour, hotels: e.target.value.split(",").map((h) => h.trim()) })
-                }
-              />
-              <input
-                type="text"
-                placeholder="Services (name:price, comma-separated)"
-                className="px-3 py-2 border border-gray-300 rounded-lg"
-                value={
-                  editingTour
-                    ? editingTour.services.map((s) => `${s.name}:${s.price}`).join(",")
-                    : newTour.services.map((s) => `${s.name}:${s.price}`).join(",")
-                }
-                onChange={(e) => {
-                  const services = e.target.value.split(",").map((s) => {
-                    const [name, price] = s.split(":").map((v) => v.trim());
-                    return { name, price: parseInt(price) || 0 };
-                  });
-                  editingTour
-                    ? setEditingTour({ ...editingTour, services })
-                    : setNewTour({ ...newTour, services });
-                }}
-              />
-            </div>
-            <div className="mt-4">
+        {/* Tabs */}
+        <div className="border-b border-gray-200 mb-8">
+          <nav className="flex space-x-8" aria-label="Tabs">
+            <button
+              onClick={() => setSelectedTab("orders")}
+              className={`pb-4 px-1 text-sm font-medium ${
+                selectedTab === "orders"
+                  ? "border-b-2 border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Orders
+            </button>
+            <button
+              onClick={() => setSelectedTab("tours")}
+              className={`pb-4 px-1 text-sm font-medium ${
+                selectedTab === "tours"
+                  ? "border-b-2 border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Tours
+            </button>
+            {currentUser.role === "superadmin" && (
               <button
-                onClick={editingTour ? updateTour : addTour}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                onClick={() => setSelectedTab("users")}
+                className={`pb-4 px-1 text-sm font-medium ${
+                  selectedTab === "users"
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
               >
-                {editingTour ? "Update Tour" : "Add Tour"}
+                Users
               </button>
-              {editingTour && (
-                <button
-                  onClick={() => setEditingTour(null)}
-                  className="ml-2 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <h3 className="text-md font-medium text-gray-900 mb-4">Tours</h3>
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seats</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {tours.map((tour) => (
-                  <tr key={tour.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">{tour.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{tour.title}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{tour.seats}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => setEditingTour(tour)}
-                        className="text-blue-600 hover:text-blue-800 mr-2"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteTour(tour.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            )}
+          </nav>
         </div>
 
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Manage Orders</h2>
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <h3 className="text-md font-medium text-gray-900 mb-4">Orders</h3>
-            {selectedOrder ? (
-              <div>
-                <h4 className="text-md font-medium text-gray-900 mb-4">Order Details</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <p><strong>Tour:</strong> {selectedOrder.tour}</p>
-                    <p><strong>Departure Date:</strong> {selectedOrder.departureDate}</p>
-                    <p><strong>Status:</strong> {selectedOrder.status}</p>
-                    <p><strong>Created By:</strong> {selectedOrder.createdBy}</p>
-                  </div>
-                  <div>
-                    <p><strong>Passengers:</strong> {selectedOrder.passengers.length}</p>
-                    <select
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                      value={selectedOrder.status}
-                      onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value)}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
+        {/* Orders Tab */}
+        {selectedTab === "orders" && (
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <FileText className="w-5 h-5 mr-2" />
+                All Bookings
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              {orders.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500">No bookings available yet.</p>
                 </div>
-                <h5 className="text-sm font-medium text-gray-900 mb-2">Passengers</h5>
-                <table className="min-w-full divide-y divide-gray-200 mb-4">
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nationality</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Room Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Booking Details
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tour
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Departure
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Passengers
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created By
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedOrder.passengers.map((passenger) => (
-                      <tr key={passenger.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">{passenger.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{passenger.nationality}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{passenger.roomType}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">${passenger.price}</td>
+                    {orders.map((order) => (
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                              <FileText className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                Booking #{order.id}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {new Date(order.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-900">
+                            <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                            {order.travel_choice}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-900">
+                            <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                            {new Date(order.departureDate).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <Users className="w-3 h-3 mr-1" />
+                            {order.passengers.length} passengers
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {order.created_by}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tours Tab */}
+        {selectedTab === "tours" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                <MapPin className="w-5 h-5 mr-2" />
+                Add New Tour
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tour Title
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={newTour.title}
+                    onChange={(e) =>
+                      setNewTour({ ...newTour, title: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tour Name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={newTour.name}
+                    onChange={(e) =>
+                      setNewTour({ ...newTour, name: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Seats
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={newTour.seats}
+                    onChange={(e) =>
+                      setNewTour({ ...newTour, seats: parseInt(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={newTour.description}
+                    onChange={(e) =>
+                      setNewTour({ ...newTour, description: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end mt-4">
                 <button
-                  onClick={() => setSelectedOrder(null)}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                  onClick={handleAddTour}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
-                  Back to Orders
+                  <Plus className="w-4 h-4 mr-2 inline" />
+                  Add Tour
                 </button>
               </div>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tour</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Departure</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Passengers</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {orders.map((order) => (
-                    <tr key={order.id}>
-                      <td className="px-6 py-4 whitespace-nowrap">{order.tour}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{order.departureDate}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{order.passengers.length}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{order.status}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => setSelectedOrder(order)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </td>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <MapPin className="w-5 h-5 mr-2" />
+                  All Tours
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                {tours.length === 0 ? (
+                  <div className="text-center py-12">
+                    <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">No tours available yet.</p>
+                  </div>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Tour Details
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Seats
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tours.map((tour) => (
+                        <tr key={tour.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {tour.name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {tour.description}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {tour.seats}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <button
+                              onClick={() => handleDeleteTour(tour.id)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Users Tab (Superadmin only) */}
+        {selectedTab === "users" && currentUser.role === "superadmin" && (
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <Users className="w-5 h-5 mr-2" />
+                Manage Users
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              {users.length === 0 ? (
+                <div className="text-center py-12">
+                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500">No users available yet.</p>
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        User Details
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Role
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {user.first_name} {user.last_name}
+                          </div>
+                          <div className="text-sm text-gray-500">{user.email}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {user.role}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={() => setEditingUser(user)}
+                            className="text-blue-600 hover:text-blue-800 mr-4"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {editingUser && (
+              <div className="p-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                  Edit User: {editingUser.first_name} {editingUser.last_name}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Role
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      value={editingUser.role}
+                      onChange={(e) =>
+                        setEditingUser({ ...editingUser, role: e.target.value as UserType["role"] })
+                      }
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                      <option value="provider">Provider</option>
+                      <option value="superadmin">Superadmin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      value={editingUser.email}
+                      onChange={(e) =>
+                        setEditingUser({ ...editingUser, email: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button
+                    onClick={() => setEditingUser(null)}
+                    className="px-6 py-2 border border-gray-300 rounded-lg mr-2"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleUpdateUser(editingUser)}
+                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    <Save className="w-4 h-4 mr-2 inline" />
+                    Save
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

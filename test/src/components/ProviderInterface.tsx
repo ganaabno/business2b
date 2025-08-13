@@ -1,295 +1,290 @@
-// Import useState hook from React for managing component state
 import { useState } from "react";
+import { FileText, Eye, MapPin, Users, Calendar, CheckCircle, XCircle, Search } from "lucide-react";
+import type { Order, Tour, User as UserType, Passenger } from "../types/type";
+import { supabase } from "../supabaseClient";
 
-// Import specific icons from lucide-react for user interface elements
-import { FileText, Eye, MapPin, Users, Calendar, CheckCircle, XCircle, Download } from "lucide-react";
-
-// Import TypeScript type definitions (Order, Tour, User) from "../types/type" for type safety
-import type { Order, Tour, User as UserType } from "../types/type";
-
-// Define the props interface for the ProviderInterface component, specifying expected props and their types
 interface ProviderInterfaceProps {
-  orders: Order[]; // Array of orders to display and manage
-  setOrders: React.Dispatch<React.SetStateAction<Order[]>>; // Function to update the orders state
-  tours: Tour[]; // Array of available tours
-  setTours: React.Dispatch<React.SetStateAction<Tour[]>>; // Function to update the tours state
-  currentUser: UserType; // Information of the currently logged-in user
-  onLogout: () => void; // Function to handle logout action
+  orders: Order[];
+  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
+  tours: Tour[];
+  setTours: React.Dispatch<React.SetStateAction<Tour[]>>;
+  currentUser: UserType;
+  onLogout: () => void;
 }
 
-// Define the ProviderInterface functional component, receiving typed props
 function ProviderInterface({
-  orders, // Orders array
-  setOrders, // Function to update orders
-  tours, // Tours array
-  currentUser, // Current user
-  onLogout, // Logout function
+  orders,
+  setOrders,
+  tours,
+  currentUser,
+  onLogout,
 }: ProviderInterfaceProps) {
-  // State to store the currently selected order (null if none selected)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  // State to store the selected departure date for filtering orders
   const [selectedDate, setSelectedDate] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // Function to update an order's status and set the creator to the current user
-  const updateOrderStatus = (orderId: string, status: string) => {
-    setOrders(
-      orders.map((o) =>
-        o.id === orderId ? { ...o, status, createdBy: currentUser.username } : o
-      ) // Update the status and createdBy for the matching order ID
-    );
-    alert("Order status updated!"); // Show confirmation alert
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status, edited_by: currentUser.id, edited_at: new Date().toISOString() })
+      .eq('id', orderId);
+    if (error) {
+      alert("Error updating status: " + error.message);
+    } else {
+      setOrders(
+        orders.map((o) =>
+          o.id === orderId
+            ? { ...o, status, edited_by: currentUser.id, edited_at: new Date().toISOString() }
+            : o
+        )
+      );
+      alert("Order status updated!");
+    }
   };
 
-  // Get unique departure dates from orders and sort them
+  // Get unique departure dates
   const uniqueDates = Array.from(
-    new Set(orders.map((order) => new Date(order.departureDate).toLocaleDateString()))
+    new Set(orders.map((order) => new Date(order.created_at).toLocaleDateString()))
   ).sort();
 
-  // Filter orders based on the selected date (show all orders if no date is selected)
-  const filteredOrders = selectedDate
-    ? orders.filter(
-        (order) => new Date(order.departureDate).toLocaleDateString() === selectedDate
-      )
-    : orders;
-
-  // New feature: Generate and download a CSV file with passenger information for orders matching the selected date
-  const downloadPassengerCSV = () => {
-    // Generate CSV only if a date is selected
-    if (!selectedDate) {
-      alert("Please select a departure date first!"); // Prompt user to select a date
-      return;
-    }
-
-    // CSV file headers
-    const headers = [
-      "Order ID",
-      "Tour",
-      "Departure Date",
-      "Passenger Name",
-      "Nationality",
-      "Room Type",
-      "Hotel",
-      "Price",
-      "Status",
-    ];
-
-    // Collect passenger data from all orders matching the selected date
-    const rows = filteredOrders.flatMap((order) =>
-      order.passengers.map((passenger) => [
-        order.id, // Order ID
-        `"${order.tour}"`, // Tour name (wrapped in quotes to handle commas)
-        new Date(order.departureDate).toLocaleDateString(), // Departure date
-        `"${passenger.firstName} ${passenger.lastName}"`, // Passenger full name (wrapped in quotes)
-        passenger.nationality, // Nationality
-        passenger.roomType, // Room type
-        passenger.hotel, // Hotel
-        passenger.price, // Price
-        order.status, // Order status
-      ])
+  // Filter orders based on date and search term
+  const filteredOrders = orders.filter((order) => {
+    const lowerTerm = searchTerm.toLowerCase();
+    return (
+      (selectedDate ? new Date(order.created_at).toLocaleDateString() === selectedDate : true) &&
+      (order.phone.toLowerCase().includes(lowerTerm) ||
+       order.first_name.toLowerCase().includes(lowerTerm) ||
+       order.last_name.toLowerCase().includes(lowerTerm) ||
+       new Date(order.created_at).toLocaleDateString().includes(lowerTerm))
     );
+  });
 
-    // Convert headers and data rows to CSV format
-    const csvContent = [
-      headers.join(","), // Header row
-      ...rows.map((row) => row.join(",")), // Data rows
-    ].join("\n");
+  // Status options
+  const statusOptions = [
+    "Information given",
+    "Need to give information",
+    "Need to tell got a seat/in waiting",
+    "Need to conclude a contract",
+    "Concluded a contract",
+    "Postponed the travel",
+    "Interested in other travel",
+    "Cancelled",
+    "Cancelled after confirmed",
+    "Cancelled after ordered a seat",
+    "Cancelled after take a information",
+    "Paid the advance payment",
+    "Need to meet",
+    "Sent a claim",
+    "Fam Tour",
+    "Confirmed",
+    "The travel is going",
+    "Travel ended completely",
+    "Has taken seat from another company",
+    "Swapped seat with another company",
+    "Gave seat to another company",
+    "Cancelled and bought travel from another country",
+  ];
 
-    // Create a Blob object to generate the CSV file
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    // Create a temporary download link
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `passengers_${selectedDate.replace(/\//g, "-")}.csv`); // File name includes date
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click(); // Trigger download
-    document.body.removeChild(link); // Remove temporary link
-  };
-
-  // Render the component UI
   return (
-    // Main container with minimum screen height and light gray background
     <div className="min-h-screen bg-gray-50">
-      {/* Header section with shadow and bottom border */}
+      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1> {/* Dashboard title */}
-              <p className="text-sm text-gray-600 mt-1">Manage your tour orders</p> {/* Subtitle */}
+              <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1>
+              <p className="text-sm text-gray-600 mt-1">Manage your tour orders</p>
             </div>
             <button
               onClick={onLogout}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
-              Logout {/* Logout button */}
+              Logout
             </button>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats section displaying orders, passengers, and tours counts */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Orders</p> {/* Label */}
-                <p className="text-2xl font-bold text-gray-900">{orders.length}</p> {/* Display total orders */}
+                <p className="text-sm font-medium text-gray-600">Total Orders</p>
+                <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
               </div>
               <div className="p-3 bg-blue-100 rounded-lg">
-                <FileText className="w-6 h-6 text-blue-600" /> {/* Orders icon */}
+                <FileText className="w-6 h-6 text-blue-600" />
               </div>
             </div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Passengers</p> {/* Label */}
+                <p className="text-sm font-medium text-gray-600">Total Passengers</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {orders.reduce((sum, order) => sum + order.passengers.length, 0)} {/* Total passengers across all orders */}
+                  {orders.reduce((sum, order) => sum + (order.passengers?.length || 0), 0)}
                 </p>
               </div>
               <div className="p-3 bg-green-100 rounded-lg">
-                <Users className="w-6 h-6 text-green-600" /> {/* Passengers icon */}
+                <Users className="w-6 h-6 text-green-600" />
               </div>
             </div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Active Tours</p> {/* Label */}
-                <p className="text-2xl font-bold text-gray-900">{tours.length}</p> {/* Display total tours */}
+                <p className="text-sm font-medium text-gray-600">Active Tours</p>
+                <p className="text-2xl font-bold text-gray-900">{tours.length}</p>
               </div>
               <div className="p-3 bg-purple-100 rounded-lg">
-                <MapPin className="w-6 h-6 text-purple-600" /> {/* Tours icon */}
+                <MapPin className="w-6 h-6 text-purple-600" />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Orders management section */}
+        {/* Orders Management */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <FileText className="w-5 h-5 mr-2" /> {/* Title icon */}
-              {selectedOrder ? "Order Details" : "All Orders"} {/* Display title based on whether an order is selected */}
+              <FileText className="w-5 h-5 mr-2" />
+              {selectedOrder ? "Order Details" : "All Orders"}
             </h3>
             {!selectedOrder && (
-              <div className="flex items-center space-x-4">
+              <div className="flex gap-4">
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)} // Update selected date on change
+                  onChange={(e) => setSelectedDate(e.target.value)}
                 >
-                  <option value="">All Dates</option> {/* Option to show all orders */}
+                  <option value="">All Dates</option>
                   {uniqueDates.map((date) => (
                     <option key={date} value={date}>
-                      {date} {/* List unique departure dates */}
+                      {date}
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={downloadPassengerCSV}
-                  disabled={!selectedDate} // Disable button if no date is selected
-                  className={`px-4 py-2 rounded-lg flex items-center ${
-                    selectedDate
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  } transition-colors`}
-                >
-                  <Download className="w-5 h-5 mr-2" /> {/* Download icon */}
-                  Download Passengers CSV
-                </button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search by phone, name, or date"
+                    className="w-64 px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                </div>
               </div>
             )}
           </div>
 
           {selectedOrder ? (
-            // Display details of the selected order
             <div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div className="space-y-4">
                   <div className="flex items-center p-4 bg-blue-50 rounded-lg">
-                    <MapPin className="w-8 h-8 text-blue-600 mr-3" /> {/* Tour icon */}
+                    <MapPin className="w-8 h-8 text-blue-600 mr-3" />
                     <div>
-                      <h4 className="font-medium text-gray-900">Tour</h4> {/* Label */}
-                      <p className="text-sm text-gray-600">{selectedOrder.tour}</p> {/* Tour name */}
+                      <h4 className="font-medium text-gray-900">Tour</h4>
+                      <p className="text-sm text-gray-600">{selectedOrder.travel_choice}</p>
                     </div>
                   </div>
                   <div className="flex items-center p-4 bg-green-50 rounded-lg">
-                    <Calendar className="w-8 h-8 text-green-600 mr-3" /> {/* Date icon */}
+                    <Calendar className="w-8 h-8 text-green-600 mr-3" />
                     <div>
-                      <h4 className="font-medium text-gray-900">Departure Date</h4> {/* Label */}
+                      <h4 className="font-medium text-gray-900">Departure Date</h4>
                       <p className="text-sm text-gray-600">
-                        {new Date(selectedOrder.departureDate).toLocaleDateString()} {/* Formatted departure date */}
+                        {new Date(selectedOrder.created_at).toLocaleDateString()}
                       </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center p-4 bg-purple-50 rounded-lg">
+                    <Users className="w-8 h-8 text-purple-600 mr-3" />
+                    <div>
+                      <h4 className="font-medium text-gray-900">Total Passengers</h4>
+                      <p className="text-sm text-gray-600">{selectedOrder.passengers.length}</p>
                     </div>
                   </div>
                 </div>
                 <div className="space-y-4">
-                  <div className="flex items-center p-4 bg-purple-50 rounded-lg">
-                    <Users className="w-8 h-8 text-purple-600 mr-3" /> {/* Passengers icon */}
-                    <div>
-                      <h4 className="font-medium text-gray-900">Total Passengers</h4> {/* Label */}
-                      <p className="text-sm text-gray-600">{selectedOrder.passengers.length}</p> {/* Number of passengers */}
-                    </div>
-                  </div>
                   <div className="p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Update Status</h4> {/* Label */}
+                    <h4 className="font-medium text-gray-900 mb-2">Update Status</h4>
                     <select
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={selectedOrder.status}
-                      onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value)} // Update order status on change
+                      onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value)}
                     >
-                      <option value="pending">Pending</option> {/* Status option: Pending */}
-                      <option value="confirmed">Confirmed</option> {/* Status option: Confirmed */}
-                      <option value="cancelled">Cancelled</option> {/* Status option: Cancelled */}
+                      {statusOptions.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
                     </select>
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">Commission</h4>
+                    <p className="text-sm text-gray-600">${selectedOrder.commission.toFixed(2)}</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">Payment Method</h4>
+                    <p className="text-sm text-gray-600">{selectedOrder.payment_method}</p>
                   </div>
                 </div>
               </div>
 
-              <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4> {/* Passenger details title */}
+              <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name {/* Table header: Name */}
+                        Name
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Nationality {/* Table header: Nationality */}
+                        Nationality
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Room Type {/* Table header: Room Type */}
+                        Room Type
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Hotel {/* Table header: Hotel */}
+                        Hotel
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Price {/* Table header: Price */}
+                        Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Allergy
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Emergency Phone
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedOrder.passengers.map((passenger) => (
+                    {selectedOrder.passengers.map((passenger: Passenger) => (
                       <tr key={passenger.id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {passenger.firstName} {passenger.lastName} {/* Passenger full name */}
+                          {passenger.first_name} {passenger.last_name}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {passenger.nationality} {/* Passenger nationality */}
+                          {passenger.nationality}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {passenger.roomType} {/* Passenger room type */}
+                          {passenger.roomType}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {passenger.hotel} {/* Passenger hotel */}
+                          {passenger.hotel}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          ${passenger.price} {/* Passenger price */}
+                          ${passenger.price}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {passenger.allergy || "None"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {passenger.emergency_phone || "N/A"}
                         </td>
                       </tr>
                     ))}
@@ -302,20 +297,19 @@ function ProviderInterface({
                   onClick={() => setSelectedOrder(null)}
                   className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
                 >
-                  Back to Orders {/* Button to return to orders list */}
+                  Back to Orders
                 </button>
               </div>
             </div>
           ) : (
-            // Display all orders or orders filtered by date
             <div className="overflow-x-auto">
               {filteredOrders.length === 0 ? (
                 <div className="text-center py-12">
-                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" /> {/* Icon for no orders */}
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    {selectedDate
-                      ? `No orders found for ${selectedDate}.` // Message for no orders on selected date
-                      : "No orders available yet."} // Message for no orders available
+                    {searchTerm || selectedDate
+                      ? "No orders match your search or date filter."
+                      : "No orders available yet."}
                   </p>
                 </div>
               ) : (
@@ -323,22 +317,37 @@ function ProviderInterface({
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order ID {/* Table header: Order ID */}
+                        Order ID
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tour {/* Table header: Tour */}
+                        Tour
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Departure {/* Table header: Departure */}
+                        Departure
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Passengers {/* Table header: Passengers */}
+                        Passengers
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status {/* Table header: Status */}
+                        Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions {/* Table header: Actions */}
+                        Commission
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created By
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Edited By
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Edited At
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Payment Method
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -346,52 +355,71 @@ function ProviderInterface({
                     {filteredOrders.map((order) => (
                       <tr key={order.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          #{order.id} {/* Order ID */}
+                          #{order.id}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="flex items-center">
-                            <MapPin className="w-4 h-4 mr-1 text-gray-400" /> {/* Tour icon */}
-                            {order.tour} {/* Tour name */}
+                            <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                            {order.travel_choice}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1 text-gray-400" /> {/* Date icon */}
-                            {new Date(order.departureDate).toLocaleDateString()} {/* Formatted departure date */}
+                            <Calendar className="w-4 h-4 mr-1 text-gray-400" />
+                            {new Date(order.created_at).toLocaleDateString()}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <Users className="w-3 h-3 mr-1" /> {/* Passengers icon */}
-                            {order.passengers.length} {/* Number of passengers */}
+                            <Users className="w-3 h-3 mr-1" />
+                            {order.passengers.length}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              order.status === "confirmed"
+                              order.status === "Confirmed" ||
+                              order.status === "Concluded a contract" ||
+                              order.status === "Travel ended completely"
                                 ? "bg-green-100 text-green-800"
-                                : order.status === "cancelled"
+                                : order.status.includes("Cancelled")
                                 ? "bg-red-100 text-red-800"
                                 : "bg-yellow-100 text-yellow-800"
                             }`}
                           >
-                            {order.status === "confirmed" ? (
-                              <CheckCircle className="w-3 h-3 mr-1" /> // Confirmed status icon
-                            ) : order.status === "cancelled" ? (
-                              <XCircle className="w-3 h-3 mr-1" /> // Cancelled status icon
+                            {order.status === "Confirmed" ||
+                            order.status === "Concluded a contract" ||
+                            order.status === "Travel ended completely" ? (
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                            ) : order.status.includes("Cancelled") ? (
+                              <XCircle className="w-3 h-3 mr-1" />
                             ) : (
-                              <FileText className="w-3 h-3 mr-1" /> // Pending status icon
+                              <FileText className="w-3 h-3 mr-1" />
                             )}
-                            {order.status} {/* Order status */}
+                            {order.status}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          ${order.commission.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {order.created_by}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {order.edited_by || "N/A"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {order.edited_at ? new Date(order.edited_at).toLocaleString() : "N/A"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {order.payment_method}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <button
                             onClick={() => setSelectedOrder(order)}
                             className="text-blue-600 hover:text-blue-800"
                           >
-                            <Eye className="w-4 h-4" /> {/* View order details button icon */}
+                            <Eye className="w-4 h-4" />
                           </button>
                         </td>
                       </tr>
@@ -403,37 +431,37 @@ function ProviderInterface({
           )}
         </div>
 
-        {/* Tours overview section */}
+        {/* Tours Overview */}
         <div className="mt-8 bg-white rounded-xl shadow-sm border p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-            <MapPin className="w-5 h-5 mr-2" /> {/* Title icon */}
-            Available Tours {/* Available tours title */}
+            <MapPin className="w-5 h-5 mr-2" />
+            Available Tours
           </h3>
           {tours.length === 0 ? (
             <div className="text-center py-12">
-              <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" /> {/* Icon for no tours */}
-              <p className="text-gray-500">No tours available yet.</p> {/* Message for no available tours */}
+              <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">No tours available yet.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {tours.map((tour) => (
                 <div key={tour.id} className="p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-medium text-gray-900">{tour.title}</h4> {/* Tour title */}
-                  <p className="text-sm text-gray-600 mt-1">{tour.description}</p> {/* Tour description */}
+                  <h4 className="font-medium text-gray-900">{tour.title}</h4>
+                  <p className="text-sm text-gray-600 mt-1">{tour.description}</p>
                   <div className="mt-2 text-sm text-gray-600">
                     <p>
-                      <strong>Seats:</strong> {tour.seats} {/* Number of seats */}
+                      <strong>Seats:</strong> {tour.seats}
                     </p>
                     <p>
                       <strong>Dates:</strong>{" "}
-                      {tour.dates.map((d) => new Date(d).toLocaleDateString()).join(", ")} {/* Formatted list of dates */}
+                      {tour.dates.map((d) => new Date(d).toLocaleDateString()).join(", ")}
                     </p>
                     <p>
-                      <strong>Hotels:</strong> {tour.hotels.join(", ")} {/* List of hotels */}
+                      <strong>Hotels:</strong> {tour.hotels.join(", ")}
                     </p>
                     <p>
                       <strong>Services:</strong>{" "}
-                      {tour.services.map((s) => `${s.name} ($${s.price})`).join(", ")} {/* List of services with prices */}
+                      {tour.services.map((s) => `${s.name} ($${s.price})`).join(", ")}
                     </p>
                   </div>
                 </div>
@@ -446,5 +474,4 @@ function ProviderInterface({
   );
 }
 
-// Export the ProviderInterface component as the default export
 export default ProviderInterface;
