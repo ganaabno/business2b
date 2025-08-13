@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@popperjs/core": "^2.11.8",
+    "@supabase/supabase-js": "^2.55.0",
     "@tailwindcss/vite": "^4.1.11",
     "@tailwindplus/elements": "^1.0.7",
     "@types/react-router-dom": "^5.3.3",
