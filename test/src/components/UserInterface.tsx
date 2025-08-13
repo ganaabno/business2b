@@ -167,6 +167,92 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     window.URL.revokeObjectURL(url);
   };
 
+  const downloadTemplate = () => {
+    const headers = [
+      "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
+      "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
+      "Additional Services", "Price", "Email", "Phone"
+    ];
+
+    const csv = headers.join(",");
+    const blob = new Blob([csv + "\n"], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "passenger_template.csv";
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split("\n");
+      const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
+      const data = lines.slice(1).filter((line) => line.trim()).map((line) => {
+        const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
+        return headers.reduce((obj: Record<string, string>, header, i) => {
+          obj[header] = values[i] || "";
+          return obj;
+        }, {});
+      });
+
+      const newPassengers = data.map((row, idx) => {
+        const passenger: Passenger = {
+          id: `passenger-${Date.now()}-${idx}`,
+          userId: currentUser.id || `user-${Date.now()}`,
+          name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
+          roomAllocation: row["Room Allocation"],
+          serialNo: row["Serial No"],
+          lastName: row["Last Name"],
+          firstName: row["First Name"],
+          dateOfBirth: row["Date of Birth"],
+          age: 0,
+          gender: row["Gender"],
+          passportNumber: row["Passport Number"],
+          passportExpiry: row["Passport Expiry"],
+          nationality: row["Nationality"],
+          roomType: row["Room Type"],
+          hotel: row["Hotel"],
+          additionalServices: row["Additional Services"] ? row["Additional Services"].split(",").map((s: string) => s.trim()) : [],
+          price: 0,
+          email: row["Email"],
+          phone: row["Phone"],
+        };
+
+        // Compute age
+        if (passenger.dateOfBirth) {
+          const dob = new Date(passenger.dateOfBirth);
+          const today = new Date();
+          let age = today.getFullYear() - dob.getFullYear();
+          const monthDiff = today.getMonth() - dob.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+            age--;
+          }
+          passenger.age = age;
+        }
+
+        // Compute price
+        const tour = tours.find((t) => t.name === selectedTour);
+        if (tour && passenger.additionalServices) {
+          passenger.price = passenger.additionalServices.reduce((sum, service) => {
+            const svc = tour.services.find((s) => s.name === service);
+            return sum + (svc ? svc.price : 0);
+          }, 0);
+        }
+
+        return passenger;
+      });
+
+      setPassengers(newPassengers);
+    };
+    reader.readAsText(file);
+  };
+
   const selectedTourData = tours.find((t) => t.name === selectedTour);
   const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
 
@@ -432,13 +518,22 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                 <Users className="w-5 h-5 mr-2" />
                 Passenger Information
               </h3>
-              <button
-                onClick={addPassenger}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Passenger
-              </button>
+              <div className="flex gap-4">
+                <button
+                  onClick={downloadTemplate}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Template
+                </button>
+                <button
+                  onClick={addPassenger}
+                  className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Passenger
+                </button>
+              </div>
             </div>
 
             {passengers.length === 0 ? (
@@ -699,13 +794,25 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
               >
                 Back to Tour Selection
               </button>
-              <button
-                onClick={() => setActiveStep(3)}
-                disabled={passengers.length === 0}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                Review Booking
-              </button>
+              <div className="flex gap-4">
+                <label className="flex items-center px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload CSV
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".csv"
+                    onChange={handleUploadCSV}
+                  />
+                </label>
+                <button
+                  onClick={() => setActiveStep(3)}
+                  disabled={passengers.length === 0}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  Review Booking
+                </button>
+              </div>
             </div>
           </div>
         )}
