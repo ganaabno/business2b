@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FileText, Eye, MapPin, Users, Calendar, CheckCircle, XCircle, Search } from "lucide-react";
-import type { Order, Tour, User as UserType, Passenger } from "../types/type";
+import type { Order, Tour, User as UserType, Passenger, OrderStatus } from "../types/type";
 import { supabase } from "../supabaseClient";
 
 interface ProviderInterfaceProps {
@@ -23,7 +23,7 @@ function ProviderInterface({
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const updateOrderStatus = async (orderId: string, status: string) => {
+  const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
     const { error } = await supabase
       .from('orders')
       .update({ status, edited_by: currentUser.id, edited_at: new Date().toISOString() })
@@ -214,7 +214,7 @@ function ProviderInterface({
                     <select
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={selectedOrder.status}
-                      onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value)}
+                      onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value as OrderStatus)}
                     >
                       {statusOptions.map((status) => (
                         <option key={status} value={status}>
@@ -457,7 +457,7 @@ function ProviderInterface({
                       {tour.dates.map((d) => new Date(d).toLocaleDateString()).join(", ")}
                     </p>
                     <p>
-                      <strong>Hotels:</strong> {tour.hotels.join(", ")}
+                      <strong>Hotels:</strong> {tour.hotels}
                     </p>
                     <p>
                       <strong>Services:</strong>{" "}

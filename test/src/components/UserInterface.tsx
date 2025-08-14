@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   MapPin,
   Calendar,
@@ -16,9 +16,12 @@ import {
   Upload,
   Eye,
   User,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  X
 } from "lucide-react";
-import type { Tour, Order, User as UserType, Passenger } from "../types/type";
+import type { Tour, Order, User as UserType, Passenger, PassengerFormData, ValidationError } from "../types/type";
 import { supabase } from "../supabaseClient";
 
 interface UserInterfaceProps {
@@ -29,12 +32,15 @@ interface UserInterfaceProps {
   onLogout: () => void;
 }
 
-function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceProps) {
+function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceProps) {
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [activeStep, setActiveStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<ValidationError[]>([]);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   const countries = [
     "Mongolia", "Russia", "China", "Afghanistan", "Albania", "Algeria", "Argentina", "Armenia",
@@ -49,161 +55,317 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
     "United Arab Emirates", "United Kingdom", "United States", "Uzbekistan", "Vietnam", "Zimbabwe"
   ];
 
+  const paymentMethods = [
+    "Cash", "Bank Transfer", "StorePay", "Pocket", "DariFinance",
+    "Hutul Nomuun", "MonPay", "Barter", "Loan", "Credit Card"
+  ];
+
+  // Show notification
+  const showNotification = useCallback((type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+  }, []);
+
+  // Validate passenger data
+  const validatePassenger = (passenger: Passenger): ValidationError[] => {
+    const errors: ValidationError[] = [];
+
+    if (!passenger.first_name.trim()) {
+      errors.push({ field: 'first_name', message: 'First name is required' });
+    }
+    if (!passenger.last_name.trim()) {
+      errors.push({ field: 'last_name', message: 'Last name is required' });
+    }
+    if (!passenger.email.trim() || !/\S+@\S+\.\S+/.test(passenger.email)) {
+      errors.push({ field: 'email', message: 'Valid email is required' });
+    }
+    if (!passenger.phone.trim()) {
+      errors.push({ field: 'phone', message: 'Phone number is required' });
+    }
+    if (!passenger.nationality) {
+      errors.push({ field: 'nationality', message: 'Nationality is required' });
+    }
+    if (!passenger.gender) {
+      errors.push({ field: 'gender', message: 'Gender is required' });
+    }
+    if (!passenger.passport_number.trim()) {
+      errors.push({ field: 'passport_number', message: 'Passport number is required' });
+    }
+    if (!passenger.passport_expiry) {
+      errors.push({ field: 'passport_expiry', message: 'Passport expiry date is required' });
+    } else {
+      const expiryDate = new Date(passenger.passport_expiry);
+      const today = new Date();
+      if (expiryDate <= today) {
+        errors.push({ field: 'passport_expiry', message: 'Passport must be valid for at least 6 months' });
+      }
+    }
+    if (!passenger.roomType) {
+      errors.push({ field: 'roomType', message: 'Room type is required' });
+    }
+    if (!passenger.hotel) {
+      errors.push({ field: 'hotel', message: 'Hotel selection is required' });
+    }
+
+    return errors;
+  };
+
+  // Calculate age from date of birth
+  const calculateAge = (dateOfBirth: string): number => {
+    if (!dateOfBirth) return 0;
+    const dob = new Date(dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  // Calculate service price
+  const calculateServicePrice = (services: string[], tourData: Tour): number => {
+    return services.reduce((sum, serviceName) => {
+      const service = tourData.services.find(s => s.name === serviceName);
+      return sum + (service ? service.price : 0);
+    }, 0);
+  };
+
   const addPassenger = () => {
-    setPassengers([
-      ...passengers,
-      {
-        id: `passenger-${Date.now()}-${passengers.length}`,
-        order_id: "",
-        user_id: currentUser.id,
-        name: "",
-        room_allocation: "",
-        serial_no: "",
-        last_name: "",
-        first_name: "",
-        date_of_birth: "",
-        age: 0,
-        gender: "",
-        passport_number: "",
-        passport_expiry: "",
-        nationality: "",
-        roomType: "",
-        hotel: "",
-        additional_services: [],
-        price: 0,
-        email: "",
-        phone: "",
-        passport_upload: "",
-        allergy: "",
-        emergency_phone: "",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ]);
+    const newPassenger: Passenger = {
+      id: `passenger-${Date.now()}-${passengers.length}`,
+      order_id: "",
+      user_id: currentUser.id,
+      name: "",
+      room_allocation: "",
+      serial_no: (passengers.length + 1).toString(),
+      last_name: "",
+      first_name: "",
+      date_of_birth: "",
+      age: 0,
+      gender: "",
+      passport_number: "",
+      passport_expiry: "",
+      nationality: "",
+      roomType: "",
+      hotel: "",
+      additional_services: [],
+      price: 0,
+      email: "",
+      phone: "",
+      passport_upload: "",
+      allergy: "",
+      emergency_phone: "",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setPassengers([...passengers, newPassenger]);
   };
 
   const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
     const updatedPassengers = [...passengers];
     updatedPassengers[index] = { ...updatedPassengers[index], [field]: value };
 
+    // Auto-calculate age when date of birth changes
     if (field === "date_of_birth" && value) {
-      const dob = new Date(value);
-      const today = new Date();
-      let age = today.getFullYear() - dob.getFullYear();
-      const monthDiff = today.getMonth() - dob.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-        age--;
-      }
-      updatedPassengers[index].age = age;
+      updatedPassengers[index].age = calculateAge(value);
     }
+
+    // Auto-calculate price when services change
     if (field === "additional_services") {
-      const tour = tours.find((t) => t.name === selectedTour);
+      const tour = tours.find((t) => t.title === selectedTour);
       if (tour) {
-        const price = (value as string[])
-          .reduce((sum, service) => {
-            const svc = tour.services.find((s) => s.name === service);
-            return sum + (svc ? svc.price : 0);
-          }, 0);
-        updatedPassengers[index].price = price;
+        updatedPassengers[index].price = calculateServicePrice(value as string[], tour);
       }
     }
+
+    // Update full name when first or last name changes
     if (field === "first_name" || field === "last_name") {
       updatedPassengers[index].name = `${updatedPassengers[index].first_name} ${updatedPassengers[index].last_name}`.trim();
     }
+
+    // Handle file upload for passport
     if (field === "passport_upload" && value instanceof File) {
-      const { data, error } = await supabase.storage
-        .from('passports')
-        .upload(`passport_${Date.now()}_${value.name}`, value);
-      if (error) {
-        alert("Passport upload failed: " + error.message);
-      } else {
-        updatedPassengers[index].passport_upload = data.path;
+      try {
+        setLoading(true);
+        const fileExt = value.name.split('.').pop();
+        const fileName = `passport_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+        const { data, error } = await supabase.storage
+          .from('passports')
+          .upload(fileName, value);
+
+        if (error) {
+          showNotification('error', `Passport upload failed: ${error.message}`);
+        } else {
+          updatedPassengers[index].passport_upload = data.path;
+          showNotification('success', 'Passport uploaded successfully');
+        }
+      } catch (error) {
+        showNotification('error', 'Failed to upload passport');
+      } finally {
+        setLoading(false);
       }
     }
+
     updatedPassengers[index].updated_at = new Date().toISOString();
     setPassengers(updatedPassengers);
   };
 
   const removePassenger = (index: number) => {
+    if (passengers.length === 1) {
+      showNotification('error', 'At least one passenger is required');
+      return;
+    }
     setPassengers(passengers.filter((_, i) => i !== index));
   };
 
+  const validateBooking = (): boolean => {
+    const allErrors: ValidationError[] = [];
+
+    if (!selectedTour) {
+      allErrors.push({ field: 'tour', message: 'Please select a tour' });
+    }
+    if (!departureDate) {
+      allErrors.push({ field: 'departure', message: 'Please select a departure date' });
+    }
+    if (passengers.length === 0) {
+      allErrors.push({ field: 'passengers', message: 'At least one passenger is required' });
+    }
+    if (!paymentMethod) {
+      allErrors.push({ field: 'payment', message: 'Please select a payment method' });
+    }
+
+    // Validate each passenger
+    passengers.forEach((passenger, index) => {
+      const passengerErrors = validatePassenger(passenger);
+      passengerErrors.forEach(error => {
+        allErrors.push({
+          field: `passenger_${index}_${error.field}`,
+          message: `Passenger ${index + 1}: ${error.message}`
+        });
+      });
+    });
+
+    setErrors(allErrors);
+    return allErrors.length === 0;
+  };
+
   const saveOrder = async () => {
-    if (!selectedTour || !departureDate || passengers.length === 0) {
-      alert("Please select a tour, departure date, and add at least one passenger.");
+    if (!validateBooking()) {
+      showNotification('error', 'Please fix the validation errors before proceeding');
       return;
     }
 
-    const tourData = tours.find((t) => t.name === selectedTour);
+    const tourData = tours.find((t) => t.title === selectedTour);
     if (!tourData) {
-      alert("Selected tour not found.");
+      showNotification('error', 'Selected tour not found');
       return;
     }
 
-    const newOrder: Omit<Order, "id" | "passengers"> = {
-      user_id: currentUser.id,
-      tour_id: tourData.id,
-      phone: passengers[0].phone,
-      last_name: passengers[0].last_name,
-      first_name: passengers[0].first_name,
-      age: passengers[0].age,
-      gender: passengers[0].gender,
-      passport_number: passengers[0].passport_number,
-      passport_expire: passengers[0].passport_expiry,
-      passport_copy: passengers[0].passport_upload,
-      commission: passengers.reduce((sum, p) => sum + p.price, 0) * 0.05,
-      created_by: currentUser.id,
-      createdBy: currentUser.id, // <-- add this
-      tour: tourData.title,      // <-- add this
-      edited_by: "",
-      edited_at: "",
-      travel_choice: selectedTour,
-      status: "pending",
-      hotel: passengers[0].hotel,
-      room_number: passengers[0].room_allocation,
-      payment_method: paymentMethod,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      departureDate: departureDate,
-    };
-
-
-    const { data: orderData, error: orderError } = await supabase
-      .from('orders')
-      .insert(newOrder)
-      .select()
-      .single();
-
-    if (orderError) {
-      alert("Error saving order: " + orderError.message);
+    // Check available seats
+    if (tourData.available_seats && tourData.available_seats < passengers.length) {
+      showNotification('error', `Only ${tourData.available_seats} seats available for this tour`);
       return;
     }
 
-    const orderId = orderData.id;
-    const passengersWithOrderId = passengers.map((p) => ({
-      ...p,
-      order_id: orderId,
-    }));
+    setLoading(true);
 
-    const { error: passengerError } = await supabase
-      .from('passengers')
-      .insert(passengersWithOrderId);
+    try {
+      const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
+      const commission = totalPrice * 0.05; // 5% commission
 
-    if (passengerError) {
-      alert("Error saving passengers: " + passengerError.message);
-      return;
+      const newOrder: Omit<Order, "id" | "passengers"> = {
+        user_id: currentUser.id,
+        tour_id: tourData.id,
+        phone: passengers[0].phone,
+        last_name: passengers[0].last_name,
+        first_name: passengers[0].first_name,
+        age: passengers[0].age,
+        gender: passengers[0].gender,
+        passport_number: passengers[0].passport_number,
+        passport_expire: passengers[0].passport_expiry,
+        passport_copy: passengers[0].passport_upload,
+        commission,
+        created_by: currentUser.id,
+        createdBy: currentUser.username || currentUser.email,
+        tour: tourData.title,
+        edited_by: null,
+        edited_at: null,
+        travel_choice: selectedTour,
+        status: "pending",
+        hotel: passengers[0].hotel,
+        room_number: passengers[0].room_allocation,
+        payment_method: paymentMethod,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        departureDate: departureDate,
+        total_price: totalPrice,
+      };
+
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert(newOrder)
+        .select()
+        .single();
+
+      if (orderError) {
+        throw new Error(orderError.message);
+      }
+
+      const orderId = orderData.id;
+      const passengersWithOrderId = passengers.map((p) => ({
+        ...p,
+        order_id: orderId,
+      }));
+
+      const { error: passengerError } = await supabase
+        .from('passengers')
+        .insert(passengersWithOrderId);
+
+      if (passengerError) {
+        throw new Error(passengerError.message);
+      }
+
+      // Update tour available seats
+      if (tourData.available_seats) {
+        const { error: tourUpdateError } = await supabase
+          .from('tours')
+          .update({
+            available_seats: tourData.available_seats - passengers.length,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', tourData.id);
+
+        if (tourUpdateError) {
+          console.warn('Failed to update tour seats:', tourUpdateError.message);
+        }
+      }
+
+      setOrders([...orders, { ...orderData, passengers: passengersWithOrderId }]);
+      showNotification('success', 'Booking saved successfully!');
+
+      // Reset form
+      setPassengers([]);
+      setSelectedTour("");
+      setDepartureDate("");
+      setPaymentMethod("");
+      setActiveStep(1);
+      setErrors([]);
+
+    } catch (error) {
+      showNotification('error', `Error saving booking: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
     }
-
-    setOrders([...orders, { ...orderData, passengers: passengersWithOrderId }]);
-    alert("Order saved successfully!");
-    setPassengers([]);
-    setSelectedTour("");
-    setDepartureDate("");
-    setPaymentMethod("");
-    setActiveStep(1);
   };
 
   const downloadCSV = () => {
+    if (passengers.length === 0) {
+      showNotification('error', 'No passengers to export');
+      return;
+    }
+
     const headers = [
       "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
       "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
@@ -214,18 +376,20 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       [
         p.room_allocation, p.serial_no, p.last_name, p.first_name, p.date_of_birth, p.age,
         p.gender, p.passport_number, p.passport_expiry, p.nationality, p.roomType, p.hotel,
-        p.additional_services.join(","), p.price, p.email, p.phone, p.allergy, p.emergency_phone
+        p.additional_services.join(","), p.price, p.email, p.phone, p.allergy || "", p.emergency_phone || ""
       ].map((v) => `"${v}"`).join(",")
     );
 
     const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `booking_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `booking_${selectedTour}_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
+
+    showNotification('success', 'CSV downloaded successfully');
   };
 
   const downloadTemplate = () => {
@@ -235,94 +399,123 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
       "Additional Services", "Price", "Email", "Phone", "Allergy", "Emergency Phone"
     ];
 
-    const csv = headers.join(",");
-    const blob = new Blob([csv + "\n"], { type: "text/csv" });
+    const sampleRow = [
+      "101", "1", "Doe", "John", "1990-01-01", "33", "Male", "A12345678", "2030-01-01",
+      "Mongolia", "Single", "Hotel A", "Service1,Service2", "100", "john@email.com",
+      "+976 99999999", "None", "+976 88888888"
+    ];
+
+    const csv = [headers.join(","), sampleRow.join(",")].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = "passenger_template.csv";
     a.click();
     window.URL.revokeObjectURL(url);
+
+    showNotification('success', 'Template downloaded successfully');
   };
 
   const handleUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      showNotification('error', 'Please upload a CSV file');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split("\n");
-      const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
-      const data = lines.slice(1).filter((line) => line.trim()).map((line) => {
-        const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
-        return headers.reduce((obj: Record<string, string>, header, i) => {
-          obj[header] = values[i] || "";
-          return obj;
-        }, {});
-      });
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split("\n").filter(line => line.trim());
 
-      const newPassengers = data.map((row, idx) => {
-        const passenger: Passenger = {
-          id: `passenger-${Date.now()}-${idx}`,
-          order_id: "",
-          user_id: currentUser.id,
-          name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
-          room_allocation: row["Room Allocation"],
-          serial_no: row["Serial No"],
-          last_name: row["Last Name"],
-          first_name: row["First Name"],
-          date_of_birth: row["Date of Birth"],
-          age: 0,
-          gender: row["Gender"],
-          passport_number: row["Passport Number"],
-          passport_expiry: row["Passport Expiry"],
-          nationality: row["Nationality"],
-          roomType: row["Room Type"],
-          hotel: row["Hotel"],
-          additional_services: row["Additional Services"] ? row["Additional Services"].split(",").map((s: string) => s.trim()) : [],
-          price: 0,
-          email: row["Email"],
-          phone: row["Phone"],
-          passport_upload: "",
-          allergy: row["Allergy"],
-          emergency_phone: row["Emergency Phone"],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+        if (lines.length < 2) {
+          showNotification('error', 'CSV file must contain at least a header and one data row');
+          return;
+        }
 
-        // Compute age
-        if (passenger.date_of_birth) {
-          const dob = new Date(passenger.date_of_birth);
-          const today = new Date();
-          let age = today.getFullYear() - dob.getFullYear();
-          const monthDiff = today.getMonth() - dob.getMonth();
-          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-            age--;
+        const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
+        const data = lines.slice(1).map((line) => {
+          const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
+          return headers.reduce((obj: Record<string, string>, header, i) => {
+            obj[header] = values[i] || "";
+            return obj;
+          }, {});
+        });
+
+        const newPassengers = data.map((row, idx) => {
+          const passenger: Passenger = {
+            id: `passenger-${Date.now()}-${idx}`,
+            order_id: "",
+            user_id: currentUser.id,
+            name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
+            room_allocation: row["Room Allocation"] || "",
+            serial_no: row["Serial No"] || (idx + 1).toString(),
+            last_name: row["Last Name"] || "",
+            first_name: row["First Name"] || "",
+            date_of_birth: row["Date of Birth"] || "",
+            age: calculateAge(row["Date of Birth"]),
+            gender: row["Gender"] || "",
+            passport_number: row["Passport Number"] || "",
+            passport_expiry: row["Passport Expiry"] || "",
+            nationality: row["Nationality"] || "",
+            roomType: row["Room Type"] || "",
+            hotel: row["Hotel"] || "",
+            additional_services: row["Additional Services"] ?
+              row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+            price: 0,
+            email: row["Email"] || "",
+            phone: row["Phone"] || "",
+            passport_upload: "",
+            allergy: row["Allergy"] || "",
+            emergency_phone: row["Emergency Phone"] || "",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          // Calculate price based on services
+          const tour = tours.find((t) => t.title === selectedTour);
+          if (tour && passenger.additional_services.length > 0) {
+            passenger.price = calculateServicePrice(passenger.additional_services, tour);
           }
-          passenger.age = age;
-        }
 
-        // Compute price
-        const tour = tours.find((t) => t.name === selectedTour);
-        if (tour && passenger.additional_services) {
-          passenger.price = passenger.additional_services.reduce((sum, service) => {
-            const svc = tour.services.find((s) => s.name === service);
-            return sum + (svc ? svc.price : 0);
-          }, 0);
-        }
+          return passenger;
+        });
 
-        return passenger;
-      });
-
-      setPassengers(newPassengers);
+        setPassengers(newPassengers);
+        showNotification('success', `Successfully imported ${newPassengers.length} passengers`);
+      } catch (error) {
+        showNotification('error', 'Failed to parse CSV file. Please check the format.');
+      }
     };
     reader.readAsText(file);
+
+    // Reset file input
+    e.target.value = '';
   };
 
-  const selectedTourData = tours.find((t) => t.name === selectedTour);
-  const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
+  const selectedTourData = tours.find((t) => t.title === selectedTour);
 
+  // Debug logging to understand the data structure
+  console.log('=== DEBUG INFO ===');
+  console.log('selectedTour value:', selectedTour);
+  console.log('tours array:', tours);
+  console.log('tours length:', tours.length);
+  console.log('tour titles in array:', tours.map(t => t.title));
+  console.log('selectedTourData:', selectedTourData);
+  console.log('dates:', selectedTourData?.dates);
+  console.log('dates type:', typeof selectedTourData?.dates);
+  console.log('departure_date:', selectedTourData?.departure_date);
+  console.log('departure_date type:', typeof selectedTourData?.departure_date);
+  console.log('selectedTourData keys:', selectedTourData ? Object.keys(selectedTourData) : 'no selectedTourData');
+  console.log('==================');
+  const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
+  const hasErrors = errors.length > 0;
+
+  // Non-user role view (simplified overview)
   if (currentUser.role !== "user") {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -346,7 +539,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-xl shadow-sm border p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -364,7 +557,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Passengers</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {orders.reduce((sum, order) => sum + order.passengers.length, 0)}
+                    {orders.reduce((sum, order) => sum + (order.passengers?.length || 0), 0)}
                   </p>
                 </div>
                 <div className="p-3 bg-green-100 rounded-lg">
@@ -384,6 +577,20 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                 </div>
               </div>
             </div>
+
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Revenue</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    ${orders.reduce((sum, order) => sum + (order.total_price || 0), 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="p-3 bg-orange-100 rounded-lg">
+                  <DollarSign className="w-6 h-6 text-orange-600" />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Orders Table */}
@@ -391,7 +598,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                 <FileText className="w-5 h-5 mr-2" />
-                All Bookings
+                Recent Bookings
               </h3>
             </div>
 
@@ -405,15 +612,28 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Details</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passengers</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Booking Details
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tour
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Departure
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Passengers
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {orders.map((order) => (
+                    {orders.slice(0, 10).map((order) => (
                       <tr key={order.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -421,7 +641,7 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                               <FileText className="w-5 h-5 text-blue-600" />
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">Booking #{order.id}</div>
+                              <div className="text-sm font-medium text-gray-900">#{order.id.slice(0, 8)}</div>
                               <div className="text-sm text-gray-500">
                                 {new Date(order.created_at).toLocaleDateString()}
                               </div>
@@ -437,17 +657,27 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center text-sm text-gray-900">
                             <Calendar className="w-4 h-4 mr-1 text-gray-400" />
-                            {order.departureDate}
+                            {new Date(order.departureDate).toLocaleDateString()}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             <Users className="w-3 h-3 mr-1" />
-                            {order.passengers.length} passengers
+                            {order.passengers?.length || 0}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {order.created_by}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
+                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                            {order.status === 'Confirmed' && <CheckCircle className="w-3 h-3 mr-1" />}
+                            {order.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
+                            {order.status.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          ${order.total_price?.toLocaleString() || '0'}
                         </td>
                       </tr>
                     ))}
@@ -463,6 +693,26 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg ${notification.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+          }`}>
+          <div className="flex items-center">
+            {notification.type === 'success' ?
+              <CheckCircle className="w-5 h-5 mr-2" /> :
+              <AlertTriangle className="w-5 h-5 mr-2" />
+            }
+            {notification.message}
+            <button
+              onClick={() => setNotification(null)}
+              className="ml-4 text-white hover:text-gray-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -471,12 +721,17 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
               <h1 className="text-2xl font-bold text-gray-900">Book Your Adventure</h1>
               <p className="text-sm text-gray-600 mt-1">Plan your perfect tour experience</p>
             </div>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Logout
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-600">
+                Welcome, {currentUser.first_name} {currentUser.last_name}
+              </div>
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -491,20 +746,42 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
               { step: 3, title: "Review & Book", icon: CreditCard }
             ].map(({ step, title, icon: Icon }) => (
               <div key={step} className="flex items-center">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${activeStep >= step
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${activeStep >= step
                   ? "bg-blue-600 border-blue-600 text-white"
                   : "border-gray-300 text-gray-400"
                   }`}>
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className={`ml-2 text-sm font-medium ${activeStep >= step ? "text-blue-600" : "text-gray-400"
+                <span className={`ml-2 text-sm font-medium transition-colors ${activeStep >= step ? "text-blue-600" : "text-gray-400"
                   }`}>
                   {title}
                 </span>
+                {step < 3 && (
+                  <div className={`w-16 h-0.5 ml-4 transition-colors ${activeStep > step ? "bg-blue-600" : "bg-gray-300"
+                    }`} />
+                )}
               </div>
             ))}
           </div>
         </div>
+
+        {/* Error Summary */}
+        {hasErrors && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center mb-2">
+              <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+              <h3 className="text-sm font-medium text-red-800">Please fix the following errors:</h3>
+            </div>
+            <ul className="text-sm text-red-700 space-y-1">
+              {errors.slice(0, 5).map((error, index) => (
+                <li key={index}>• {error.message}</li>
+              ))}
+              {errors.length > 5 && (
+                <li className="text-red-600 font-medium">... and {errors.length - 5} more errors</li>
+              )}
+            </ul>
+          </div>
+        )}
 
         {/* Step 1: Tour Selection */}
         {activeStep === 1 && (
@@ -515,52 +792,108 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Tour Package */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Tour Package</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tour Package *
+                </label>
                 <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === 'tour') ? 'border-red-300' : 'border-gray-300'
+                    }`}
                   value={selectedTour}
                   onChange={(e) => setSelectedTour(e.target.value)}
                 >
                   <option value="">Select a tour...</option>
-                  {tours.map((tour) => (
-                    <option key={tour.id} value={tour.name}>
-                      {tour.name} ({tour.seats} seats available)
-                    </option>
-                  ))}
+                  {tours
+                    .filter(tour => tour.status !== 'inactive')
+                    .map((tour) => (
+                      <option key={tour.id} value={tour.title}>
+                        {tour.title} ({tour.available_seats || tour.seats} seats available)
+                      </option>
+                    ))}
                 </select>
+                {errors.some(e => e.field === 'tour') && (
+                  <p className="mt-1 text-sm text-red-600">Tour selection is required</p>
+                )}
               </div>
 
+              {/* Departure Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Departure Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Departure Date *
+                </label>
                 <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === 'departure') ? 'border-red-300' : 'border-gray-300'
+                    }`}
                   value={departureDate}
                   onChange={(e) => setDepartureDate(e.target.value)}
                   disabled={!selectedTour}
                 >
                   <option value="">Select date...</option>
-                  {selectedTourData?.dates.map((date) => (
-                    <option key={date} value={date}>
-                      {new Date(date).toLocaleDateString()}
-                    </option>
-                  ))}
+                  {selectedTourData?.dates ? (
+                    Array.isArray(selectedTourData.dates) ? (
+                      selectedTourData.dates.map((date) => (
+                        <option key={date} value={date}>
+                          {new Date(date).toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </option>
+                      ))
+                    ) : (
+                      <option key={selectedTourData.dates} value={selectedTourData.dates}>
+                        {new Date(selectedTourData.dates).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </option>
+                    )
+                  ) : (
+                    selectedTourData?.departure_date && (
+                      <option key={selectedTourData.departure_date} value={selectedTourData.departure_date}>
+                        {new Date(selectedTourData.departure_date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </option>
+                    )
+                  )}
                 </select>
+                {errors.some(e => e.field === 'departure') && (
+                  <p className="mt-1 text-sm text-red-600">Departure date is required</p>
+                )}
               </div>
             </div>
 
             {selectedTourData && (
               <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-900 mb-2">Tour Details</h4>
+                <h4 className="font-medium text-blue-900 mb-3">Tour Details</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
                   <div className="flex items-center">
                     <Hotel className="w-4 h-4 mr-2" />
-                    <span>Hotels: {selectedTourData.hotels.join(", ")}</span>
+                    <span>Hotels: {selectedTourData.hotels.join(', ')}</span>
                   </div>
                   <div className="flex items-center">
                     <Users className="w-4 h-4 mr-2" />
-                    <span>Available Seats: {selectedTourData.seats}</span>
+                    <span>Available Seats: {selectedTourData.available_seats || selectedTourData.seats}</span>
                   </div>
+                  <div className="flex items-center">
+                    <DollarSign className="w-4 h-4 mr-2" />
+                    <span>Base Price: ${selectedTourData.price_base || 'Contact for pricing'}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <FileText className="w-4 h-4 mr-2" />
+                    <span>Services: {selectedTourData.services.length} available</span>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-sm text-blue-700">{selectedTourData.description}</p>
                 </div>
               </div>
             )}
@@ -585,13 +918,13 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                 <Users className="w-5 h-5 mr-2" />
                 Passenger Information
               </h3>
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button
                   onClick={downloadTemplate}
                   className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  Download Template
+                  Template
                 </button>
                 <label className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
                   <Upload className="w-4 h-4 mr-2" />
@@ -632,40 +965,23 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       <h4 className="font-medium text-gray-900">Passenger {index + 1}</h4>
                       <button
                         onClick={() => removePassenger(index)}
-                        className="text-red-600 hover:text-red-800"
+                        className="text-red-600 hover:text-red-800 p-1"
+                        disabled={passengers.length === 1}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {/* Basic Information */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Room Allocation</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          First Name *
+                        </label>
                         <input
                           type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Room #"
-                          value={passenger.room_allocation}
-                          onChange={(e) => updatePassenger(index, "room_allocation", e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Serial No</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Serial #"
-                          value={passenger.serial_no}
-                          onChange={(e) => updatePassenger(index, "serial_no", e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_first_name`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           placeholder="John"
                           value={passenger.first_name}
                           onChange={(e) => updatePassenger(index, "first_name", e.target.value)}
@@ -673,10 +989,13 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Last Name *</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Last Name *
+                        </label>
                         <input
                           type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_last_name`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           placeholder="Doe"
                           value={passenger.last_name}
                           onChange={(e) => updatePassenger(index, "last_name", e.target.value)}
@@ -684,7 +1003,37 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Email *
+                        </label>
+                        <input
+                          type="email"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_email`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
+                          placeholder="john@example.com"
+                          value={passenger.email}
+                          onChange={(e) => updatePassenger(index, "email", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Phone *
+                        </label>
+                        <input
+                          type="tel"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_phone`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
+                          placeholder="+976 99999999"
+                          value={passenger.phone}
+                          onChange={(e) => updatePassenger(index, "phone", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Date of Birth
+                        </label>
                         <input
                           type="date"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -704,22 +1053,29 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Gender</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Gender *
+                        </label>
                         <select
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_gender`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           value={passenger.gender}
                           onChange={(e) => updatePassenger(index, "gender", e.target.value)}
                         >
                           <option value="">Select</option>
                           <option value="Male">Male</option>
                           <option value="Female">Female</option>
+                          <option value="Other">Other</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Nationality</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Nationality *
+                        </label>
                         <select
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_nationality`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           value={passenger.nationality}
                           onChange={(e) => updatePassenger(index, "nationality", e.target.value)}
                         >
@@ -732,11 +1088,15 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         </select>
                       </div>
 
+                      {/* Passport Information */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Passport Number</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Passport Number *
+                        </label>
                         <input
                           type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_passport_number`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           placeholder="A12345678"
                           value={passenger.passport_number}
                           onChange={(e) => updatePassenger(index, "passport_number", e.target.value)}
@@ -744,33 +1104,45 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Passport Expiry</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Passport Expiry *
+                        </label>
                         <input
                           type="date"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_passport_expiry`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           value={passenger.passport_expiry}
                           onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)}
                         />
                       </div>
 
+                      {/* Accommodation */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Room Type</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Room Type *
+                        </label>
                         <select
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_roomType`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           value={passenger.roomType}
                           onChange={(e) => updatePassenger(index, "roomType", e.target.value)}
                         >
                           <option value="">Select</option>
                           <option value="Single">Single</option>
                           <option value="Double">Double</option>
+                          <option value="Twin">Twin</option>
                           <option value="Suite">Suite</option>
+                          <option value="Family">Family</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Hotel</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Hotel *
+                        </label>
                         <select
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_hotel`) ? 'border-red-300' : 'border-gray-300'
+                            }`}
                           value={passenger.hotel}
                           onChange={(e) => updatePassenger(index, "hotel", e.target.value)}
                         >
@@ -783,8 +1155,37 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         </select>
                       </div>
 
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Room Allocation
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Room #"
+                          value={passenger.room_allocation}
+                          onChange={(e) => updatePassenger(index, "room_allocation", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Serial No
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Serial #"
+                          value={passenger.serial_no}
+                          onChange={(e) => updatePassenger(index, "serial_no", e.target.value)}
+                        />
+                      </div>
+
+                      {/* Additional Services */}
                       <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Additional Services</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Additional Services
+                        </label>
                         <select
                           multiple
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
@@ -803,32 +1204,14 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                             </option>
                           ))}
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
                       </div>
 
+                      {/* File Upload */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
-                        <input
-                          type="email"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="john@example.com"
-                          value={passenger.email}
-                          onChange={(e) => updatePassenger(index, "email", e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
-                        <input
-                          type="tel"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="+1 234 567 8900"
-                          value={passenger.phone}
-                          onChange={(e) => updatePassenger(index, "phone", e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Passport Upload</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Passport Upload
+                        </label>
                         <div className="relative">
                           <input
                             type="file"
@@ -851,33 +1234,41 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                         </div>
                       </div>
 
+                      {/* Optional Fields */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Allergy</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Allergy
+                        </label>
                         <input
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Any allergies?"
-                          value={passenger.allergy}
+                          value={passenger.allergy || ""}
                           onChange={(e) => updatePassenger(index, "allergy", e.target.value)}
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Emergency Phone</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Emergency Phone
+                        </label>
                         <input
                           type="tel"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Emergency contact"
-                          value={passenger.emergency_phone}
+                          value={passenger.emergency_phone || ""}
                           onChange={(e) => updatePassenger(index, "emergency_phone", e.target.value)}
                         />
                       </div>
 
+                      {/* Price Display */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Service Price</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Service Price
+                        </label>
                         <div className="flex items-center px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50">
                           <DollarSign className="w-4 h-4 mr-1 text-gray-400" />
-                          <span className="font-medium">${passenger.price}</span>
+                          <span className="font-medium">{passenger.price}</span>
                         </div>
                       </div>
                     </div>
@@ -929,7 +1320,12 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                     <div>
                       <h4 className="font-medium text-gray-900">Departure Date</h4>
                       <p className="text-sm text-gray-600">
-                        {new Date(departureDate).toLocaleDateString()}
+                        {new Date(departureDate).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
                       </p>
                     </div>
                   </div>
@@ -948,63 +1344,79 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
                     <DollarSign className="w-8 h-8 text-orange-600 mr-3" />
                     <div>
                       <h4 className="font-medium text-gray-900">Total Price</h4>
-                      <p className="text-lg font-bold text-gray-900">${totalPrice}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center p-4 bg-indigo-50 rounded-lg">
-                    <CreditCard className="w-8 h-8 text-indigo-600 mr-3" />
-                    <div>
-                      <h4 className="font-medium text-gray-900">Payment Method</h4>
-                      <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mt-1"
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                      >
-                        <option value="">Select Payment Method</option>
-                        <option value="Cash">Cash</option>
-                        <option value="Bank">Bank</option>
-                        <option value="StorePay">StorePay</option>
-                        <option value="Pocket">Pocket</option>
-                        <option value="DariFinance">DariFinance</option>
-                        <option value="Hutul Nomuun">Hutul Nomuun</option>
-                        <option value="MonPay">MonPay</option>
-                        <option value="Barter">Barter</option>
-                        <option value="Loan">Loan</option>
-                      </select>
+                      <p className="text-lg font-bold text-gray-900">${totalPrice.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">Commission: ${(totalPrice * 0.05).toFixed(2)}</p>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Passenger List */}
-              <div className="border-t pt-6">
-                <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
-                <div className="space-y-3">
-                  {passengers.map((passenger, index) => (
-                    <div key={passenger.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                          <User className="w-4 h-4 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {passenger.first_name} {passenger.last_name}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            {passenger.nationality} • Room: {passenger.roomType} • Hotel: {passenger.hotel}
-                          </p>
-                        </div>
+            {/* Payment Method Selection */}
+            <div className="border-t pt-6">
+              <h4 className="font-medium text-gray-900 mb-4">Payment Method</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {paymentMethods.map((method) => (
+                  <label
+                    key={method}
+                    className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 hover:border-gray-400'
+                      }`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={method}
+                      checked={paymentMethod === method}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="sr-only"
+                    />
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    <span className="text-sm font-medium">{method}</span>
+                  </label>
+                ))}
+              </div>
+              {errors.some(e => e.field === 'payment') && (
+                <p className="mt-2 text-sm text-red-600">Payment method is required</p>
+              )}
+            </div>
+
+            {/* Passenger List */}
+            <div className="border-t pt-6">
+              <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
+              <div className="space-y-3">
+                {passengers.map((passenger, index) => (
+                  <div key={passenger.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                        <User className="w-5 h-5 text-blue-600" />
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900">${passenger.price}</p>
-                        <p className="text-sm text-gray-600">
-                          {passenger.additional_services.length} services
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {passenger.first_name} {passenger.last_name}
                         </p>
+                        <p className="text-sm text-gray-600">
+                          {passenger.nationality} • {passenger.gender} • Age: {passenger.age}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Room: {passenger.roomType} • Hotel: {passenger.hotel}
+                        </p>
+                        {passenger.additional_services.length > 0 && (
+                          <p className="text-xs text-gray-500">
+                            Services: {passenger.additional_services.join(', ')}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <div className="text-right">
+                      <p className="font-medium text-gray-900">${passenger.price}</p>
+                      <p className="text-sm text-gray-600">
+                        {passenger.additional_services.length} services
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1029,38 +1441,90 @@ function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: User
 
                 <button
                   onClick={saveOrder}
-                  disabled={paymentMethod === ""}
+                  disabled={loading || !paymentMethod || passengers.length === 0}
                   className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
                 >
-                  <Save className="w-4 h-4 mr-2" />
-                  Confirm Booking
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Confirm Booking
+                    </>
+                  )}
                 </button>
               </div>
 
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Please ensure all passenger information is accurate before confirming.
-                  All information should be entered in English or Latin characters only.
-                </p>
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Important Notes:</p>
+                    <ul className="space-y-1 text-xs">
+                      <li>• Please ensure all passenger information is accurate before confirming</li>
+                      <li>• All information should be entered in English or Latin characters only</li>
+                      <li>• Passport must be valid for at least 6 months from departure date</li>
+                      <li>• Changes after confirmation may incur additional fees</li>
+                      <li>• You will receive a confirmation email once booking is processed</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Quick Actions Bar - Fixed at bottom for mobile */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:hidden">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              Step {activeStep} of 3
-            </div>
-            <div className="text-sm font-medium text-gray-900">
-              {passengers.length > 0 && `${passengers.length} passengers • $${totalPrice}`}
-            </div>
+      {/* Quick Actions Bar - Fixed at bottom for mobile */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:hidden z-40">
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-gray-600">
+            Step {activeStep} of 3
+          </div>
+          <div className="text-sm font-medium text-gray-900">
+            {passengers.length > 0 && (
+              <span>
+                {passengers.length} passenger{passengers.length !== 1 ? 's' : ''} • ${totalPrice.toLocaleString()}
+              </span>
+            )}
           </div>
         </div>
+        {activeStep < 3 && (
+          <div className="mt-2">
+            <button
+              onClick={() => {
+                if (activeStep === 1 && selectedTour && departureDate) {
+                  setActiveStep(2);
+                } else if (activeStep === 2 && passengers.length > 0) {
+                  setActiveStep(3);
+                }
+              }}
+              disabled={
+                (activeStep === 1 && (!selectedTour || !departureDate)) ||
+                (activeStep === 2 && passengers.length === 0)
+              }
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {activeStep === 1 ? 'Continue to Passengers' : 'Review Booking'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 flex items-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+            <span className="text-gray-900">Processing your request...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default UserInterface;
+export default App;
