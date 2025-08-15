@@ -32,7 +32,7 @@ interface UserInterfaceProps {
   onLogout: () => void;
 }
 
-function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceProps) {
+function UserInterface({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceProps) {
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const [passengers, setPassengers] = useState<Passenger[]>([]);
@@ -41,6 +41,8 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
 
   const countries = [
     "Mongolia", "Russia", "China", "Afghanistan", "Albania", "Algeria", "Argentina", "Armenia",
@@ -67,7 +69,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
   }, []);
 
   // Validate passenger data
-  const validatePassenger = (passenger: Passenger): ValidationError[] => {
+  const validatePassenger = (passenger: Passenger, departureDate: string): ValidationError[] => {
     const errors: ValidationError[] = [];
 
     if (!passenger.first_name.trim()) {
@@ -95,9 +97,10 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
       errors.push({ field: 'passport_expiry', message: 'Passport expiry date is required' });
     } else {
       const expiryDate = new Date(passenger.passport_expiry);
-      const today = new Date();
-      if (expiryDate <= today) {
-        errors.push({ field: 'passport_expiry', message: 'Passport must be valid for at least 6 months' });
+      const minDate = new Date(departureDate);
+      minDate.setMonth(minDate.getMonth() + 6);
+      if (expiryDate < minDate) {
+        errors.push({ field: 'passport_expiry', message: 'Passport must be valid for at least 6 months from departure date' });
       }
     }
     if (!passenger.roomType) {
@@ -129,6 +132,21 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
       const service = tourData.services.find(s => s.name === serviceName);
       return sum + (service ? service.price : 0);
     }, 0);
+  };
+
+  // Get passport expiry color based on months remaining
+  const getPassportExpiryColor = (expiryDate: string): string => {
+    if (!expiryDate) return 'border-gray-300';
+
+    const expiry = new Date(expiryDate);
+    const today = new Date();
+    const monthsRemaining = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());
+
+    if (monthsRemaining <= 0) return 'border-red-500 bg-red-50'; // Expired
+    if (monthsRemaining <= 1) return 'border-red-400 bg-red-50'; // 1 month or less
+    if (monthsRemaining <= 3) return 'border-orange-400 bg-orange-50'; // 1-3 months
+    if (monthsRemaining <= 7) return 'border-yellow-400 bg-yellow-50'; // 3-7 months
+    return 'border-green-400 bg-green-50'; // 7+ months
   };
 
   const addPassenger = () => {
@@ -181,7 +199,11 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
 
     // Update full name when first or last name changes
     if (field === "first_name" || field === "last_name") {
-      updatedPassengers[index].name = `${updatedPassengers[index].first_name} ${updatedPassengers[index].last_name}`.trim();
+      const first = updatedPassengers[index].first_name;
+      const last = updatedPassengers[index].last_name;
+      updatedPassengers[index].name = isGroup 
+        ? `${groupName} - ${first} ${last}`.trim() 
+        : `${first} ${last}`.trim();
     }
 
     // Handle file upload for passport
@@ -238,7 +260,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
 
     // Validate each passenger
     passengers.forEach((passenger, index) => {
-      const passengerErrors = validatePassenger(passenger);
+      const passengerErrors = validatePassenger(passenger, departureDate);
       passengerErrors.forEach(error => {
         allErrors.push({
           field: `passenger_${index}_${error.field}`,
@@ -288,7 +310,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
         passport_copy: passengers[0].passport_upload,
         commission,
         created_by: currentUser.id,
-        createdBy: currentUser.username || currentUser.email,
+        "createdBy": currentUser.username || currentUser.email, // Quoted for exact case match
         tour: tourData.title,
         edited_by: null,
         edited_at: null,
@@ -299,7 +321,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
         payment_method: paymentMethod,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        departureDate: departureDate,
+        departureDate: departureDate, // This should match your DB column exactly
         total_price: totalPrice,
       };
 
@@ -314,10 +336,15 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
       }
 
       const orderId = orderData.id;
-      const passengersWithOrderId = passengers.map((p) => ({
-        ...p,
-        order_id: orderId,
-      }));
+
+      // Updated: Omit 'id' from each passenger object
+      const passengersWithOrderId = passengers.map((p) => {
+        const { id, ...rest } = p; // Destructure to exclude 'id'
+        return {
+          ...rest,
+          order_id: orderId,
+        };
+      });
 
       const { error: passengerError } = await supabase
         .from('passengers')
@@ -352,6 +379,8 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
       setPaymentMethod("");
       setActiveStep(1);
       setErrors([]);
+      setIsGroup(false);
+      setGroupName("");
 
     } catch (error) {
       showNotification('error', `Error saving booking: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -508,8 +537,8 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
   console.log('selectedTourData:', selectedTourData);
   console.log('dates:', selectedTourData?.dates);
   console.log('dates type:', typeof selectedTourData?.dates);
-  console.log('departure_date:', selectedTourData?.departure_date);
-  console.log('departure_date type:', typeof selectedTourData?.departure_date);
+  console.log('departure_date:', selectedTourData?.departureDate);
+  console.log('departure_date type:', typeof selectedTourData?.departureDate);
   console.log('selectedTourData keys:', selectedTourData ? Object.keys(selectedTourData) : 'no selectedTourData');
   console.log('==================');
   const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
@@ -853,9 +882,9 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
                       </option>
                     )
                   ) : (
-                    selectedTourData?.departure_date && (
-                      <option key={selectedTourData.departure_date} value={selectedTourData.departure_date}>
-                        {new Date(selectedTourData.departure_date).toLocaleDateString('en-US', {
+                    selectedTourData?.departureDate && (
+                      <option key={selectedTourData.departureDate} value={selectedTourData.departureDate}>
+                        {new Date(selectedTourData.departureDate).toLocaleDateString('en-US', {
                           weekday: 'long',
                           year: 'numeric',
                           month: 'long',
@@ -941,7 +970,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
                   className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Passenger
+                  {isGroup ? 'Add Member' : 'Add Passenger'}
                 </button>
               </div>
             </div>
@@ -949,13 +978,50 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
             {passengers.length === 0 ? (
               <div className="text-center py-12">
                 <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 mb-4">No passengers added yet</p>
-                <button
-                  onClick={addPassenger}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Add First Passenger
-                </button>
+                <p className="text-gray-500 mb-4">How would you like to add passengers?</p>
+                <div className="flex justify-center gap-4">
+                  <button 
+                    onClick={() => {
+                      setIsGroup(false);
+                      addPassenger();
+                    }} 
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    1 Person
+                  </button>
+                  <button 
+                    onClick={() => setIsGroup(true)} 
+                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Group or Company
+                  </button>
+                </div>
+                {isGroup && (
+                  <div className="mt-4 max-w-md mx-auto">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Group or Company Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter group name"
+                      value={groupName}
+                      onChange={(e) => setGroupName(e.target.value)}
+                    />
+                    <button
+                      onClick={() => {
+                        if (groupName.trim()) {
+                          addPassenger();
+                        } else {
+                          showNotification('error', 'Group name is required');
+                        }
+                      }}
+                      className="mt-2 w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Start Adding Members
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-6">
@@ -1109,7 +1175,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
                         </label>
                         <input
                           type="date"
-                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_passport_expiry`) ? 'border-red-300' : 'border-gray-300'
+                          className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${getPassportExpiryColor(passenger.passport_expiry)} ${errors.some(e => e.field === `passenger_${index}_passport_expiry`) ? 'border-red-300' : ''
                             }`}
                           value={passenger.passport_expiry}
                           onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)}
@@ -1394,7 +1460,7 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">
-                          {passenger.first_name} {passenger.last_name}
+                          {passenger.name}
                         </p>
                         <p className="text-sm text-gray-600">
                           {passenger.nationality} • {passenger.gender} • Age: {passenger.age}
@@ -1527,4 +1593,4 @@ function App({ tours, orders, setOrders, currentUser, onLogout }: UserInterfaceP
   );
 }
 
-export default App;
+export default UserInterface;

@@ -68,7 +68,7 @@ export interface Tour {
   description: string;
   name: string;
   dates: string[];
-  departure_date: string; // Add this line
+  departureDate: string; // Add this line
   seats: number;
   available_seats?: number;
   hotels: string[];
@@ -230,7 +230,7 @@ export interface TourFormData {
   title: string;
   description: string;
   name: string;
-  departure_date: string;
+  departureDate: string;
   seats: string;
   hotels: string;
   services: string;
