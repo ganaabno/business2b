@@ -45,22 +45,27 @@ function AdminInterface({
   });
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
 
-  // Prepare the tour data, converting departure_date to dates array format
   const handleAddTour = async () => {
-    // Prepare the tour data - let's be more explicit about data types
+    if (!newTour.departure_date) {
+      alert("Departure date is required");
+      return;
+    }
+
     const tourData = {
       title: newTour.title.trim() || null,
       description: newTour.description.trim() || null,
-      dates: newTour.departure_date ? [newTour.departure_date] : null,
+      dates: newTour.departure_date ? [newTour.departure_date] : [], // Save as array
       seats: newTour.seats ? parseInt(newTour.seats, 10) : null,
-      hotels: newTour.hotels.trim() ? newTour.hotels.trim().split(',').map(h => h.trim()) : null,
-      services: newTour.services.trim() ? newTour.services.trim().split(',').map(s => ({ name: s.trim(), price: 0 })) : null,
+      hotels: newTour.hotels.trim() ? newTour.hotels.trim().split(',').map(h => h.trim()) : [],
+      services: newTour.services.trim()
+        ? newTour.services.trim().split(',').map(s => ({ name: s.trim(), price: 0 }))
+        : [],
       created_by: currentUser.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    console.log("Sending tour data:", tourData); // Debug log
+    console.log("Sending tour data:", tourData);
 
     const { data, error } = await supabase
       .from("tours")
@@ -69,7 +74,7 @@ function AdminInterface({
       .single();
 
     if (error) {
-      console.error("Supabase error:", error); // Debug log
+      console.error("Supabase error:", error);
       alert("Error adding tour: " + error.message);
       return;
     }
@@ -101,7 +106,7 @@ function AdminInterface({
       .from("users")
       .update({
         ...user,
-        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       })
       .eq("id", user.id);
 
@@ -117,40 +122,40 @@ function AdminInterface({
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar role={currentUser.role} onLogout={onLogout} />
-
       <div>
         <RoleChanger users={users} setUsers={setUsers} currentUser={currentUser} />
       </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tabs */}
         <div className="border-b border-gray-200 mb-8">
           <nav className="flex space-x-8" aria-label="Tabs">
             <button
               onClick={() => setSelectedTab("orders")}
-              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "orders"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-                }`}
+              className={`pb-4 px-1 text-sm font-medium ${
+                selectedTab === "orders"
+                  ? "border-b-2 border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
             >
               Orders
             </button>
             <button
               onClick={() => setSelectedTab("tours")}
-              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "tours"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-                }`}
+              className={`pb-4 px-1 text-sm font-medium ${
+                selectedTab === "tours"
+                  ? "border-b-2 border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
             >
               Tours
             </button>
             {currentUser.role === "superadmin" && (
               <button
                 onClick={() => setSelectedTab("users")}
-                className={`pb-4 px-1 text-sm font-medium ${selectedTab === "users"
-                  ? "border-b-2 border-blue-600 text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
-                  }`}
+                className={`pb-4 px-1 text-sm font-medium ${
+                  selectedTab === "users"
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
               >
                 Users
               </button>
@@ -158,7 +163,6 @@ function AdminInterface({
           </nav>
         </div>
 
-        {/* Orders Tab */}
         {selectedTab === "orders" && (
           <div className="bg-white rounded-xl shadow-sm border">
             <div className="p-6 border-b border-gray-200">
@@ -227,11 +231,11 @@ function AdminInterface({
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             <Users className="w-3 h-3 mr-1" />
-                            {order.passengers.length} passengers
+                            {order.passengers?.length || 0} passengers
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {order.created_by}
+                          {order.createdBy || order.created_by}
                         </td>
                       </tr>
                     ))}
@@ -242,7 +246,6 @@ function AdminInterface({
           </div>
         )}
 
-        {/* Tours Tab */}
         {selectedTab === "tours" && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -362,6 +365,9 @@ function AdminInterface({
                           Tour Details
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Departure Date
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Seats
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -374,14 +380,23 @@ function AdminInterface({
                         <tr key={tour.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">
-                              {tour.name}
+                              {tour.title}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {tour.description}
+                              {tour.description || "No description"}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {tour.seats}
+                            {tour.dates && tour.dates.length > 0
+                              ? new Date(tour.dates[0]).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })
+                              : "No date set"}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {tour.seats ?? "No limit"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <button
@@ -401,7 +416,6 @@ function AdminInterface({
           </div>
         )}
 
-        {/* Users Tab (Superadmin only) */}
         {selectedTab === "users" && currentUser.role === "superadmin" && (
           <div className="bg-white rounded-xl shadow-sm border">
             <div className="p-6 border-b border-gray-200">
@@ -478,6 +492,7 @@ function AdminInterface({
                       <option value="admin">Admin</option>
                       <option value="provider">Provider</option>
                       <option value="superadmin">Superadmin</option>
+                      <option value="manager">Manager</option>
                     </select>
                   </div>
                   <div>

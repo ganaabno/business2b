@@ -1,4 +1,4 @@
-export type Role = "user" | "provider" | "admin" | "superadmin";
+export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
 
 export interface User {
   userId: string;
@@ -34,7 +34,7 @@ export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
   first_name: string;
   last_name: string;
   username: string;
-  role: "user" | "provider" | "admin" | "superadmin";
+  role: "user" | "provider" | "admin" | "superadmin" | "manager";
   phone: string | null;
   email: string;
   password: string;

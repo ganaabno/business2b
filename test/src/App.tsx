@@ -6,12 +6,13 @@ import UserInterface from "./components/UserInterface";
 import AdminInterface from "./components/AdminInterface";
 import ProviderInterface from "./components/ProviderInterface";
 import ChangePassword from "./components/ChangePassword";
-import type { User as UserType, Role, Tour, Order } from "./types/type";
+import ManagerInterface from "./components/ManagerInterface";
+import type { User as UserType, Role, Tour, Order, Passenger } from "./types/type";
 
 // Helper to coerce any value to a valid Role
 function toRole(value: any): Role {
   const v = String(value ?? "user") as Role;
-  return v === "admin" || v === "superadmin" || v === "provider" || v === "user" ? v : "user";
+  return v === "admin" || v === "superadmin" || v === "provider" || v === "user" || v === "manager" ? v : "user";
 }
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
   const [users, setUsers] = useState<UserType[]>([]);
   const [tours, setTours] = useState<Tour[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [booting, setBooting] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +40,6 @@ export default function App() {
     console.log("[boot] Starting initialization...");
     let cancelled = false;
 
-    // Shorter watchdog for faster debugging
     const watchdog = setTimeout(() => {
       if (!cancelled) {
         console.warn("[boot] Watchdog triggered after 3s — forcing boot complete");
@@ -66,7 +67,6 @@ export default function App() {
         let userId: string | null = sessionData?.session?.user?.id ?? null;
         console.log("[boot] User ID from session:", userId);
 
-        // If no session, try getUser
         if (!userId) {
           console.log("[boot] Step 3: No session, trying getUser...");
           const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -80,7 +80,6 @@ export default function App() {
           console.log("[boot] User ID from getUser:", userId);
         }
 
-        // If there is a logged-in user, hydrate profile
         if (userId) {
           console.log("[boot] Step 4: Fetching user profile for ID:", userId);
           const { data: row, error: rowErr } = await supabase
@@ -158,7 +157,6 @@ export default function App() {
       }
     });
 
-    // Keep session/user in sync with auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -250,12 +248,21 @@ export default function App() {
         if (ordersErr) console.error("Load orders error:", ordersErr);
         setOrders((ordersData as any) || []);
       }
+
+      // Passengers: admins and managers get all, others get none
+      if (role === "admin" || role === "superadmin" || role === "manager") {
+        const { data: passengersData, error: passengersErr } = await supabase.from("passengers").select("*");
+        if (passengersErr) console.error("Load passengers error:", passengersErr);
+        setPassengers((passengersData as any) || []);
+      } else {
+        setPassengers([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Realtime: live-update currentUser when their row changes (e.g., role edited in DB)
+  // Realtime: live-update currentUser when their row changes
   useEffect(() => {
     if (!currentUser?.id) return;
 
@@ -278,7 +285,7 @@ export default function App() {
             first_name: String(row.first_name ?? ""),
             last_name: String(row.last_name ?? ""),
             username: String(row.username ?? ""),
-            role: ["admin", "superadmin", "provider", "user"].includes(row.role) ? row.role : "user",
+            role: toRole(row.role),
             phone: String(row.phone ?? ""),
             email: String(row.email ?? ""),
             blacklist: Boolean(row.blacklist ?? false),
@@ -302,8 +309,6 @@ export default function App() {
             password: "",
           };
           setCurrentUser(updated);
-
-          // Immediately refetch data because role may have changed
           fetchData();
         }
       )
@@ -321,6 +326,7 @@ export default function App() {
     setUsers([]);
     setTours([]);
     setOrders([]);
+    setPassengers([]);
   };
 
   const handleChangePassword = async (newPassword: string): Promise<boolean> => {
@@ -333,22 +339,21 @@ export default function App() {
     return true;
   };
 
-  // While restoring session
   if (booting) {
     return <div style={{ padding: 24 }}>Loading...</div>;
   }
 
-  // Not logged in yet: show Login
   if (!currentUser) {
     return <Login onLogin={setCurrentUser} />;
   }
 
-  // Decide the default home route by role
   const homePath =
     role === "admin" || role === "superadmin"
       ? "/admin"
       : role === "provider"
       ? "/provider"
+      : role === "manager"
+      ? "/manager"
       : "/user";
 
   return (
@@ -359,6 +364,7 @@ export default function App() {
           <Link to="/user">User</Link>
           <Link to="/provider">Provider</Link>
           <Link to="/admin">Admin</Link>
+          <Link to="/manager">Manager</Link>
         </div>
       )}
 
@@ -368,7 +374,7 @@ export default function App() {
         <Route
           path="/user"
           element={
-            ["user", "provider", "admin", "superadmin"].includes(role) ? (
+            ["user", "provider", "admin", "superadmin", "manager"].includes(role) ? (
               <UserInterface
                 tours={tours}
                 orders={orders}
@@ -385,7 +391,7 @@ export default function App() {
         <Route
           path="/provider"
           element={
-            ["provider", "admin", "superadmin"].includes(role) ? (
+            ["provider", "admin", "superadmin", "manager"].includes(role) ? (
               <ProviderInterface
                 tours={tours}
                 setTours={setTours}
@@ -413,6 +419,24 @@ export default function App() {
                 setOrders={setOrders}
                 currentUser={currentUser}
                 onLogout={handleLogout}
+              />
+            ) : (
+              <Navigate to={homePath} replace />
+            )
+          }
+        />
+
+        <Route
+          path="/manager"
+          element={
+            ["manager", "admin", "superadmin"].includes(role) ? (
+              <ManagerInterface
+                tours={tours}
+                setTours={setTours}
+                orders={orders}
+                setOrders={setOrders}
+                passengers={passengers}
+                setPassengers={setPassengers}
               />
             ) : (
               <Navigate to={homePath} replace />

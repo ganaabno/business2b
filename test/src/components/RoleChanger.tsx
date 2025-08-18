@@ -9,7 +9,7 @@ interface RoleChangerProps {
   currentUser: User;
 }
 
-const roles = ["user", "provider", "admin", "superadmin"];
+const roles = ["user", "provider", "admin", "superadmin", "manager"];
 
 function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   const [loading, setLoading] = useState(false);
@@ -32,7 +32,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
       // Update local state for instant UI update
       setUsers((prev) =>
         prev.map((u) =>
-          u.id === userId ? { ...u, role: newRole as "user" | "provider" | "admin" | "superadmin" } : u
+          u.id === userId ? { ...u, role: newRole as "user" | "provider" | "admin" | "superadmin" | "manager" } : u
         )
       );} catch (err) {
       console.error(err);
