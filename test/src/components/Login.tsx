@@ -26,23 +26,19 @@ export default function Auth({ onLogin }: AuthProps) {
     setError(null);
 
     try {
-      // 1) Sign up (optional step if user is creating a new account)
       if (isSignup) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          // options: { data: { first_name: firstName, last_name: lastName } }, // optional metadata
         });
         if (signUpError) throw signUpError;
 
-        // If email confirmations are enabled, there's no session yet
         if (!data.session) {
           setError("Check your email to confirm your account, then log in.");
           return;
         }
       }
 
-      // 2) Login (for both flows)
       const { data: loginData, error: loginError } =
         await supabase.auth.signInWithPassword({ email, password });
       if (loginError) throw loginError;
@@ -51,8 +47,6 @@ export default function Auth({ onLogin }: AuthProps) {
       if (!authUser) throw new Error("No user after login.");
       const authUserId = authUser.id;
 
-      // 3) Fetch the profile from public.users (created by DB trigger). Select all columns you might need.
-      // If your table doesn't have all of these columns, selecting "*" is fine; we'll default missing ones below.
       let { data: row, error: selectErr } = await supabase
         .from("users")
         .select("*")
@@ -61,7 +55,6 @@ export default function Auth({ onLogin }: AuthProps) {
 
       if (selectErr) throw selectErr;
 
-      // 4) If missing (e.g., user predates trigger), create a minimal row now (RLS-safe because we're authenticated)
       if (!row) {
         const { data: inserted, error: insertErr } = await supabase
           .from("users")
@@ -79,29 +72,19 @@ export default function Auth({ onLogin }: AuthProps) {
         row = inserted;
       }
 
-      // 5) Build a full User object with safe defaults for fields that might be null/missing
       const userObj: User = {
-        // ids
         userId: String(row.id),
         id: String(row.id),
-
-        // required strings (default to empty string if null/undefined)
         first_name: String(row.first_name ?? ""),
         last_name: String(row.last_name ?? ""),
         username: String(row.username ?? ""),
         phone: String(row.phone ?? ""),
         email: String(row.email ?? ""),
-        password: String(row.password ?? ""), // if you dropped this column, it will be empty string (your UI should never show it)
-
-        // booleans / numbers
+        password: String(row.password ?? ""),
         blacklist: Boolean(row.blacklist ?? false),
         membership_points: Number(row.membership_points ?? 0),
-
-        // enums / controlled values
         role: toRole(row.role),
         access: String(row.access ?? "active"),
-
-        // nullable fields normalized to empty string when your interface requires string
         company: String(row.company ?? ""),
         birth_date: String(row.birth_date ?? ""),
         id_card_number: String(row.id_card_number ?? ""),
@@ -112,11 +95,7 @@ export default function Auth({ onLogin }: AuthProps) {
         membership_rank: String(row.membership_rank ?? ""),
         registered_by: String(row.registered_by ?? ""),
         createdBy: String(row.createdBy ?? ""),
-
-        // arrays
         travel_history: Array.isArray(row.travel_history) ? row.travel_history : [],
-
-        // timestamps: your table uses camelCase createdAt/updatedAt
         createdAt: new Date(row.createdAt ?? Date.now()),
         updatedAt: new Date(row.updatedAt ?? Date.now()),
       };
@@ -131,59 +110,112 @@ export default function Auth({ onLogin }: AuthProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <h1 className="text-2xl font-bold mb-4">{isSignup ? "Sign Up" : "Login"}</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="w-full max-w-md bg-white rounded-xl shadow-md overflow-hidden p-8 space-y-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-800">
+            {isSignup ? "Create an Account" : "Welcome Back"}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isSignup ? "Join us today" : "Sign in to continue"}
+          </p>
+        </div>
 
-      {error && <p className="text-red-500 mb-2">{error}</p>}
+        {error && (
+          <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
 
-      {isSignup && (
-        <>
-          <input
-            type="text"
-            placeholder="First Name"
-            className="mb-2 p-2 border rounded w-64"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Last Name"
-            className="mb-2 p-2 border rounded w-64"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-          />
-        </>
-      )}
+        <div className="space-y-4">
+          {isSignup && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name
+                </label>
+                <input
+                  id="firstName"
+                  type="text"
+                  placeholder="John"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name
+                </label>
+                <input
+                  id="lastName"
+                  type="text"
+                  placeholder="Doe"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
-      <input
-        type="email"
-        placeholder="Email"
-        className="mb-2 p-2 border rounded w-64"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        className="mb-2 p-2 border rounded w-64"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-      <button
-        onClick={handleAuth}
-        className="bg-blue-500 text-white p-2 rounded w-64"
-        disabled={loading}
-      >
-        {loading ? (isSignup ? "Signing up..." : "Logging in...") : isSignup ? "Sign Up" : "Login"}
-      </button>
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
 
-      <p
-        className="mt-4 text-sm text-gray-700 cursor-pointer"
-        onClick={() => setIsSignup(!isSignup)}
-      >
-        {isSignup ? "Already have an account? Login" : "Don't have an account? Sign Up"}
-      </p>
+          <button
+            onClick={handleAuth}
+            className={`w-full py-3 px-4 rounded-lg font-medium text-white transition ${
+              loading ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+            }`}
+            disabled={loading}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {isSignup ? "Creating Account..." : "Signing In..."}
+              </span>
+            ) : isSignup ? "Sign Up" : "Sign In"}
+          </button>
+        </div>
+
+        <div className="text-center text-sm text-gray-600">
+          {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
+          <button
+            onClick={() => setIsSignup(!isSignup)}
+            className="text-blue-600 hover:text-blue-800 font-medium focus:outline-none"
+          >
+            {isSignup ? "Sign In" : "Sign Up"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -81,36 +81,36 @@ export interface Tour {
 }
 
 export interface Order {
-  id: string;
+  id: string; // Changed from string to number
   user_id: string;
   tour_id: string;
-  phone: string;
-  last_name: string;
-  first_name: string;
-  age: number;
-  gender: string;
-  tour: string;
-  passport_number: string;
-  passport_expire: string;
-  passport_copy: string;
-  commission: number;
-  created_by: string;
+  phone: string | null; // Schema allows NULL
+  last_name: string | null;
+  first_name: string | null;
+  age: number | null;
+  gender: string | null;
+  tour: string | null;
+  passport_number: string | null;
+  passport_expire: string | null;
+  passport_copy: string | null;
+  commission: number | null;
+  created_by: string | null;
   edited_by: string | null;
   edited_at: string | null;
   travel_choice: string;
   status: OrderStatus;
-  hotel: string;
-  room_number: string;
-  payment_method: string;
+  hotel: string | null;
+  room_number: string | null;
+  payment_method: string | null;
   created_at: string;
   updated_at: string;
   passengers: Passenger[];
   departureDate: string;
-  createdBy: string;
-  total_amount?: number; // Total order amount
-  total_price?: number; // Alternative field for total price
-  paid_amount?: number; // Amount paid
-  balance?: number; // Remaining balance
+  createdBy: string | null;
+  total_amount?: number;
+  total_price?: number;
+  paid_amount?: number;
+  balance?: number;
 }
 
 export type OrderStatus =
@@ -136,7 +136,8 @@ export type OrderStatus =
   | "Has taken seat from another company"
   | "Swapped seat with another company"
   | "Gave seat to another company"
-  | "Cancelled and bought travel from another country";
+  | "Cancelled and bought travel from another country"
+  | "confirmed";
 
 export type PaymentMethod =
   | "Cash"
@@ -175,7 +176,7 @@ export interface Passenger {
   emergency_phone: string;
   created_at: string;
   updated_at: string;
-  status?: 'active' | 'cancelled'; // Passenger status
+  status?: 'active' | 'cancelled' | 'confirmed'; // Passenger status
 }
 
 export interface AuthUser {

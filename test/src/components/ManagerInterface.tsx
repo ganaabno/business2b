@@ -1,23 +1,27 @@
 import { useState, useMemo } from "react";
-import type { Tour, Order, Passenger } from "../types/type";
+import type { User as UserType, Tour, Order, Passenger } from "../types/type";
 import { supabase } from "../supabaseClient";
 
 interface ManagerInterfaceProps {
   tours: Tour[];
   setTours: (tours: Tour[]) => void;
   orders: Order[];
-  setOrders: (orders: Order[]) => void;
+  setOrders: (tours: Order[]) => void;
   passengers: Passenger[];
   setPassengers: (passengers: Passenger[]) => void;
+  currentUser: UserType;
+  onLogout: () => void;
 }
 
 export default function ManagerInterface({
- tours,
+  tours,
   setTours,
   orders,
   setOrders,
   passengers,
   setPassengers,
+  currentUser,
+  onLogout,
 }: ManagerInterfaceProps) {
   const [activeTab, setActiveTab] = useState<"tours" | "orders" | "addTour" | "passengers">("tours");
   const [newTour, setNewTour] = useState({
@@ -51,60 +55,115 @@ export default function ManagerInterface({
     }
   };
 
-  const handleTourChange = (id: string, field: keyof Tour, value: any) => {
+  const handleTourChange = async (id: string, field: keyof Tour, value: any) => {
     const updatedTours = tours.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     );
     setTours(updatedTours);
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) {
+        console.error('Error updating tour:', error);
+        alert(`Failed to update tour: ${error.message}`);
+        // Revert state on failure
+        setTours(tours);
+      }
+    } catch (error) {
+      console.error('Unexpected error updating tour:', error);
+      alert('An unexpected error occurred while updating the tour.');
+      setTours(tours);
+    }
   };
 
-  const handleOrderChange = (id: string, field: keyof Order, value: any) => {
+  const handleOrderChange = async (id: string, field: keyof Order, value: any) => {
+    const previousOrders = [...orders]; // Save previous state for rollback
     const updatedOrders = orders.map(o =>
-      o.id === id ? { ...o, [field]: value } : o
+      o.id === id ? { ...o, [field]: value, edited_by: currentUser.id, edited_at: new Date().toISOString() } : o
     );
     setOrders(updatedOrders);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ [field]: value, edited_by: currentUser.id, edited_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) {
+        console.error('Error updating order:', error);
+        alert(`Failed to update order: ${error.message}`);
+        setOrders(previousOrders); // Revert state on failure
+      } else {
+        alert(`${field === 'status' && value === 'Confirmed' ? 'Order marked as visible to providers' : 'Order updated successfully'}`);
+      }
+    } catch (error) {
+      console.error('Unexpected error updating order:', error);
+      alert('An unexpected error occurred while updating the order.');
+      setOrders(previousOrders);
+    }
   };
 
-  const handlePassengerChange = (id: string, field: keyof Passenger, value: any) => {
+  const handlePassengerChange = async (id: string, field: keyof Passenger, value: any) => {
+    const previousPassengers = [...passengers];
     const updatedPassengers = passengers.map(p =>
       p.id === id ? { ...p, [field]: value } : p
     );
     setPassengers(updatedPassengers);
+    try {
+      const { error } = await supabase
+        .from('passengers')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) {
+        console.error('Error updating passenger:', error);
+        alert(`Failed to update passenger: ${error.message}`);
+        setPassengers(previousPassengers);
+      }
+    } catch (error) {
+      console.error('Unexpected error updating passenger:', error);
+      alert('An unexpected error occurred while updating the passenger.');
+      setPassengers(previousPassengers);
+    }
   };
 
   const handleAddTour = async () => {
-    const currentDate = new Date().toISOString();
+    if (!newTour.departure_date) {
+      alert("Departure date is required");
+      return;
+    }
+    if (!newTour.title.trim()) {
+      alert("Tour title is required");
+      return;
+    }
 
-    const newTourData: Partial<Tour> = {
-      title: newTour.title,
-      name: newTour.name || newTour.title,
-      description: newTour.description,
+    const tourData = {
+      title: newTour.title.trim() || null,
+      description: newTour.description.trim() || null,
       dates: newTour.departure_date ? [newTour.departure_date] : [],
-      departureDate: newTour.departure_date,
-      seats: parseInt(newTour.seats) || 0,
-      hotels: newTour.hotels
-        ? newTour.hotels.split(',').map(h => h.trim())
+      seats: newTour.seats ? parseInt(newTour.seats, 10) : null,
+      hotels: newTour.hotels.trim() ? newTour.hotels.trim().split(',').map(h => h.trim()) : [],
+      services: newTour.services.trim()
+        ? newTour.services.trim().split(',').map(s => ({ name: s.trim(), price: 0 }))
         : [],
-      services: newTour.services
-        ? newTour.services.split(',').map(s => ({ name: s.trim(), price: 0 }))
-        : [],
-      status: "active",
-      created_at: currentDate,
-      updated_at: currentDate,
-      created_by: "manager"
+      created_by: currentUser.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
     try {
       const { data, error } = await supabase
-        .from('tours')
-        .insert([newTourData])
+        .from("tours")
+        .insert([tourData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        alert("Error adding tour: " + error.message);
+        return;
+      }
 
       setTours([...tours, data as Tour]);
-
       setNewTour({
         title: "",
         name: "",
@@ -112,28 +171,48 @@ export default function ManagerInterface({
         seats: "",
         hotels: "",
         services: "",
-        description: ""
+        description: "",
       });
+      alert("Tour added successfully!");
     } catch (error) {
-      console.error('Error adding tour:', error);
+      console.error("Error adding tour:", error);
+      alert("An unexpected error occurred while adding the tour.");
     }
   };
 
   const handleDeleteTour = async (id: string) => {
+    const previousTours = [...tours];
+    setTours(tours.filter(t => t.id !== id));
     try {
-      setTours(tours.filter(t => t.id !== id));
+      const { error } = await supabase.from('tours').delete().eq('id', id);
+      if (error) {
+        console.error('Error deleting tour:', error);
+        alert(`Failed to delete tour: ${error.message}`);
+        setTours(previousTours);
+      }
       setShowDeleteConfirm(null);
     } catch (error) {
-      console.error('Error deleting tour:', error);
+      console.error('Unexpected error deleting tour:', error);
+      alert('An unexpected error occurred while deleting the tour.');
+      setTours(previousTours);
     }
   };
 
   const handleDeletePassenger = async (id: string) => {
+    const previousPassengers = [...passengers];
+    setPassengers(passengers.filter(p => p.id !== id));
     try {
-      setPassengers(passengers.filter(p => p.id !== id));
+      const { error } = await supabase.from('passengers').delete().eq('id', id);
+      if (error) {
+        console.error('Error deleting passenger:', error);
+        alert(`Failed to delete passenger: ${error.message}`);
+        setPassengers(previousPassengers);
+      }
       setShowDeleteConfirm(null);
     } catch (error) {
-      console.error('Error deleting passenger:', error);
+      console.error('Unexpected error deleting passenger:', error);
+      alert('An unexpected error occurred while deleting the passenger.');
+      setPassengers(previousPassengers);
     }
   };
 
@@ -164,7 +243,8 @@ export default function ManagerInterface({
   const filteredPassengers = useMemo(() => {
     return passengers.filter(passenger => {
       const matchesName = `${passenger.first_name} ${passenger.last_name}`.toLowerCase().includes(passengerNameFilter.toLowerCase());
-      const matchesOrder = passenger.order_id.toLowerCase().includes(passengerOrderFilter.toLowerCase());
+      const orderIdString = passenger.order_id != null ? String(passenger.order_id) : '';
+      const matchesOrder = orderIdString.toLowerCase().includes(passengerOrderFilter.toLowerCase());
       const matchesStatus = passengerStatusFilter === "all" || passenger.status === passengerStatusFilter;
       return matchesName && matchesOrder && matchesStatus;
     });
@@ -173,9 +253,20 @@ export default function ManagerInterface({
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Management Dashboard</h1>
-          <p className="mt-2 text-gray-600">Manage your tours, orders, and passengers efficiently</p>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Management Dashboard</h1>
+            <p className="mt-2 text-gray-600">Manage your tours, orders, and passengers efficiently</p>
+          </div>
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m5 4v-7a3 3 0 00-3-3H5" />
+            </svg>
+            Logout
+          </button>
         </div>
 
         <div className="mb-6">
@@ -185,8 +276,8 @@ export default function ManagerInterface({
                 <button
                   key={tab}
                   className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${activeTab === tab
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                   onClick={() => setActiveTab(tab as "tours" | "orders" | "addTour" | "passengers")}
                 >
@@ -379,6 +470,7 @@ export default function ManagerInterface({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Visible to Provider</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">#</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tour</th>
@@ -391,17 +483,26 @@ export default function ManagerInterface({
                 <tbody className="bg-white divide-y divide-gray-200">
                   {orders.map((order, index) => (
                     <tr key={order.id} className="hover:bg-gray-50 transition-colors duration-150">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={order.status === "confirmed"}
+                          onChange={(e) => handleOrderChange(order.id, "status", e.target.checked ? "confirmed" : "pending")}
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          title="Check to make visible to providers"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {index + 1}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold mr-3 shadow-md">
-                            {order.first_name.charAt(0)}{order.last_name.charAt(0)}
+                            {order.first_name?.charAt(0) || '?'}{order.last_name?.charAt(0) || '?'}
                           </div>
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              {order.first_name} {order.last_name}
+                              {order.first_name || 'N/A'} {order.last_name || 'N/A'}
                             </div>
                           </div>
                         </div>
@@ -418,7 +519,7 @@ export default function ManagerInterface({
                       <td className="px-6 py-4">
                         <input
                           type="date"
-                          value={order.departureDate}
+                          value={order.departureDate || ""}
                           onChange={(e) => handleOrderChange(order.id, "departureDate", e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-150 bg-white"
                         />
@@ -435,32 +536,13 @@ export default function ManagerInterface({
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-150 bg-white text-sm"
                         >
                           <option value="pending">🟡 Pending</option>
-                          <option value="Confirmed">✅ Confirmed</option>
-                          <option value="Cancelled">❌ Cancelled</option>
-                          <option value="Information given">📋 Information given</option>
-                          <option value="Paid the advance payment">💰 Paid the advance payment</option>
-                          <option value="Need to give information">📞 Need to give information</option>
-                          <option value="Tell a seat is available">💺 Need to tell</option>
-                          <option value="Need to conclude a contract">📑 Need to conclude a contract</option>
-                          <option value="Postoned the travel">⏸️ Postponed the travel</option>
-                          <option value="Intrested in other travel">🔍 Interested in other travel</option>
-                          <option value="Cancelled after confirmed">🚫 Cancelled after confirmed</option>
-                          <option value="Cancelled after ordered a seat">🚫 Cancelled after ordered a seat</option>
-                          <option value="Cancelled after take a information">🚫 Cancelled after take a information</option>
-                          <option value="Need to meet">🤝 Need to meet</option>
-                          <option value="Sent a claim">📨 Sent a claim</option>
-                          <option value="Fam Tour">👨‍👩‍👧‍👦 Fam Tour</option>
-                          <option value="The travel is Going">✈️ The travel is going</option>
-                          <option value="Travel ended compeletely">🏁 Travel ended completely</option>
-                          <option value="Has taken seat from another company">🔄 Has taken seat from another company</option>
-                          <option value="Swapped seat with a another company">🔄 Swapped seat with another company</option>
-                          <option value="Gave seat to another company">↗️ Gave seat to another company</option>
-                          <option value="cancelled and bought from another company">🔄 Cancelled and bought from another company</option>
+                          <option value="confirmed">✅ Confirmed</option>
+                          <option value="cancelled">❌ Cancelled</option>
                         </select>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-lg font-bold text-green-600">
-                          ${order.total_price?.toLocaleString() || 0}
+                          ${order.commission?.toLocaleString() || 0}
                         </span>
                       </td>
                     </tr>
@@ -514,59 +596,182 @@ export default function ManagerInterface({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Order ID</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Details</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-48 shadow-sm">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-[108px] z-10 bg-gray-50 w-32 shadow-sm">Order ID</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DOB</th>
+                    <th className="px-10 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Age</th>
+                    <th className="px-12 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Gender</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Passport</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Passport Expiry</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Nationality</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room Allocation</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Hotel</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Additional Services</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Allergies</th>
+                    <th className="px-24 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
+                    <th className="px-18 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
+                    <th className="px-18 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Emergency Phone</th>
+                    <th className="px-48 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredPassengers.map((passenger) => (
                     <tr key={passenger.id} className="hover:bg-gray-50 transition-colors duration-150">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-48 shadow-sm">
                         <div className="text-sm font-medium text-gray-900">
                           {passenger.first_name} {passenger.last_name}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {passenger.order_id}
+                      <td className="px-4 py-2 whitespace-nowrap sticky left-[108px] z-10 bg-white w-32 shadow-sm">
+                        <input
+                          type="text"
+                          value={passenger.order_id ?? ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "order_id", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Order ID..."
+                        />
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-600">
-                          <p><span className="font-medium">DOB:</span> {formatDate(passenger.date_of_birth)}</p>
-                          <p><span className="font-medium">Age:</span> {passenger.age}</p>
-                          <p><span className="font-medium">Gender:</span> {passenger.gender}</p>
-                          <p><span className="font-medium">Passport:</span> {passenger.passport_number}</p>
-                          <p><span className="font-medium">Expiry:</span> {formatDate(passenger.passport_expiry)}</p>
-                          <p><span className="font-medium">Nationality:</span> {passenger.nationality}</p>
-                          <p><span className="font-medium">Room:</span> {passenger.roomType} ({passenger.room_allocation})</p>
-                          <p><span className="font-medium">Hotel:</span> {passenger.hotel}</p>
-                          {passenger.additional_services.length > 0 && (
-                            <p><span className="font-medium">Services:</span> {passenger.additional_services.join(", ")}</p>
-                          )}
-                          <p><span className="font-medium">Allergies:</span> {passenger.allergy || "None"}</p>
-                        </div>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="date"
+                          value={passenger.date_of_birth || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "date_of_birth", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
-                          <p><span className="font-medium">Email:</span> {passenger.email}</p>
-                          <p><span className="font-medium">Phone:</span> {passenger.phone}</p>
-                          <p><span className="font-medium">Emergency:</span> {passenger.emergency_phone}</p>
-                        </div>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="number"
+                          value={passenger.age || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "age", parseInt(e.target.value) || 0)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Age..."
+                          min="0"
+                        />
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <select
+                          value={passenger.gender || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "gender", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">Select</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.passport_number || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "passport_number", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Passport..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="date"
+                          value={passenger.passport_expiry || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "passport_expiry", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.nationality || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "nationality", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Nationality..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.roomType || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "roomType", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Room Type..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.room_allocation || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "room_allocation", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Room Alloc..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.hotel || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "hotel", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Hotel..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.additional_services?.join(", ") || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "additional_services", e.target.value.split(",").map(s => s.trim()))}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Services..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={passenger.allergy || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "allergy", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Allergies..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="email"
+                          value={passenger.email || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "email", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Email..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="tel"
+                          value={passenger.phone || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "phone", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Phone..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <input
+                          type="tel"
+                          value={passenger.emergency_phone || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "emergency_phone", e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="Emergency..."
+                        />
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
                         <select
                           value={passenger.status || "active"}
                           onChange={(e) => handlePassengerChange(passenger.id, "status", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                         >
                           <option value="active">✅ Active</option>
                           <option value="cancelled">❌ Cancelled</option>
                         </select>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-2 whitespace-nowrap">
                         {showDeleteConfirm === passenger.id ? (
                           <div className="flex space-x-2">
                             <button
@@ -621,16 +826,6 @@ export default function ManagerInterface({
                     value={newTour.title}
                     onChange={(e) => setNewTour({ ...newTour, title: e.target.value })}
                     placeholder="Enter tour title..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={newTour.name}
-                    onChange={(e) => setNewTour({ ...newTour, name: e.target.value })}
-                    placeholder="Enter tour name..."
                   />
                 </div>
                 <div>
@@ -702,7 +897,7 @@ export default function ManagerInterface({
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                   All Tours ({tours.length})
@@ -712,7 +907,7 @@ export default function ManagerInterface({
                 {tours.length === 0 ? (
                   <div className="text-center py-12">
                     <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     <p className="text-gray-500">No tours available yet.</p>
@@ -759,9 +954,9 @@ export default function ManagerInterface({
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${tour.status === 'active' ? 'bg-green-100 text-green-800' :
-                                tour.status === 'inactive' ? 'bg-gray-100 text-gray-800' :
-                                  tour.status === 'full' ? 'bg-red-100 text-red-800' :
-                                    'bg-blue-100 text-blue-800'
+                              tour.status === 'inactive' ? 'bg-gray-100 text-gray-800' :
+                                tour.status === 'full' ? 'bg-red-100 text-red-800' :
+                                  'bg-blue-100 text-blue-800'
                               }`}>
                               {tour.status === 'active' ? '✅ Active' :
                                 tour.status === 'inactive' ? '⏸️ Inactive' :

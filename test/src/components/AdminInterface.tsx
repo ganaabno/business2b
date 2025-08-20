@@ -130,32 +130,29 @@ function AdminInterface({
           <nav className="flex space-x-8" aria-label="Tabs">
             <button
               onClick={() => setSelectedTab("orders")}
-              className={`pb-4 px-1 text-sm font-medium ${
-                selectedTab === "orders"
+              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "orders"
                   ? "border-b-2 border-blue-600 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
-              }`}
+                }`}
             >
               Orders
             </button>
             <button
               onClick={() => setSelectedTab("tours")}
-              className={`pb-4 px-1 text-sm font-medium ${
-                selectedTab === "tours"
+              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "tours"
                   ? "border-b-2 border-blue-600 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
-              }`}
+                }`}
             >
               Tours
             </button>
             {currentUser.role === "superadmin" && (
               <button
                 onClick={() => setSelectedTab("users")}
-                className={`pb-4 px-1 text-sm font-medium ${
-                  selectedTab === "users"
+                className={`pb-4 px-1 text-sm font-medium ${selectedTab === "users"
                     ? "border-b-2 border-blue-600 text-blue-600"
                     : "text-gray-500 hover:text-gray-700"
-                }`}
+                  }`}
               >
                 Users
               </button>
@@ -165,11 +162,20 @@ function AdminInterface({
 
         {selectedTab === "orders" && (
           <div className="bg-white rounded-xl shadow-sm border">
-            <div className="p-6 border-b border-gray-200">
+            <div className="p-6 border-b border-gray-200 flex justify-between">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                 <FileText className="w-5 h-5 mr-2" />
                 All Bookings
               </h3>
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m5 4v-7a3 3 0 00-3-3H5" />
+                </svg>
+                Logout
+              </button>
             </div>
             <div className="overflow-x-auto">
               {orders.length === 0 ? (
@@ -389,10 +395,10 @@ function AdminInterface({
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {tour.dates && tour.dates.length > 0
                               ? new Date(tour.dates[0]).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                })
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })
                               : "No date set"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

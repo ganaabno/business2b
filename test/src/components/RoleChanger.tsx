@@ -1,4 +1,3 @@
-// AdminInterface.tsx (only the role-changing part)
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { User } from "../types/type";
@@ -16,12 +15,13 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
 
   const handleChangeRole = async (userId: string, newRole: string) => {
     setLoading(true);
+    console.log("Attempting to update role for user:", userId, "to", newRole);
     try {
-      // Update role in Supabase profiles table
-      const { error } = await supabase
-        .from("profiles")
+      const { data, error } = await supabase
+        .from("users")
         .update({ role: newRole })
         .eq("id", userId);
+      console.log("Supabase response:", { data, error });
 
       if (error) {
         alert("Failed to update role: " + error.message);
@@ -29,13 +29,13 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
         return;
       }
 
-      // Update local state for instant UI update
       setUsers((prev) =>
         prev.map((u) =>
           u.id === userId ? { ...u, role: newRole as "user" | "provider" | "admin" | "superadmin" | "manager" } : u
         )
-      );} catch (err) {
-      console.error(err);
+      );
+    } catch (err) {
+      console.error("Unexpected error:", err);
       alert("Unexpected error updating role.");
     }
     setLoading(false);
@@ -60,7 +60,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
               <td>
                 <select
                   value={user.role}
-                  disabled={loading || user.id === currentUser.id} // optional: prevent changing your own role
+                  disabled={loading || user.id === currentUser.id}
                   onChange={(e) => handleChangeRole(user.id, e.target.value)}
                   className="form-select"
                 >
