@@ -5,13 +5,15 @@ import type { Tour, ValidationError } from "../types/type";
 interface TourSelectionProps {
   tours: Tour[];
   selectedTour: string;
-  setSelectedTour: (value: string) => void;
+  setSelectedTour: React.Dispatch<React.SetStateAction<string>>;
   departureDate: string;
-  setDepartureDate: (value: string) => void;
+  setDepartureDate: React.Dispatch<React.SetStateAction<string>>;
   errors: ValidationError[];
   setActiveStep: (value: number) => void;
   userRole: string;
+  showAvailableSeats?: boolean; // <-- add this
 }
+
 
 function formatDisplayDate(s: string | undefined): string {
   if (!s) return "";
