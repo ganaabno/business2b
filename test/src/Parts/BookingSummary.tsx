@@ -1,5 +1,5 @@
-import { MapPin, Calendar, Users, DollarSign, CreditCard, Eye, AlertTriangle, Download, Save, User } from "lucide-react";
-import type { Passenger, ValidationError } from "../types/type";
+import { MapPin, Calendar, Users, DollarSign, CreditCard, Eye, AlertTriangle, Download, Save, User, EyeIcon } from "lucide-react";
+import type { Passenger, ValidationError, User as UserType } from "../types/type";
 
 interface BookingSummaryProps {
   selectedTour: string;
@@ -12,13 +12,38 @@ interface BookingSummaryProps {
   saveOrder: () => void;
   setActiveStep: (value: number) => void;
   loading: boolean;
+  showInProvider: boolean;
+  setShowInProvider: React.Dispatch<React.SetStateAction<boolean>>;
+  currentUser: UserType;
 }
 
-export default function BookingSummary({ selectedTour, departureDate, passengers, paymentMethod, setPaymentMethod, errors, downloadCSV, saveOrder, setActiveStep, loading }: BookingSummaryProps) {
+export default function BookingSummary({
+  selectedTour,
+  departureDate,
+  passengers,
+  paymentMethod,
+  setPaymentMethod,
+  errors,
+  downloadCSV,
+  saveOrder,
+  setActiveStep,
+  showInProvider,
+  setShowInProvider,
+  loading,
+  currentUser,
+}: BookingSummaryProps) {
   const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
   const paymentMethods = [
-    "Cash", "Bank Transfer", "StorePay", "Pocket", "DariFinance",
-    "Hutul Nomuun", "MonPay", "Barter", "Loan", "Credit Card"
+    "Cash",
+    "Bank Transfer",
+    "StorePay",
+    "Pocket",
+    "DariFinance",
+    "Hutul Nomuun",
+    "MonPay",
+    "Barter",
+    "Loan",
+    "Credit Card",
   ];
 
   return (
@@ -42,7 +67,12 @@ export default function BookingSummary({ selectedTour, departureDate, passengers
               <div>
                 <h4 className="font-medium text-gray-900">Departure Date</h4>
                 <p className="text-sm text-gray-600">
-                  {new Date(departureDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  {new Date(departureDate).toLocaleDateString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
                 </p>
               </div>
             </div>
@@ -66,13 +96,16 @@ export default function BookingSummary({ selectedTour, departureDate, passengers
           </div>
         </div>
       </div>
+
       <div className="border-t pt-6">
         <h4 className="font-medium text-gray-900 mb-4">Payment Method</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {paymentMethods.map((method) => (
             <label
               key={method}
-              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 hover:border-gray-400'}`}
+              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
+                paymentMethod === method ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 hover:border-gray-400"
+              }`}
             >
               <input
                 type="radio"
@@ -87,10 +120,31 @@ export default function BookingSummary({ selectedTour, departureDate, passengers
             </label>
           ))}
         </div>
-        {errors.some(e => e.field === 'payment') && (
+        {errors.some((e) => e.field === "payment") && (
           <p className="mt-2 text-sm text-red-600">Payment method is required</p>
         )}
       </div>
+
+      {currentUser.role !== "user" && (
+        <div className="border-t pt-6">
+          <h4 className="font-medium text-gray-900 mb-4">Booking Options</h4>
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showInProvider}
+              onChange={(e) => setShowInProvider(e.target.checked)}
+              className="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+              aria-label="Show booking in provider dashboard"
+            />
+            <EyeIcon className="w-5 h-5 text-gray-600" />
+            <span className="text-sm text-gray-700">Show in provider dashboard</span>
+          </label>
+          {errors.some((e) => e.field === "show_in_provider") && (
+            <p className="mt-2 text-sm text-red-600">Provider visibility is required</p>
+          )}
+        </div>
+      )}
+
       <div className="border-t pt-6">
         <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
         <div className="space-y-3">
@@ -102,10 +156,14 @@ export default function BookingSummary({ selectedTour, departureDate, passengers
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">{passenger.name}</p>
-                  <p className="text-sm text-gray-600">{passenger.nationality} • {passenger.gender} • Age: {passenger.age}</p>
-                  <p className="text-sm text-gray-600">Room: {passenger.roomType} • Hotel: {passenger.hotel}</p>
+                  <p className="text-sm text-gray-600">
+                    {passenger.nationality} • {passenger.gender} • Age: {passenger.age}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Room: {passenger.roomType} • Hotel: {passenger.hotel}
+                  </p>
                   {passenger.additional_services.length > 0 && (
-                    <p className="text-xs text-gray-500">Services: {passenger.additional_services.join(', ')}</p>
+                    <p className="text-xs text-gray-500">Services: {passenger.additional_services.join(", ")}</p>
                   )}
                 </div>
               </div>
@@ -117,6 +175,7 @@ export default function BookingSummary({ selectedTour, departureDate, passengers
           ))}
         </div>
       </div>
+
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <button

@@ -1,40 +1,26 @@
-import { Users, Download, Upload, Plus, Trash2, DollarSign } from "lucide-react";
-import type { Passenger, Tour, ValidationError } from "../types/type";
+import { useState, useRef } from "react";
+import type { Tour, Passenger, ValidationError } from "../types/type";
 
 interface PassengerFormProps {
   passengers: Passenger[];
   setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
-  selectedTourData: Tour | undefined;
+  selectedTourData?: Tour;
   errors: ValidationError[];
-  updatePassenger: (index: number, field: keyof Passenger, value: any) => void;
+  updatePassenger: (index: number, field: keyof Passenger, value: any) => Promise<void>;
   removePassenger: (index: number) => void;
   downloadTemplate: () => void;
   handleUploadCSV: (e: React.ChangeEvent<HTMLInputElement>) => void;
   addPassenger: () => void;
-  setActiveStep: (value: number) => void;
+  setActiveStep: React.Dispatch<React.SetStateAction<number>>;
   isGroup: boolean;
-  setIsGroup: (value: boolean) => void;
+  setIsGroup: React.Dispatch<React.SetStateAction<boolean>>;
   groupName: string;
-  setGroupName: (value: string) => void;
-  showNotification: (type: 'success' | 'error', message: string) => void;
+  setGroupName: React.Dispatch<React.SetStateAction<string>>;
+  showNotification: (type: "success" | "error", message: string) => void;
+  expandedPassengerId: string | null;
+  setExpandedPassengerId: React.Dispatch<React.SetStateAction<string | null>>;
+  newPassengerRef: React.MutableRefObject<HTMLDivElement | null>;
 }
-
-// Helper function to calculate months remaining and return Tailwind classes
-const getPassportExpiryClasses = (passportExpiry: string): string => {
-  if (!passportExpiry) return 'border-gray-300'; // Default if no expiry date
-
-  const expiryDate = new Date(passportExpiry);
-  const today = new Date();
-  const monthsRemaining = Math.round(
-    (expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30.42)
-  );
-
-  if (monthsRemaining <= 0) return 'border-red-500 bg-red-400'; // Expired
-  if (monthsRemaining <= 1) return 'border-red-400 bg-red-400'; // 1 month or less
-  if (monthsRemaining <= 3) return 'border-orange-400 bg-orange-400'; // 1-3 months
-  if (monthsRemaining <= 7) return 'border-yellow-400 bg-yellow-300'; // 3-7 months
-  return 'border-green-400 bg-lime-400'; // 7+ months
-};
 
 export default function PassengerForm({
   passengers,
@@ -52,365 +38,281 @@ export default function PassengerForm({
   groupName,
   setGroupName,
   showNotification,
+  expandedPassengerId,
+  setExpandedPassengerId,
+  newPassengerRef,
 }: PassengerFormProps) {
-  const countries = [
-    "Mongolia", "Russia", "China", "Afghanistan", "Albania", "Algeria", "Argentina", "Armenia",
-    "Australia", "Austria", "Azerbaijan", "Bangladesh", "Belarus", "Belgium", "Brazil", "Bulgaria",
-    "Cambodia", "Canada", "Chile", "Colombia", "Czech Republic", "Denmark", "Egypt", "Estonia",
-    "Finland", "France", "Georgia", "Germany", "Greece", "Hungary", "Iceland", "India", "Indonesia",
-    "Iran", "Iraq", "Ireland", "Israel", "Italy", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kuwait",
-    "Kyrgyzstan", "Latvia", "Lebanon", "Lithuania", "Luxembourg", "Malaysia", "Mexico", "Netherlands",
-    "New Zealand", "Norway", "Pakistan", "Philippines", "Poland", "Portugal", "Qatar", "Romania",
-    "Saudi Arabia", "Singapore", "Slovakia", "Slovenia", "South Africa", "South Korea", "Spain",
-    "Sweden", "Switzerland", "Tajikistan", "Thailand", "Turkey", "Turkmenistan", "Ukraine",
-    "United Arab Emirates", "United Kingdom", "United States", "Uzbekistan", "Vietnam", "Zimbabwe"
-  ];
-
-  // Check if adding a passenger is allowed (without exposing seat count)
-  const canAddPassenger = () => {
-    if (!selectedTourData?.available_seats) return true; // No seat limit defined
-    return passengers.length < selectedTourData.available_seats;
-  };
-
-  const handleAddPassenger = () => {
-    if (canAddPassenger()) {
-      addPassenger();
-    } else {
-      showNotification('error', 'Cannot add more passengers. The tour is fully booked.');
-    }
+  const togglePassenger = (id: string) => {
+    setExpandedPassengerId(expandedPassengerId === id ? null : id);
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-          <Users className="w-5 h-5 mr-2" />
-          Passenger Information
-        </h3>
-        <div className="flex gap-3">
-          <button
-            onClick={downloadTemplate}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+    <div className="space-y-4">
+      {passengers.map((passenger, index) => (
+        <div
+          key={passenger.id}
+          className="bg-white rounded-lg shadow-sm border border-gray-200"
+          ref={index === passengers.length - 1 ? newPassengerRef : null}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
+            onClick={() => togglePassenger(passenger.id)}
           >
-            <Download className="w-4 h-4 mr-2" />
-            Template
-          </button>
-          <label className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer transition-colors">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload CSV
-            <input type="file" className="hidden" accept=".csv" onChange={handleUploadCSV} />
-          </label>
-          <button
-            onClick={handleAddPassenger}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            disabled={!canAddPassenger()}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            {isGroup ? 'Add Member' : 'Add Passenger'}
-          </button>
-        </div>
-      </div>
-
-      {passengers.length === 0 ? (
-        <div className="text-center py-12">
-          <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500 mb-4">How would you like to add passengers?</p>
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => {
-                setIsGroup(false);
-                if (canAddPassenger()) {
-                  addPassenger();
-                } else {
-                  showNotification('error', 'Cannot add passengers. The tour is fully booked.');
-                }
-              }}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              disabled={!canAddPassenger()}
+            <h4 className="text-sm font-medium text-gray-900">
+              Passenger {passenger.serial_no}{" "}
+              {passenger.first_name || passenger.last_name
+                ? `- ${passenger.first_name} ${passenger.last_name}`
+                : ""}
+            </h4>
+            <svg
+              className={`w-5 h-5 text-gray-600 transition-transform ${
+                expandedPassengerId === passenger.id ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              1 Person
-            </button>
-            <button
-              onClick={() => setIsGroup(true)}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
-              Group or Company
-            </button>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
-          {isGroup && (
-            <div className="mt-4 max-w-md mx-auto">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Group or Company Name
-              </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter group name"
-                value={groupName}
-                onChange={(e) => setGroupName(e.target.value)}
-              />
-              <button
-                onClick={() => {
-                  if (groupName.trim()) {
-                    if (canAddPassenger()) {
-                      addPassenger();
-                    } else {
-                      showNotification('error', 'Cannot add passengers. The tour is fully booked.');
-                    }
-                  } else {
-                    showNotification('error', 'Group name is required');
-                  }
-                }}
-                className="mt-2 w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                disabled={!canAddPassenger()}
-              >
-                Start Adding Members
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {passengers.map((passenger, index) => (
-            <div key={passenger.id} className="p-6 border border-gray-200 rounded-lg">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="font-medium text-gray-900">Passenger {index + 1}</h4>
-                <button
-                  onClick={() => removePassenger(index)}
-                  className="text-red-600 hover:text-red-800 p-1"
-                  disabled={passengers.length === 1}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {expandedPassengerId === passenger.id && (
+            <div className="p-4 border-t border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
                   <input
                     type="text"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_first_name`) ? 'border-red-300' : 'border-gray-300'}`}
-                    placeholder="John"
                     value={passenger.first_name}
                     onChange={(e) => updatePassenger(index, "first_name", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="First Name"
                   />
+                  {errors.find((e) => e.field === `passenger_${index}_first_name`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_first_name`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Last Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
                   <input
                     type="text"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_last_name`) ? 'border-red-300' : 'border-gray-300'}`}
-                    placeholder="Doe"
                     value={passenger.last_name}
                     onChange={(e) => updatePassenger(index, "last_name", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Last Name"
                   />
+                  {errors.find((e) => e.field === `passenger_${index}_last_name`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_last_name`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Email *</label>
-                  <input
-                    type="email"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_email`) ? 'border-red-300' : 'border-gray-300'}`}
-                    placeholder="john@example.com"
-                    value={passenger.email}
-                    onChange={(e) => updatePassenger(index, "email", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Phone *</label>
-                  <input
-                    type="tel"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_phone`) ? 'border-red-300' : 'border-gray-300'}`}
-                    placeholder="+976 99999999"
-                    value={passenger.phone}
-                    onChange={(e) => updatePassenger(index, "phone", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
                   <input
                     type="date"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={passenger.date_of_birth}
                     onChange={(e) => updatePassenger(index, "date_of_birth", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
+                  {errors.find((e) => e.field === `passenger_${index}_date_of_birth`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_date_of_birth`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Age</label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50"
-                    value={passenger.age || ""}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Gender *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
                   <select
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_gender`) ? 'border-red-300' : 'border-gray-300'}`}
                     value={passenger.gender}
                     onChange={(e) => updatePassenger(index, "gender", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
                     <option value="Other">Other</option>
                   </select>
+                  {errors.find((e) => e.field === `passenger_${index}_gender`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_gender`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Nationality *</label>
-                  <select
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_nationality`) ? 'border-red-300' : 'border-gray-300'}`}
-                    value={passenger.nationality}
-                    onChange={(e) => updatePassenger(index, "nationality", e.target.value)}
-                  >
-                    <option value="">Select Country</option>
-                    {countries.map((country) => (
-                      <option key={country} value={country}>{country}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Passport Number *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Passport Number *</label>
                   <input
                     type="text"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_passport_number`) ? 'border-red-300' : 'border-gray-300'}`}
-                    placeholder="A12345678"
                     value={passenger.passport_number}
                     onChange={(e) => updatePassenger(index, "passport_number", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Passport Number"
                   />
+                  {errors.find((e) => e.field === `passenger_${index}_passport_number`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_passport_number`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Passport Expiry *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Passport Expiry *</label>
                   <input
                     type="date"
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_passport_expiry`) ? 'border-red-300' : getPassportExpiryClasses(passenger.passport_expiry)}`}
                     value={passenger.passport_expiry}
                     onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
+                  {errors.find((e) => e.field === `passenger_${index}_passport_expiry`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_passport_expiry`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Room Type *</label>
-                  <select
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_roomType`) ? 'border-red-300' : 'border-gray-300'}`}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nationality *</label>
+                  <input
+                    type="text"
+                    value={passenger.nationality}
+                    onChange={(e) => updatePassenger(index, "nationality", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Nationality"
+                  />
+                  {errors.find((e) => e.field === `passenger_${index}_nationality`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_nationality`)?.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Room Type *</label>
+                  <input
+                    type="text"
                     value={passenger.roomType}
                     onChange={(e) => updatePassenger(index, "roomType", e.target.value)}
-                  >
-                    <option value="">Select</option>
-                    <option value="Single">Single</option>
-                    <option value="Double">Double</option>
-                    <option value="Twin">Twin</option>
-                    <option value="Suite">Suite</option>
-                    <option value="Family">Family</option>
-                  </select>
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Room Type"
+                  />
+                  {errors.find((e) => e.field === `passenger_${index}_roomType`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_roomType`)?.message}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Hotel *</label>
-                  <select
-                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.some(e => e.field === `passenger_${index}_hotel`) ? 'border-red-300' : 'border-gray-300'}`}
-                    value={passenger.hotel}
-                    onChange={(e) => updatePassenger(index, "hotel", e.target.value)}
-                  >
-                    <option value="">Select Hotel</option>
-                    {selectedTourData?.hotels.map((hotel) => (
-                      <option key={hotel} value={hotel}>{hotel}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Room Allocation</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Room Allocation</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Room #"
                     value={passenger.room_allocation}
                     onChange={(e) => updatePassenger(index, "room_allocation", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Room Allocation"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Serial No</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hotel *</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Serial #"
-                    value={passenger.serial_no}
-                    onChange={(e) => updatePassenger(index, "serial_no", e.target.value)}
+                    value={passenger.hotel}
+                    onChange={(e) => updatePassenger(index, "hotel", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Hotel"
+                  />
+                  {errors.find((e) => e.field === `passenger_${index}_hotel`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_hotel`)?.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Services</label>
+                  <input
+                    type="text"
+                    value={passenger.additional_services?.join(", ") || ""}
+                    onChange={(e) =>
+                      updatePassenger(
+                        index,
+                        "additional_services",
+                        e.target.value.split(",").map((s) => s.trim())
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Services (comma-separated)"
                   />
                 </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Additional Services</label>
-                  <select
-                    multiple
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
-                    value={passenger.additional_services}
-                    onChange={(e) => updatePassenger(index, "additional_services", Array.from(e.target.selectedOptions, (option) => option.value))}
-                  >
-                    {selectedTourData?.services.map((service) => (
-                      <option key={service.name} value={service.name}>{service.name} (${service.price})</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
-                </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Passport Upload</label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      accept="image/*,.pdf"
-                      onChange={(e) => updatePassenger(index, "passport_upload", e.target.files ? e.target.files[0] : undefined)}
-                    />
-                    <div className="flex items-center justify-center px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer">
-                      <Upload className="w-4 h-4 mr-2 text-gray-400" />
-                      <span className="text-gray-600">{passenger.passport_upload ? "Uploaded" : "Upload"}</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Allergy</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Any allergies?"
-                    value={passenger.allergy || ""}
+                    value={passenger.allergy}
                     onChange={(e) => updatePassenger(index, "allergy", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Allergies"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Emergency Phone</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <input
+                    type="email"
+                    value={passenger.email}
+                    onChange={(e) => updatePassenger(index, "email", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Email"
+                  />
+                  {errors.find((e) => e.field === `passenger_${index}_email`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_email`)?.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
                   <input
                     type="tel"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Emergency contact"
-                    value={passenger.emergency_phone || ""}
+                    value={passenger.phone}
+                    onChange={(e) => updatePassenger(index, "phone", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Phone"
+                  />
+                  {errors.find((e) => e.field === `passenger_${index}_phone`) && (
+                    <p className="text-sm text-red-600 mt-1">
+                      {errors.find((e) => e.field === `passenger_${index}_phone`)?.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Phone</label>
+                  <input
+                    type="tel"
+                    value={passenger.emergency_phone}
                     onChange={(e) => updatePassenger(index, "emergency_phone", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Emergency Phone"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Service Price</label>
-                  <div className="flex items-center px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50">
-                    <DollarSign className="w-4 h-4 mr-1 text-gray-400" />
-                    <span className="font-medium">{passenger.price}</span>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Passport Upload</label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => updatePassenger(index, "passport_upload", e.target.files?.[0])}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
               </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => removePassenger(index)}
+                  disabled={passengers.length === 1}
+                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Remove Passenger
+                </button>
+              </div>
             </div>
-          ))}
+          )}
         </div>
-      )}
-      <div className="flex justify-between mt-6">
-        <button
-          onClick={() => setActiveStep(1)}
-          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Back to Tour Selection
-        </button>
-        <button
-          onClick={() => setActiveStep(3)}
-          disabled={passengers.length === 0}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-        >
-          Review Booking
-        </button>
-      </div>
+      ))}
     </div>
   );
 }

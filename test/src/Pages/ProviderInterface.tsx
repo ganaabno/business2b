@@ -17,10 +17,11 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Fetch confirmed orders
     const fetchOrders = async () => {
+      setLoading(true);
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -46,56 +47,68 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
             price
           )
         `)
-        .eq('status', 'confirmed');
+        .in('status', ['confirmed', 'pending'])
+        .eq('show_in_provider', true);
+
       if (error) {
         console.error('Error fetching orders:', error);
         toast.error(`Failed to fetch orders: ${error.message}`);
-      } else {
-        const ordersWithTotals = data.map((order: any) => ({
-          id: String(order.id),
-          user_id: order.user_id,
-          tour_id: order.tour_id,
-          phone: order.phone ?? null,
-          last_name: order.last_name ?? null,
-          first_name: order.first_name ?? null,
-          age: order.age ?? null,
-          gender: order.gender ?? null,
-          tour: order.tour ?? null,
-          passport_number: order.passport_number ?? null,
-          passport_expire: order.passport_expire ?? null,
-          passport_copy: order.passport_copy ?? null,
-          commission: order.commission ?? null,
-          created_by: order.created_by ?? null,
-          edited_by: order.edited_by ?? null,
-          edited_at: order.edited_at ?? null,
-          travel_choice: order.travel_choice,
-          status: order.status as OrderStatus,
-          hotel: order.hotel ?? null,
-          room_number: order.room_number ?? null,
-          payment_method: order.payment_method ?? null,
-          created_at: order.created_at,
-          updated_at: order.updated_at,
-          passengers: order.passengers ?? [],
-          departureDate: order.departureDate ?? null,
-          createdBy: order.createdBy ?? null,
-          total_amount: order.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
-          total_price: order.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
-          paid_amount: 0, // Placeholder
-          balance: order.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
-        } as Order));
-        setOrders(ordersWithTotals);
-        console.log('Fetched orders:', ordersWithTotals);
+        setLoading(false);
+        return;
       }
+
+      const ordersWithTotals: Order[] = data.map((order) => ({
+        id: String(order.id),
+        user_id: String(order.user_id),
+        tour_id: String(order.tour_id),
+        phone: order.phone ?? null,
+        last_name: order.last_name ?? null,
+        first_name: order.first_name ?? null,
+        email: order.email ?? null,
+        age: order.age ?? null,
+        gender: order.gender ?? null,
+        tour: order.tour ?? null,
+        passport_number: order.passport_number ?? null,
+        passport_expire: order.passport_expire ?? null,
+        passport_copy: order.passport_copy ?? null,
+        commission: order.commission ?? null,
+        created_by: order.created_by ? String(order.created_by) : null,
+        edited_by: order.edited_by ? String(order.edited_by) : null,
+        edited_at: order.edited_at ?? null,
+        travel_choice: order.travel_choice,
+        status: order.status as OrderStatus,
+        hotel: order.hotel ?? null,
+        room_number: order.room_number ?? null,
+        payment_method: order.payment_method ?? null,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        passengers: order.passengers ?? [],
+        departureDate: order.departureDate ?? '',
+        createdBy: order.createdBy ?? null,
+        total_amount: order.total_amount,
+        total_price: order.total_price,
+        paid_amount: order.paid_amount,
+        balance: order.balance,
+        show_in_provider: order.show_in_provider ?? false,
+      }));
+
+      setOrders(ordersWithTotals);
+      console.log('Fetched orders:', ordersWithTotals);
+      setLoading(false);
     };
 
     fetchOrders();
 
-    // Real-time subscription
     const subscription = supabase
-      .channel('confirmed_orders')
+      .channel('provider_orders')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders', filter: 'status=eq.confirmed' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: 'status=in.(confirmed,pending),show_in_provider=eq.true',
+        },
         (payload) => {
           if (payload.eventType === 'UPDATE') {
             setOrders((prev) =>
@@ -105,26 +118,32 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                       ...order,
                       ...payload.new,
                       id: String(payload.new.id),
+                      user_id: String(payload.new.user_id),
+                      tour_id: String(payload.new.tour_id),
+                      created_by: payload.new.created_by ? String(payload.new.created_by) : null,
+                      edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
                       passengers: payload.new.passengers ?? order.passengers,
-                      total_amount: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || order.total_amount || 0,
-                      total_price: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || order.total_price || 0,
-                      paid_amount: 0,
-                      balance: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || order.balance || 0,
+                      total_amount: payload.new.total_amount,
+                      total_price: payload.new.total_price,
+                      paid_amount: payload.new.paid_amount,
+                      balance: payload.new.balance,
+                      show_in_provider: payload.new.show_in_provider ?? false,
                     } as Order
                   : order
               )
             );
           } else if (payload.eventType === 'INSERT') {
-            if (payload.new.status === 'confirmed') {
+            if (['confirmed', 'pending'].includes(payload.new.status) && payload.new.show_in_provider === true) {
               setOrders((prev) => [
                 ...prev,
                 {
                   id: String(payload.new.id),
-                  user_id: payload.new.user_id,
-                  tour_id: payload.new.tour_id,
+                  user_id: String(payload.new.user_id),
+                  tour_id: String(payload.new.tour_id),
                   phone: payload.new.phone ?? null,
                   last_name: payload.new.last_name ?? null,
                   first_name: payload.new.first_name ?? null,
+                  email: payload.new.email ?? null,
                   age: payload.new.age ?? null,
                   gender: payload.new.gender ?? null,
                   tour: payload.new.tour ?? null,
@@ -132,8 +151,8 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                   passport_expire: payload.new.passport_expire ?? null,
                   passport_copy: payload.new.passport_copy ?? null,
                   commission: payload.new.commission ?? null,
-                  created_by: payload.new.created_by ?? null,
-                  edited_by: payload.new.edited_by ?? null,
+                  created_by: payload.new.created_by ? String(payload.new.created_by) : null,
+                  edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
                   edited_at: payload.new.edited_at ?? null,
                   travel_choice: payload.new.travel_choice,
                   status: payload.new.status as OrderStatus,
@@ -143,12 +162,13 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                   created_at: payload.new.created_at,
                   updated_at: payload.new.updated_at,
                   passengers: payload.new.passengers ?? [],
-                  departureDate: payload.new.departureDate ?? null,
+                  departureDate: payload.new.departureDate ?? '',
                   createdBy: payload.new.createdBy ?? null,
-                  total_amount: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
-                  total_price: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
-                  paid_amount: 0,
-                  balance: payload.new.passengers?.reduce((sum: number, p: Passenger) => sum + (p.price || 0), 0) || 0,
+                  total_amount: payload.new.total_amount,
+                  total_price: payload.new.total_price,
+                  paid_amount: payload.new.paid_amount,
+                  balance: payload.new.balance,
+                  show_in_provider: payload.new.show_in_provider ?? false,
                 } as Order,
               ]);
             }
@@ -196,15 +216,12 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
     }
   };
 
-  // Filter orders to only include those with status 'confirmed'
-  const confirmedOrders = orders.filter((order) => order.status === 'confirmed');
+  const confirmedOrders = orders.filter((order) => ['confirmed', 'pending'].includes(order.status) && order.show_in_provider);
 
-  // Get unique departure dates from confirmed orders
   const uniqueDates = Array.from(
-    new Set(confirmedOrders.map((order) => order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set'))
+    new Set(confirmedOrders.map((order) => (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set')))
   ).sort();
 
-  // Filter confirmed orders based on date and search term
   const filteredOrders = confirmedOrders.filter((order) => {
     const lowerTerm = searchTerm.toLowerCase();
     return (
@@ -218,7 +235,6 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
     );
   });
 
-  // Status options
   const statusOptions: OrderStatus[] = [
     'pending',
     'confirmed',
@@ -261,7 +277,6 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
   return (
     <div className="min-h-screen bg-gray-50">
       <ToastContainer />
-      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
@@ -280,12 +295,11 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Confirmed Orders</p>
+                <p className="text-sm font-medium text-gray-600">Total Orders</p>
                 <p className="text-2xl font-bold text-gray-900">{confirmedOrders.length}</p>
               </div>
               <div className="p-3 bg-blue-100 rounded-lg">
@@ -319,12 +333,11 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
           </div>
         </div>
 
-        {/* Orders Management */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold text-gray-900 flex items-center">
               <FileText className="w-5 h-5 mr-2" />
-              {selectedOrder ? 'Order Details' : 'All Confirmed Orders'}
+              {selectedOrder ? 'Order Details' : 'All Orders'}
             </h3>
             {!selectedOrder && (
               <div className="flex gap-4">
@@ -354,7 +367,12 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
             )}
           </div>
 
-          {selectedOrder ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="text-gray-500 mt-2">Loading orders...</p>
+            </div>
+          ) : selectedOrder ? (
             <div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div className="space-y-4">
@@ -486,8 +504,8 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                   <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">
                     {searchTerm || selectedDate
-                      ? 'No confirmed orders match your search or date filter.'
-                      : 'No confirmed orders available yet.'}
+                      ? 'No orders match your search or date filter.'
+                      : 'No orders available yet.'}
                   </p>
                 </div>
               ) : (
@@ -525,6 +543,9 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         Payment Method
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Provider Visibility
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -554,21 +575,11 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              order.status === 'confirmed' ||
-                              order.status === 'Concluded a contract' ||
-                              order.status === 'Travel ended completely'
-                                ? 'bg-green-100 text-green-800'
-                                : order.status.includes('Cancelled') || order.status === 'Cancelled'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
+                              order.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                             }`}
                           >
-                            {order.status === 'confirmed' ||
-                            order.status === 'Concluded a contract' ||
-                            order.status === 'Travel ended completely' ? (
+                            {order.status === 'confirmed' ? (
                               <CheckCircle className="w-3 h-3 mr-1" />
-                            ) : order.status.includes('Cancelled') || order.status === 'Cancelled' ? (
-                              <XCircle className="w-3 h-3 mr-1" />
                             ) : (
                               <FileText className="w-3 h-3 mr-1" />
                             )}
@@ -576,7 +587,7 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          ${order.total_amount?.toFixed(2) || order.commission?.toFixed(2) || '0.00'}
+                          ${order.total_amount?.toFixed(2) || '0.00'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {order.createdBy || order.created_by || 'N/A'}
@@ -589,6 +600,15 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {order.payment_method || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              order.show_in_provider ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {order.show_in_provider ? 'Visible' : 'Hidden'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <button
@@ -607,7 +627,6 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
           )}
         </div>
 
-        {/* Tours Overview */}
         <div className="mt-8 bg-white rounded-xl shadow-sm border p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
             <MapPin className="w-5 h-5 mr-2" />

@@ -28,7 +28,6 @@ export interface User {
   updatedAt: Date;
 }
 
-// Only include fields from the DB table; convert timestamps to string
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
   id: string;
   first_name: string;
@@ -68,7 +67,7 @@ export interface Tour {
   description: string;
   name: string;
   dates: string[];
-  departureDate: string; // Add this line
+  departureDate: string;
   seats: number;
   available_seats?: number;
   hotels: string[];
@@ -77,16 +76,18 @@ export interface Tour {
   created_by: string;
   created_at: string;
   updated_at: string;
-  status?: 'active' | 'inactive' | 'full';
+  status?: "active" | "inactive" | "full";
+  base_price: number;
 }
 
 export interface Order {
-  id: string; // Changed from string to number
+  id: string;
   user_id: string;
   tour_id: string;
-  phone: string | null; // Schema allows NULL
+  phone: string | null;
   last_name: string | null;
   first_name: string | null;
+  email: string | null;
   age: number | null;
   gender: string | null;
   tour: string | null;
@@ -107,10 +108,11 @@ export interface Order {
   passengers: Passenger[];
   departureDate: string;
   createdBy: string | null;
-  total_amount?: number;
-  total_price?: number;
-  paid_amount?: number;
-  balance?: number;
+  total_amount: number;
+  total_price: number;
+  paid_amount: number;
+  balance: number;
+  show_in_provider: boolean;
 }
 
 export type OrderStatus =
@@ -176,7 +178,7 @@ export interface Passenger {
   emergency_phone: string;
   created_at: string;
   updated_at: string;
-  status?: 'active' | 'cancelled' | 'confirmed'; // Passenger status
+  status?: "active" | "cancelled" | "confirmed";
 }
 
 export interface AuthUser {
@@ -186,7 +188,6 @@ export interface AuthUser {
   role: Role;
 }
 
-// Utility types for better data handling
 export interface TourWithAvailability extends Tour {
   booked_seats: number;
   available_seats: number;
@@ -226,7 +227,6 @@ export interface AdminStats {
   active_tours: number;
 }
 
-// Form interfaces for better type safety
 export interface TourFormData {
   title: string;
   description: string;
@@ -255,7 +255,6 @@ export interface PassengerFormData {
   emergency_phone?: string;
 }
 
-// API Response types
 export interface ApiResponse<T> {
   data: T | null;
   error: string | null;
@@ -270,7 +269,6 @@ export interface PaginatedResponse<T> {
   hasMore: boolean;
 }
 
-// Validation and Error types
 export interface ValidationError {
   field: string;
   message: string;
@@ -279,4 +277,11 @@ export interface ValidationError {
 
 export interface FormErrors {
   [key: string]: string | ValidationError[];
+}
+
+export type NotificationType = "success" | "error";
+
+export interface Notification {
+  type: NotificationType;
+  message: string;
 }

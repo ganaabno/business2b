@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
-import Login from "./components/Login";
-import UserInterface from "./components/UserInterface";
-import AdminInterface from "./components/AdminInterface";
-import ProviderInterface from "./components/ProviderInterface";
-import ChangePassword from "./components/ChangePassword";
-import ManagerInterface from "./components/ManagerInterface";
+import Login from "./Pages/Login";
+import UserInterface from "./Pages/UserInterface";
+import AdminInterface from "./Pages/AdminInterface";
+import ProviderInterface from "./Pages/ProviderInterface";
+import ChangePassword from "./Pages/ChangePassword";
+import ManagerInterface from "./Pages/ManagerInterface";
 import type { User as UserType, Role, Tour, Order, Passenger } from "./types/type";
 
 function toRole(value: any): Role {
