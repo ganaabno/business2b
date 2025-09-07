@@ -1,31 +1,31 @@
 export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
 
 export interface User {
-  userId: string;
-  id: string;
+  userId: string; // uuid in DB
+  id: string; // uuid in DB
   first_name: string;
   last_name: string;
-  username: string;
+  username?: string;
   role: Role;
-  phone: string;
+  status: "pending" | "approved" | "declined"; // Matches assumed users table
+  phone: string | null;
   email: string;
-  password: string;
   blacklist: boolean;
-  company: string;
-  access: string;
-  birth_date: string;
-  id_card_number: string;
-  travel_history: any[];
-  passport_number: string;
-  passport_expire: string;
-  allergy: string;
-  emergency_phone: string;
+  company: string | null;
+  access: "active" | "suspended";
+  birth_date: string | null;
+  id_card_number: string | null;
+  travel_history: any[]; // jsonb in DB
+  passport_number: string | null;
+  passport_expire: string | null;
+  allergy: string | null;
+  emergency_phone: string | null;
   membership_rank: string;
   membership_points: number;
-  registered_by: string;
-  createdBy: string;
-  createdAt: Date;
-  updatedAt: Date;
+  registered_by: string | null;
+  createdBy: string | null;
+  createdAt: string; // timestamptz in DB
+  updatedAt: string; // timestamptz in DB
 }
 
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
@@ -33,13 +33,13 @@ export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
   first_name: string;
   last_name: string;
   username: string;
-  role: "user" | "provider" | "admin" | "superadmin" | "manager";
+  role: Role;
+  status: "pending" | "approved" | "declined";
   phone: string | null;
   email: string;
-  password: string;
   blacklist: boolean;
   company: string | null;
-  access: string;
+  access: "active" | "suspended";
   birth_date: string | null;
   id_card_number: string | null;
   travel_history: any[];
@@ -62,28 +62,31 @@ export interface Service {
 }
 
 export interface Tour {
-  id: string;
+  id: string; // uuid in DB
   title: string;
   description: string;
+  creator_name: string | null; // from users table
+  tour_number: number | null;
   name: string;
   dates: string[];
-  departureDate: string;
+  departureDate: string; // text in DB
   seats: number;
   available_seats?: number;
   hotels: string[];
   services: Service[];
   price_base?: number;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  status?: "active" | "inactive" | "full";
+  created_by: string | null; // uuid in DB
+  created_at: string; // timestamptz in DB
+  updated_at: string; // timestamptz in DB
+  status?: "active" | "inactive" | "full" | "hidden";
   base_price: number;
+  show_in_provider?: boolean | null; // Optional to handle missing column
 }
 
 export interface Order {
-  id: string;
-  user_id: string;
-  tour_id: string;
+  id: string; // bigserial in DB
+  user_id: string; // uuid in DB
+  tour_id: string; // uuid in DB
   phone: string | null;
   last_name: string | null;
   first_name: string | null;
@@ -95,24 +98,24 @@ export interface Order {
   passport_expire: string | null;
   passport_copy: string | null;
   commission: number | null;
-  created_by: string | null;
-  edited_by: string | null;
-  edited_at: string | null;
+  created_by: string | null; // uuid in DB
+  edited_by: string | null; // uuid in DB
+  edited_at: string | null; // timestamptz in DB
   travel_choice: string;
   status: OrderStatus;
   hotel: string | null;
   room_number: string | null;
   payment_method: string | null;
-  created_at: string;
-  updated_at: string;
-  passengers: Passenger[];
-  departureDate: string;
+  created_at: string; // timestamptz in DB
+  updated_at: string; // timestamptz in DB
+  departureDate: string; // text in DB
   createdBy: string | null;
-  total_amount: number;
-  total_price: number;
-  paid_amount: number;
-  balance: number;
+  total_price: number; // numeric in DB
+  total_amount: number; // bigint in DB
+  paid_amount: number; // bigint in DB
+  balance: number; // smallint in DB
   show_in_provider: boolean;
+  passengers: Passenger[];
 }
 
 export type OrderStatus =
@@ -153,9 +156,11 @@ export type PaymentMethod =
   | "Loan";
 
 export interface Passenger {
-  id: string;
-  order_id: string;
-  user_id: string;
+  id: string; // uuid in DB
+  order_id: string; // bigint in DB
+  user_id: string | null; // uuid in DB, nullable
+  tour_title: string;
+  departure_date: string;
   name: string;
   room_allocation: string;
   serial_no: string;
@@ -167,7 +172,7 @@ export interface Passenger {
   passport_number: string;
   passport_expiry: string;
   nationality: string;
-  roomType: string;
+  roomType: string; // Matches "roomType" in DB
   hotel: string;
   additional_services: string[];
   price: number;
@@ -176,9 +181,32 @@ export interface Passenger {
   passport_upload: string;
   allergy: string;
   emergency_phone: string;
+  created_at: string; // timestamptz in DB
+  updated_at: string; // timestamptz in DB
+  status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
+}
+
+export interface PassengerRequest {
+  id: string;
+  order_id: string;
+  user_id: string | null;
+  name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  nationality: string;
+  passport_number: string;
+  passport_expiry: string;
+  roomType: string; // Matches "roomType" in DB
+  hotel: string;
+  status: string;
   created_at: string;
-  updated_at: string;
-  status?: "active" | "cancelled" | "confirmed";
+  tour_title: string; // From orders.travel_choice
+  departure_date: string; // From orders.departureDate
+  user_email: string; // From users.email
+  user_first_name: string; // From users.first_name
+  user_last_name: string; // From users.last_name
 }
 
 export interface AuthUser {
@@ -283,5 +311,10 @@ export type NotificationType = "success" | "error";
 
 export interface Notification {
   type: NotificationType;
+  message: string;
+}
+
+export interface ErrorType {
+  field: string;
   message: string;
 }

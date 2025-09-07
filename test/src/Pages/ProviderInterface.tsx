@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Eye, MapPin, Users, Calendar, CheckCircle, XCircle, Search } from 'lucide-react';
+import { FileText, MapPin, Users, Calendar, CheckCircle, Search, Eye } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { supabase } from '../supabaseClient';
@@ -9,20 +9,86 @@ interface ProviderInterfaceProps {
   tours: Tour[];
   setTours: React.Dispatch<React.SetStateAction<Tour[]>>;
   currentUser: UserType;
-  onLogout: () => void;
 }
 
-function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderInterfaceProps) {
+function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfaceProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hasShowInProviderTours, setHasShowInProviderTours] = useState<boolean | null>(null);
+  const [hasShowInProviderOrders, setHasShowInProviderOrders] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Check if show_in_provider column exists in tours table
+    const checkToursSchema = async () => {
+      let hasColumn = false;
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_table_columns', { table_name: 'tours' });
+      if (!rpcError && rpcData) {
+        hasColumn = Array.isArray(rpcData) && rpcData.some((col: any) => col.column_name === 'show_in_provider');
+      } else {
+        console.warn("get_table_columns RPC failed for tours, falling back to information_schema:", rpcError?.message);
+        const { data: schemaData, error: schemaError } = await supabase
+          .from('information_schema.columns')
+          .select('column_name')
+          .eq('table_schema', 'public')
+          .eq('table_name', 'tours')
+          .eq('column_name', 'show_in_provider');
+        if (schemaError) {
+          console.error("Error checking tours schema:", schemaError);
+          toast.error(`Failed to verify tours schema: ${schemaError.message}`);
+          return;
+        }
+        hasColumn = schemaData.length > 0;
+      }
+      setHasShowInProviderTours(hasColumn);
+      console.log("show_in_provider column exists in tours:", hasColumn);
+    };
+
+    // Check if show_in_provider column exists in orders table
+    const checkOrdersSchema = async () => {
+      let hasColumn = false;
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_table_columns', { table_name: 'orders' });
+      if (!rpcError && rpcData) {
+        hasColumn = Array.isArray(rpcData) && rpcData.some((col: any) => col.column_name === 'show_in_provider');
+      } else {
+        console.warn("get_table_columns RPC failed for orders, falling back to information_schema:", rpcError?.message);
+        const { data: schemaData, error: schemaError } = await supabase
+          .from('information_schema.columns')
+          .select('column_name')
+          .eq('table_schema', 'public')
+          .eq('table_name', 'orders')
+          .eq('column_name', 'show_in_provider');
+        if (schemaError) {
+          console.error("Error checking orders schema:", schemaError);
+          toast.error(`Failed to verify orders schema: ${schemaError.message}`);
+          return;
+        }
+        hasColumn = schemaData.length > 0;
+      }
+      setHasShowInProviderOrders(hasColumn);
+      console.log("show_in_provider column exists in orders:", hasColumn);
+    };
+
+    const uuidToNumber = (uuid: string) => {
+      let hash = 0;
+      for (let i = 0; i < uuid.length; i++) {
+        hash = (hash << 5) - hash + uuid.charCodeAt(i);
+        hash |= 0; // Convert to 32bit integer
+      }
+      return Math.abs(hash);
+    };
+
+    checkToursSchema();
+    checkOrdersSchema();
+
+    // Fetch orders
     const fetchOrders = async () => {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
         .select(`
           *,
@@ -45,10 +111,16 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
             phone,
             emergency_phone,
             price
-          )
+          ),
+          users!created_by(email)
         `)
-        .in('status', ['confirmed', 'pending'])
-        .eq('show_in_provider', true);
+        .in('status', ['confirmed', 'pending']);
+
+      if (hasShowInProviderOrders) {
+        query = query.eq('show_in_provider', true);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching orders:', error);
@@ -69,7 +141,7 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
         gender: order.gender ?? null,
         tour: order.tour ?? null,
         passport_number: order.passport_number ?? null,
-        passport_expire: order.passport_expire ?? null,
+        passport_expire: order.passport_expiry ?? null,
         passport_copy: order.passport_copy ?? null,
         commission: order.commission ?? null,
         created_by: order.created_by ? String(order.created_by) : null,
@@ -84,9 +156,9 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
         updated_at: order.updated_at,
         passengers: order.passengers ?? [],
         departureDate: order.departureDate ?? '',
-        createdBy: order.createdBy ?? null,
-        total_amount: order.total_amount,
+        createdBy: order.users?.email ?? order.createdBy ?? null,
         total_price: order.total_price,
+        total_amount: order.total_amount,
         paid_amount: order.paid_amount,
         balance: order.balance,
         show_in_provider: order.show_in_provider ?? false,
@@ -97,19 +169,50 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
       setLoading(false);
     };
 
-    fetchOrders();
+    // Fetch creator emails for tours if creator_name is missing
+    const fetchCreatorEmails = async () => {
+      const toursWithEmails = await Promise.all(
+        tours.map(async (tour) => {
+          if (tour.created_by && !tour.creator_name) {
+            const { data, error } = await supabase
+              .from('users')
+              .select('email')
+              .eq('id', tour.created_by)
+              .single();
+            return {
+              ...tour,
+              creator_name: error ? 'Unknown Creator' : data.email || 'Unknown Creator'
+            };
+          }
+          return tour;
+        })
+      );
+      setTours(toursWithEmails);
+    };
 
-    const subscription = supabase
-      .channel('provider_orders')
+    // Only fetch orders and emails after schema checks are complete
+    if (hasShowInProviderOrders !== null && hasShowInProviderTours !== null) {
+      fetchOrders();
+      if (tours.some(tour => !tour.creator_name)) {
+        fetchCreatorEmails();
+      }
+    }
+
+    // Orders subscription
+    const orderSubscription = supabase
+      .channel(`provider_orders_${Math.random().toString(36).substring(2)}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'orders',
-          filter: 'status=in.(confirmed,pending),show_in_provider=eq.true',
+          filter: hasShowInProviderOrders
+            ? 'status=in.(confirmed,pending),show_in_provider=eq.true'
+            : 'status=in.(confirmed,pending)',
         },
         (payload) => {
+          console.log("Received orders subscription payload:", JSON.stringify(payload, null, 2));
           if (payload.eventType === 'UPDATE') {
             setOrders((prev) =>
               prev.map((order) =>
@@ -124,16 +227,21 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                       edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
                       passengers: payload.new.passengers ?? order.passengers,
                       total_amount: payload.new.total_amount,
-                      total_price: payload.new.total_price,
+                      total_price: order.total_price,
                       paid_amount: payload.new.paid_amount,
                       balance: payload.new.balance,
                       show_in_provider: payload.new.show_in_provider ?? false,
+                      createdBy: payload.new.users?.email ?? payload.new.createdBy ?? null,
                     } as Order
                   : order
               )
             );
+            console.log("Order updated:", payload.new);
           } else if (payload.eventType === 'INSERT') {
-            if (['confirmed', 'pending'].includes(payload.new.status) && payload.new.show_in_provider === true) {
+            if (
+              ['confirmed', 'pending'].includes(payload.new.status) &&
+              (!hasShowInProviderOrders || payload.new.show_in_provider === true)
+            ) {
               setOrders((prev) => [
                 ...prev,
                 {
@@ -148,7 +256,7 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                   gender: payload.new.gender ?? null,
                   tour: payload.new.tour ?? null,
                   passport_number: payload.new.passport_number ?? null,
-                  passport_expire: payload.new.passport_expire ?? null,
+                  passport_expire: payload.new.passport_expiry ?? null,
                   passport_copy: payload.new.passport_copy ?? null,
                   commission: payload.new.commission ?? null,
                   created_by: payload.new.created_by ? String(payload.new.created_by) : null,
@@ -163,31 +271,188 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                   updated_at: payload.new.updated_at,
                   passengers: payload.new.passengers ?? [],
                   departureDate: payload.new.departureDate ?? '',
-                  createdBy: payload.new.createdBy ?? null,
-                  total_amount: payload.new.total_amount,
+                  createdBy: payload.new.users?.email ?? payload.new.createdBy ?? null,
                   total_price: payload.new.total_price,
+                  total_amount: payload.new.total_amount,
                   paid_amount: payload.new.paid_amount,
                   balance: payload.new.balance,
                   show_in_provider: payload.new.show_in_provider ?? false,
                 } as Order,
               ]);
+              console.log("Order inserted:", payload.new);
             }
           } else if (payload.eventType === 'DELETE') {
             setOrders((prev) => prev.filter((order) => order.id !== String(payload.old.id)));
+            console.log("Order deleted:", payload.old.id);
           }
         }
       )
       .subscribe((status, error) => {
         if (error) {
-          console.error('Subscription error:', error);
+          console.error('Order subscription error:', error);
           toast.error(`Real-time subscription failed: ${error.message}`);
+        } else {
+          console.log("Order subscription status:", status);
+        }
+      });
+
+    // Tours subscription
+    const tourSubscription = supabase
+      .channel(`provider_tours_${Math.random().toString(36).substring(2)}`)
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tours',
+          select: `
+            id,
+            title,
+            name,
+            departureDate,
+            created_by,
+            creator_name:users!created_by(email),
+            description,
+            hotels,
+            dates,
+            seats,
+            status,
+            show_in_provider,
+            services,
+            base_price,
+            created_at,
+            updated_at,
+            available_seats,
+            price_base,
+            tour_number
+          `,
+        },
+        (payload) => {
+          console.log("Received tours subscription payload:", JSON.stringify(payload, null, 2));
+          const mapToTour = (data: any): Tour => {
+            console.log("Raw creator_name:", data.creator_name);
+            const tour = {
+              id: String(data.id),
+              title: data.title || "Untitled Tour",
+              name: data.name || "Unknown Tour",
+              departureDate: data.departureDate || "1970-01-01",
+              created_by: data.created_by || "system",
+              description: data.description || "",
+              hotels: data.hotels || [],
+              dates: data.dates || [],
+              seats: Number(data.seats) || 0,
+              status: data.status || "active",
+              show_in_provider: hasShowInProviderTours ? (data.show_in_provider ?? true) : null,
+              services: data.services || [],
+              base_price: data.base_price || 0,
+              created_at: data.created_at || undefined,
+              updated_at: data.updated_at || undefined,
+              available_seats: data.available_seats || 0,
+              price_base: data.price_base || undefined,
+              creator_name: typeof data.creator_name === 'object' ? data.creator_name?.email || "Unknown Creator" : data.creator_name || "Unknown Creator",
+              tour_number: data.tour_number || "0"
+            };
+            console.log("Mapped tour:", tour);
+            return tour;
+          };
+
+          if (payload.eventType === 'UPDATE') {
+            console.log("Raw show_in_provider:", payload.new.show_in_provider);
+            if (hasShowInProviderTours && payload.new.show_in_provider === undefined) {
+              // Fetch full tour if show_in_provider is missing
+              const fetchFullTour = async () => {
+                const { data, error } = await supabase
+                  .from("tours")
+                  .select(`
+                    id,
+                    title,
+                    name,
+                    departureDate,
+                    created_by,
+                    creator_name:users!created_by(email),
+                    description,
+                    hotels,
+                    dates,
+                    seats,
+                    status,
+                    show_in_provider,
+                    services,
+                    base_price,
+                    created_at,
+                    updated_at,
+                    available_seats,
+                    price_base,
+                    tour_number
+                  `)
+                  .eq("id", payload.new.id)
+                  .single();
+                if (error) {
+                  console.error("Error fetching full tour:", error);
+                  toast.error(`Failed to fetch tour data: ${error.message}`);
+                  return;
+                }
+                console.log("Fetched full tour show_in_provider:", data.show_in_provider);
+                setTours((prev) => {
+                  if (hasShowInProviderTours && data.show_in_provider === false) {
+                    console.log(`Removing tour ${payload.new.id} from ProviderInterface (show_in_provider = false)`);
+                    return prev.filter((tour) => tour.id !== payload.new.id);
+                  }
+                  return prev.map((tour) =>
+                    tour.id === payload.new.id
+                      ? { ...mapToTour(data), show_in_provider: data.show_in_provider ?? true }
+                      : tour
+                  );
+                });
+              };
+              fetchFullTour();
+            } else if (payload.new?.id && payload.new?.title && payload.new?.name && payload.new?.departureDate && payload.new?.created_by) {
+              setTours((prev) => {
+                if (hasShowInProviderTours && payload.new.show_in_provider === false) {
+                  console.log(`Removing tour ${payload.new.id} from ProviderInterface (show_in_provider = false)`);
+                  return prev.filter((tour) => tour.id !== payload.new.id);
+                }
+                return prev.map((tour) =>
+                  tour.id === payload.new.id ? mapToTour(payload.new) : tour
+                );
+              });
+              console.log("Tour updated:", payload.new);
+            } else {
+              console.error("Invalid UPDATE payload:", payload.new);
+            }
+          } else if (payload.eventType === 'INSERT') {
+            if (
+              (!hasShowInProviderTours || payload.new?.show_in_provider) &&
+              payload.new?.id &&
+              payload.new?.title &&
+              payload.new?.name &&
+              payload.new?.departureDate &&
+              payload.new?.created_by
+            ) {
+              setTours((prev) => [...prev, mapToTour(payload.new)]);
+              console.log("Tour inserted:", payload.new);
+            } else {
+              console.error("Invalid INSERT payload:", payload.new);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            setTours((prev) => prev.filter((tour) => tour.id !== String(payload.old.id)));
+            console.log("Tour deleted:", payload.old.id);
+          }
+        }
+      )
+      .subscribe((status, error) => {
+        if (error) {
+          console.error('Tour subscription error:', error);
+          toast.error(`Real-time tour subscription failed: ${error.message}`);
+        } else {
+          console.log("Tour subscription status:", status);
         }
       });
 
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(orderSubscription);
+      supabase.removeChannel(tourSubscription);
     };
-  }, []);
+  }, [tours, setTours, hasShowInProviderTours, hasShowInProviderOrders]);
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
     const previousOrders = [...orders];
@@ -216,7 +481,7 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
     }
   };
 
-  const confirmedOrders = orders.filter((order) => ['confirmed', 'pending'].includes(order.status) && order.show_in_provider);
+  const confirmedOrders = orders.filter((order) => ['confirmed', 'pending'].includes(order.status) && (!hasShowInProviderOrders || order.show_in_provider));
 
   const uniqueDates = Array.from(
     new Set(confirmedOrders.map((order) => (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set')))
@@ -234,6 +499,8 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
         (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set').includes(lowerTerm))
     );
   });
+
+  const filteredTours = tours.filter((tour) => !hasShowInProviderTours || tour.show_in_provider);
 
   const statusOptions: OrderStatus[] = [
     'pending',
@@ -274,6 +541,10 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
     }
   };
 
+  const handleViewOrder = (order: Order) => {
+    setSelectedOrder(order);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <ToastContainer />
@@ -284,12 +555,6 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
               <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1>
               <p className="text-sm text-gray-600 mt-1">Manage your tour orders</p>
             </div>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Logout
-            </button>
           </div>
         </div>
       </div>
@@ -323,8 +588,8 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Active Tours</p>
-                <p className="text-2xl font-bold text-gray-900">{tours.length}</p>
+                <p className="text-sm font-medium text-gray-600">Available Tours</p>
+                <p className="text-2xl font-bold text-gray-900">{filteredTours.length}</p>
               </div>
               <div className="p-3 bg-purple-100 rounded-lg">
                 <MapPin className="w-6 h-6 text-purple-600" />
@@ -333,7 +598,7 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold text-gray-900 flex items-center">
               <FileText className="w-5 h-5 mr-2" />
@@ -478,12 +743,12 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         </td>
                       </tr>
                     )) || (
-                      <tr>
-                        <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
-                          No passengers found.
-                        </td>
-                      </tr>
-                    )}
+                        <tr>
+                          <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                            No passengers found.
+                          </td>
+                        </tr>
+                      )}
                   </tbody>
                 </table>
               </div>
@@ -534,19 +799,10 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         Created By
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Edited By
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Edited At
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Payment Method
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Provider Visibility
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -574,9 +830,8 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              order.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                            }`}
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                              }`}
                           >
                             {order.status === 'confirmed' ? (
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -593,30 +848,10 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
                           {order.createdBy || order.created_by || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {order.edited_by || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {order.edited_at ? formatDate(order.edited_at) : 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {order.payment_method || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              order.show_in_provider ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {order.show_in_provider ? 'Visible' : 'Hidden'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <button
-                            onClick={() => setSelectedOrder(order)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -632,32 +867,104 @@ function ProviderInterface({ tours, setTours, currentUser, onLogout }: ProviderI
             <MapPin className="w-5 h-5 mr-2" />
             Available Tours
           </h3>
-          {tours.length === 0 ? (
+
+          {filteredTours.length === 0 ? (
             <div className="text-center py-12">
-              <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No tours available yet.</p>
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-500 text-lg font-medium mb-2">No tours available</p>
+              <p className="text-gray-400 text-sm">
+                {hasShowInProviderTours ? 'No tours available for providers.' : 'Tours display unavailable.'}
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {tours.map((tour) => (
-                <div key={tour.id} className="p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-medium text-gray-900">{tour.title || 'N/A'}</h4>
-                  <p className="text-sm text-gray-600 mt-1">{tour.description || 'No description'}</p>
-                  <div className="mt-2 text-sm text-gray-600">
-                    <p>
-                      <strong>Seats:</strong> {tour.seats || 'N/A'}
-                    </p>
-                    <p>
-                      <strong>Dates:</strong>{' '}
-                      {tour.dates?.map((d) => formatDate(d)).join(', ') || 'Not set'}
-                    </p>
-                    <p>
-                      <strong>Hotels:</strong> {tour.hotels?.join(', ') || 'N/A'}
-                    </p>
-                    <p>
-                      <strong>Services:</strong>{' '}
-                      {tour.services?.map((s) => `${s.name} ($${s.price?.toFixed(2) || '0.00'})`).join(', ') || 'None'}
-                    </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredTours.map((tour) => (
+                <div key={tour.id} className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group">
+                  <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-sm font-semibold bg-white/20 px-3 py-1 rounded-full">
+                        #{tour.id.slice(0, 3)}
+                      </span>
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${tour.status === 'active'
+                          ? 'bg-green-100 text-green-800'
+                          : tour.status === 'full'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                      >
+                        {tour.status || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-5">
+                    <div className="mb-4">
+                      <h4 className="text-lg font-bold text-gray-900 mb-2 flex items-center group-hover:text-blue-600 transition-colors">
+                        <MapPin className="w-4 h-4 mr-2 text-gray-400" />
+                        {tour.title || 'Unnamed Tour'}
+                      </h4>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center">
+                          <Calendar className="w-4 h-4 mr-2 text-blue-500" />
+                          <span className="text-sm text-gray-600">Departure</span>
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {formatDate(tour.departureDate)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                          <div className="flex items-center">
+                            <Users className="w-4 h-4 mr-2 text-green-500" />
+                            <span className="text-xs text-gray-600">Total</span>
+                          </div>
+                          <span className="text-sm font-bold text-green-700">
+                            {tour.seats || 0}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                          <div className="flex items-center">
+                            <Users className="w-4 h-4 mr-2 text-blue-500" />
+                            <span className="text-xs text-gray-600">Available</span>
+                          </div>
+                          <span className="text-sm font-bold text-blue-700">
+                            {tour.available_seats || 0}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                        <div className="text-left">
+                          <p className="text-xs text-gray-500 mb-1">Created by</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {tour.creator_name || tour.created_by || 'N/A'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500 mb-1">Base Price</p>
+                          <p className="text-lg font-bold text-indigo-600">
+                            ${tour.base_price?.toFixed(2) || '0.00'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-5 pb-4">
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${tour.seats > 0 ? ((tour.seats - (tour.available_seats || 0)) / tour.seats) * 100 : 0}%`
+                        }}
+                      ></div>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>Booked: {(tour.seats || 0) - (tour.available_seats || 0)}</span>
+                      <span>{tour.seats > 0 ? Math.round(((tour.seats - (tour.available_seats || 0)) / tour.seats) * 100) : 0}% Full</span>
+                    </div>
                   </div>
                 </div>
               ))}

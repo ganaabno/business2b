@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import type { Tour, Passenger, User as UserType, ValidationError, Order } from "../types/type";
-import Header from "../Parts/Header";
 import Notifications from "../Parts/Notification";
 import ProgressSteps from "../Parts/ProgressSteps";
 import ErrorSummary from "../Parts/ErrorSummary";
 import TourSelection from "../Parts/TourSelection";
 import PassengerForm from "../Parts/PassengerForm";
 import BookingSummary from "../Parts/BookingSummary";
-import { downloadCSV, downloadTemplate } from "../utils/csvUtils";
+import { downloadTemplate } from "../utils/csvUtils";
 
 interface AddPassengerTabProps {
   tours: Tour[];
@@ -70,6 +69,8 @@ const createNewPassenger = (
     order_id: "",
     user_id: currentUser.id,
     name: "",
+    tour_title: selectedTourData?.title || "",
+    departure_date: selectedTourData?.departureDate || "",
     room_allocation: "",
     serial_no: serialNo,
     last_name: "",
@@ -631,6 +632,8 @@ export default function AddPassengerTab({
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             status: "active",
+            tour_title: selectedTour,
+            departure_date: departureDate,
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
@@ -654,7 +657,6 @@ export default function AddPassengerTab({
   return (
     <div className="min-h-screen bg-gray-50">
       <Notifications notification={notification} setNotification={setNotification} />
-      <Header currentUser={currentUser} onLogout={() => { }} isUserRole={currentUser.role === "user"} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex justify-between items-center mb-4">

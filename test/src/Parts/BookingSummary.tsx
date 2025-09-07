@@ -9,7 +9,7 @@ interface BookingSummaryProps {
   setPaymentMethod: (value: string) => void;
   errors: ValidationError[];
   downloadCSV: () => void;
-  saveOrder: () => void;
+  saveOrder: () => Promise<void>; // Fixed type
   setActiveStep: (value: number) => void;
   loading: boolean;
   showInProvider: boolean;
@@ -33,6 +33,36 @@ export default function BookingSummary({
   currentUser,
 }: BookingSummaryProps) {
   const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
+
+  // Calculate age from date_of_birth
+  const calculateAge = (dateOfBirth: string | undefined): number | string => {
+    if (!dateOfBirth) return "N/A";
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  // Check for validation errors, excluding show_in_provider
+  const hasValidationErrors = errors.length > 0 || passengers.some(
+    (p) =>
+      !p.first_name ||
+      !p.last_name ||
+      !p.date_of_birth ||
+      !p.gender ||
+      !p.passport_number ||
+      !p.passport_expiry ||
+      !p.nationality ||
+      !p.roomType ||
+      !p.hotel ||
+      !p.email ||
+      !p.phone
+  );
+
   const paymentMethods = [
     "Cash",
     "Bank Transfer",
@@ -48,6 +78,28 @@ export default function BookingSummary({
 
   return (
     <div className="space-y-6">
+      {errors.length > 0 && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center">
+            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+            <div>
+              <p className="text-sm text-red-800 font-medium">
+                Please fix the following validation errors before proceeding:
+              </p>
+              <ul className="list-disc list-inside text-sm text-red-800 mt-2">
+                {errors
+                  .filter((error) => error.field !== "show_in_provider")
+                  .map((error, index) => (
+                    <li key={index}>
+                      {error.field}: {error.message}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
           <Eye className="w-5 h-5 mr-2" />
@@ -103,9 +155,8 @@ export default function BookingSummary({
           {paymentMethods.map((method) => (
             <label
               key={method}
-              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                paymentMethod === method ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 hover:border-gray-400"
-              }`}
+              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 hover:border-gray-400"
+                }`}
             >
               <input
                 type="radio"
@@ -134,14 +185,11 @@ export default function BookingSummary({
               checked={showInProvider}
               onChange={(e) => setShowInProvider(e.target.checked)}
               className="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
-              aria-label="Show booking in provider dashboard"
+              aria-label="Show booking in provider dashboard (optional)"
             />
             <EyeIcon className="w-5 h-5 text-gray-600" />
-            <span className="text-sm text-gray-700">Show in provider dashboard</span>
+            <span className="text-sm text-gray-700">Show in provider dashboard (optional)</span>
           </label>
-          {errors.some((e) => e.field === "show_in_provider") && (
-            <p className="mt-2 text-sm text-red-600">Provider visibility is required</p>
-          )}
         </div>
       )}
 
@@ -155,21 +203,25 @@ export default function BookingSummary({
                   <User className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">{passenger.name}</p>
+                  <p className="font-medium text-gray-900">
+                    {passenger.first_name} {passenger.last_name}
+                  </p>
                   <p className="text-sm text-gray-600">
-                    {passenger.nationality} • {passenger.gender} • Age: {passenger.age}
+                    {passenger.nationality} • {passenger.gender} • Age: {calculateAge(passenger.date_of_birth)}
                   </p>
                   <p className="text-sm text-gray-600">
                     Room: {passenger.roomType} • Hotel: {passenger.hotel}
                   </p>
-                  {passenger.additional_services.length > 0 && (
-                    <p className="text-xs text-gray-500">Services: {passenger.additional_services.join(", ")}</p>
+                  {passenger.additional_services?.length > 0 && (
+                    <p className="text-xs text-gray-500">
+                      Services: {passenger.additional_services.join(", ")}
+                    </p>
                   )}
                 </div>
               </div>
               <div className="text-right">
                 <p className="font-medium text-gray-900">${passenger.price}</p>
-                <p className="text-sm text-gray-600">{passenger.additional_services.length} services</p>
+                <p className="text-sm text-gray-600">{passenger.additional_services?.length || 0} services</p>
               </div>
             </div>
           ))}
@@ -194,7 +246,7 @@ export default function BookingSummary({
           </button>
           <button
             onClick={saveOrder}
-            disabled={loading || !paymentMethod || passengers.length === 0}
+            disabled={loading || !paymentMethod || passengers.length === 0 || hasValidationErrors}
             className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
           >
             {loading ? (

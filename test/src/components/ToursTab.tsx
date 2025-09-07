@@ -1,6 +1,10 @@
-// ToursTab.tsx
-import type { Tour } from "../types/type";
+import { useState } from "react";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { Plus, Trash2, Search, Eye, EyeOff } from "lucide-react";
+import { supabase } from "../supabaseClient";
 import { useTours } from "../hooks/useTours";
+import type { Tour } from "../types/type";
 
 interface ToursTabProps {
   tours: Tour[];
@@ -22,158 +26,378 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
     setShowDeleteConfirm,
     handleTourChange,
     handleDeleteTour,
-    formatDate,
-  } = useTours(tours, setTours); // Pass isAdmin: true for admin view
+    formatDisplayDate,
+    viewFilter,
+    setViewFilter,
+  } = useTours(tours, setTours);
+
+  const [newTourTitle, setNewTourTitle] = useState("");
+  const [newTourName, setNewTourName] = useState("");
+  const [newTourDepartureDate, setNewTourDepartureDate] = useState("");
+
+  const handleAddTour = async () => {
+    if (!newTourTitle.trim() || !newTourName.trim() || !newTourDepartureDate) {
+      toast.error("Please provide a title, name, and departure date for the new tour.");
+      return;
+    }
+
+    const newTour: Omit<Tour, "id" | "created_at" | "updated_at" | "created_by" | "creator_name" | "tour_number"> = {
+      title: newTourTitle.trim(),
+      name: newTourName.trim(),
+      departureDate: newTourDepartureDate,
+      description: "",
+      hotels: [],
+      dates: [],
+      seats: 0,
+      status: "active",
+      show_in_provider: true,
+      services: [],
+      base_price: 0,
+      available_seats: 0,
+      price_base: undefined,
+    };
+
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      const created_by = user?.user?.id || "system";
+
+      // Fetch username or email for creator_name
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("username, email")
+        .eq("id", created_by)
+        .single();
+
+      if (userError) {
+        console.error("Error fetching user data:", userError);
+      }
+
+      const creator_name = userData?.username || userData?.email || created_by;
+      const insertData = { 
+        ...newTour, 
+        created_by, 
+        tour_number: null,
+        departuredate: newTour.departureDate // Map to lowercase for DB
+      };
+      insertData.departureDate; // Remove camelCase field
+
+      // Check if show_in_provider column exists
+      const { data: schemaData, error: schemaError } = await supabase
+        .rpc('get_table_columns', { table_name: 'tours' });
+      if (schemaError) {
+        console.error("Error checking schema:", schemaError);
+        toast.error(`Failed to verify schema: ${schemaError.message}`);
+        return;
+      }
+      const hasShowInProvider = schemaData.some((col: any) => col.column_name === 'show_in_provider');
+      if (!hasShowInProvider) {
+        console.warn("show_in_provider column not found in tours table. Omitting from insert.");
+        delete insertData.show_in_provider;
+      }
+
+      console.log("Adding tour with data:", insertData);
+      const { data, error } = await supabase
+        .from("tours")
+        .insert([insertData])
+        .select("*, users!tours_created_by_fkey(username, email)")
+        .single();
+
+      if (error) {
+        console.error("Error adding tour:", error);
+        toast.error(`Failed to add tour: ${error.message}`);
+        return;
+      }
+
+      if (data) {
+        setTours((prev) => [
+          ...prev,
+          {
+            ...data,
+            id: String(data.id),
+            tour_number: data.tour_number || null,
+            created_by: data.created_by || "system",
+            creator_name: data.users?.username || data.users?.email || data.created_by || "Unknown",
+            seats: Number(data.seats) || 0,
+            show_in_provider: hasShowInProvider ? (data.show_in_provider ?? true) : null,
+            description: data.description || "",
+            hotels: data.hotels || [],
+            dates: data.dates || [],
+            services: data.services || [],
+            base_price: data.base_price || 0,
+            available_seats: data.available_seats || 0,
+            departureDate: data.departuredate, // Map back to camelCase for TS
+          } as Tour,
+        ]);
+        setNewTourTitle("");
+        setNewTourName("");
+        setNewTourDepartureDate("");
+        toast.success("Tour added successfully!");
+      }
+    } catch (error) {
+      console.error("Unexpected error adding tour:", error);
+      toast.error("Unexpected error adding tour.");
+    }
+  };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="p-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Tours (Admin)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search by Title</label>
+    <div className="p-6 max-w-7xl mx-auto">
+      <ToastContainer />
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">Manage Tours</h2>
+
+      {/* Add Tour Form */}
+      <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Tour</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <input
+            type="text"
+            placeholder="Tour Title"
+            value={newTourTitle}
+            onChange={(e) => setNewTourTitle(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <input
+            type="text"
+            placeholder="Tour Name"
+            value={newTourName}
+            onChange={(e) => setNewTourName(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <input
+            type="date"
+            value={newTourDepartureDate}
+            onChange={(e) => setNewTourDepartureDate(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        <button
+          onClick={handleAddTour}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add Tour
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter Tours</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="relative">
             <input
               type="text"
+              placeholder="Search by title..."
               value={titleFilter}
               onChange={(e) => setTitleFilter(e.target.value)}
-              placeholder="Search tours..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
+            <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
-            <div className="flex space-x-2">
-              <input
-                type="date"
-                value={dateFilterStart}
-                onChange={(e) => setDateFilterStart(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-              />
-              <input
-                type="date"
-                value={dateFilterEnd}
-                onChange={(e) => setDateFilterEnd(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="full">Full</option>
-            </select>
-          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="full">Full</option>
+            <option value="hidden">Hidden</option>
+          </select>
+          <input
+            type="date"
+            value={dateFilterStart}
+            onChange={(e) => setDateFilterStart(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Start Date"
+          />
+          <input
+            type="date"
+            value={dateFilterEnd}
+            onChange={(e) => setDateFilterEnd(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="End Date"
+          />
+        </div>
+        <div className="mt-4">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={viewFilter === "hidden"}
+              onChange={() => setViewFilter(viewFilter === "hidden" ? "all" : "hidden")}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <span className="text-sm text-gray-600">Show only hidden tours</span>
+          </label>
         </div>
       </div>
-      <div className="overflow-x-auto">
+
+      {/* Tours Table */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Details</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Departure</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Seats</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Tour #
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Title
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Tour Name
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Departure Date
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Created By
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Status
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Show in Provider
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Seats
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredTours.map((tour) => (
-              <tr key={tour.id} className="hover:bg-gray-50 transition-colors duration-150">
-                <td className="px-6 py-4">
-                  <input
-                    type="text"
-                    value={tour.title}
-                    onChange={(e) => handleTourChange(tour.id, "title", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500"
-                    placeholder="Tour title..."
-                  />
-                  <textarea
-                    value={tour.description || ""}
-                    onChange={(e) => handleTourChange(tour.id, "description", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={2}
-                    placeholder="Description..."
-                  />
-                  <input
-                    type="text"
-                    value={tour.hotels?.join(", ") || ""}
-                    onChange={(e) => handleTourChange(tour.id, "hotels", e.target.value.split(",").map((h) => h.trim()))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-2 focus:ring-2 focus:ring-blue-500"
-                    placeholder="Hotels (comma-separated)..."
-                  />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <input
-                    type="date"
-                    value={tour.dates?.[0] || ""}
-                    onChange={(e) => handleTourChange(tour.id, "dates", [e.target.value])}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                  <div className="text-sm text-gray-500 mt-1">{formatDate(tour.dates?.[0])}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <input
-                    type="number"
-                    value={tour.seats || ""}
-                    onChange={(e) => handleTourChange(tour.id, "seats", parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    min="0"
-                    placeholder="Seats"
-                  />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <select
-                    value={tour.status || "active"}
-                    onChange={(e) => handleTourChange(tour.id, "status", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="active">✅ Active</option>
-                    <option value="inactive">⏸️ Inactive</option>
-                    <option value="full">🚫 Full</option>
-                  </select>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {showDeleteConfirm === tour.id ? (
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleDeleteTour(tour.id)}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(null)}
-                        className="px-3 py-1 bg-gray-200 rounded-lg hover:bg-gray-300"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowDeleteConfirm(tour.id)}
-                      className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg"
-                      title="Delete tour"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  )}
+            {filteredTours.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="px-4 py-4 text-center text-gray-500">
+                  No tours found.
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredTours.map((tour) => {
+                console.log(`Rendering tour ${tour.id}, show_in_provider: ${tour.show_in_provider}`);
+                return (
+                  <tr key={tour.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 border-r border-gray-200 text-sm text-gray-900">
+                      #{tour.tour_number || tour.id}
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <input
+                        type="text"
+                        value={tour.title}
+                        onChange={(e) => handleTourChange(tour.id, "title", e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Tour title..."
+                      />
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <input
+                        type="text"
+                        value={tour.name}
+                        onChange={(e) => handleTourChange(tour.id, "name", e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Tour name..."
+                      />
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <input
+                        type="date"
+                        value={tour.departureDate}
+                        onChange={(e) => handleTourChange(tour.id, "departureDate", e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {tour.departureDate && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {formatDisplayDate(tour.departureDate)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200 text-sm text-gray-900">
+                      {tour.creator_name || 'N/A'}
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <select
+                        value={tour.status}
+                        onChange={(e) =>
+                          handleTourChange(tour.id, "status", e.target.value as Tour["status"])
+                        }
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="full">Full</option>
+                        <option value="hidden">Hidden</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      {tour.show_in_provider !== null && tour.show_in_provider !== undefined ? (
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={tour.show_in_provider}
+                            onChange={(e) => {
+                              const newValue = e.target.checked;
+                              console.log(`Toggling show_in_provider for tour ${tour.id} to: ${newValue}`);
+                              handleTourChange(tour.id, "show_in_provider", newValue)
+                                .then(() => {
+                                  console.log(`Successfully toggled show_in_provider to ${newValue} for tour ${tour.id}`);
+                                })
+                                .catch((error) => {
+                                  console.error(`Error toggling show_in_provider for tour ${tour.id}:`, error);
+                                  toast.error(`Failed to update show in provider: ${error.message}`);
+                                });
+                            }}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-600">
+                            {tour.show_in_provider ? (
+                              <Eye className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <EyeOff className="w-4 h-4 text-red-600" />
+                            )}
+                          </span>
+                        </label>
+                      ) : (
+                        <span className="text-sm text-gray-400">N/A</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 border-r border-gray-200">
+                      <input
+                        type="number"
+                        value={tour.seats}
+                        onChange={(e) => handleTourChange(tour.id, "seats", Number(e.target.value))}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Seats..."
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      {showDeleteConfirm === tour.id ? (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleDeleteTour(tour.id)}
+                            className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(null)}
+                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowDeleteConfirm(tour.id)}
+                          className="p-1 text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

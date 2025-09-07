@@ -1,26 +1,25 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Login from "./Pages/Login";
 import UserInterface from "./Pages/UserInterface";
 import AdminInterface from "./Pages/AdminInterface";
 import ProviderInterface from "./Pages/ProviderInterface";
-import ChangePassword from "./Pages/ChangePassword";
 import ManagerInterface from "./Pages/ManagerInterface";
-import type { User as UserType, Role, Tour, Order, Passenger } from "./types/type";
-
-function toRole(value: any): Role {
-  console.log("[toRole] Input value:", value);
-  const v = String(value ?? "user") as Role;
-  console.log("[toRole] Coerced to string:", v);
-  const result = v === "admin" || v === "superadmin" || v === "provider" || v === "user" || v === "manager" ? v : "user";
-  console.log("[toRole] Final role:", result);
-  return result;
-}
+import ChangePassword from "./Pages/ChangePassword";
+import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
+import Header from "./Parts/Header";
+import { AuthProvider, useAuth, toRole } from "./context/AuthProvider";
 
 function AppContent({
-  currentUser,
-  role,
   booting,
   loading,
   users,
@@ -31,11 +30,7 @@ function AppContent({
   setTours,
   setOrders,
   setPassengers,
-  handleLogout,
-  handleChangePassword,
 }: {
-  currentUser: UserType | null;
-  role: Role;
   booting: boolean;
   loading: boolean;
   users: UserType[];
@@ -46,44 +41,107 @@ function AppContent({
   setTours: React.Dispatch<React.SetStateAction<Tour[]>>;
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
-  handleLogout: () => Promise<void>;
-  handleChangePassword: (newPassword: string) => Promise<boolean>;
 }) {
+  const { currentUser, logout, loading: authLoading } = useAuth();
+  const role = useMemo(() => toRole(currentUser?.role), [currentUser]);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const homePath = useMemo(
-    () =>
-      role === "admin" || role === "superadmin"
-        ? "/admin"
-        : role === "provider"
-          ? "/provider"
-          : role === "manager"
-            ? "/manager"
-            : "/user",
-    [role]
-  );
+  // State for UserInterface
+  const [selectedTour, setSelectedTour] = useState("");
+  const [departureDate, setDepartureDate] = useState("");
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [errors, setErrors] = useState<ValidationError[]>([]);
+
+  // Passenger management functions
+  const addPassenger = () => {
+    // This will be implemented in UserInterface, so we pass it through
+    // For now, it can be a placeholder or moved to AppContent if needed
+  };
+
+  const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
+    // This will be implemented in UserInterface
+  };
+
+  const removePassenger = (index: number) => {
+    // This will be implemented in UserInterface
+  };
+
+  const validateBooking = () => {
+    const newErrors: ValidationError[] = [];
+    if (!selectedTour) newErrors.push({ field: "tour", message: "Please select a tour" });
+    if (!departureDate) newErrors.push({ field: "departure", message: "Please select a departure date" });
+    if (passengers.length === 0) newErrors.push({ field: "passengers", message: "At least one passenger is required" });
+    // Add more validations as needed (e.g., from UserInterface's validateBooking)
+    setErrors(newErrors);
+    return newErrors.length === 0;
+  };
+
+  const homePath = useMemo(() => {
+    if (!currentUser) return "/login";
+    switch (currentUser.role) {
+      case "admin":
+      case "superadmin":
+        return "/admin";
+      case "provider":
+        return "/provider";
+      case "manager":
+        return "/manager";
+      default:
+        return "/user";
+    }
+  }, [currentUser]);
+
+  // Pending / Declined check
+  if (currentUser && currentUser.access === "pending") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-yellow-50">
+        <div className="text-center p-6 bg-yellow-100 rounded-xl shadow-md">
+          <h1 className="text-2xl font-bold text-yellow-800 mb-4">Your request is pending</h1>
+          <p className="text-yellow-700">Wait until an admin approves your account.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentUser && currentUser.access === "declined") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
+        <div className="text-center p-6 bg-red-100 rounded-xl shadow-md">
+          <h1 className="text-2xl font-bold text-red-800 mb-4">Your request has been declined</h1>
+          <p className="text-red-700">
+            If you think this is a mistake, please{" "}
+            <a href="mailto:support@example.com" className="text-red-900 underline">
+              contact us
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
-    if (!currentUser || booting) return;
+    if (!currentUser || booting || authLoading) return;
 
-    const validPaths = ["admin", "superadmin"].includes(role)
-      ? ["/user", "/provider", "/admin", "/manager", "/change-password"]
-      : role === "provider"
-        ? ["/user", "/provider", "/change-password"]
-        : role === "manager"
-          ? ["/user", "/manager", "/change-password"]
-          : ["/user", "/change-password"];
+    const validPaths =
+      ["admin", "superadmin"].includes(role)
+        ? ["/user", "/provider", "/admin", "/manager", "/change-password"]
+        : role === "provider"
+          ? ["/provider", "/change-password"]
+          : role === "manager"
+            ? ["/manager", "/change-password"]
+            : ["/user", "/change-password"];
 
-    if (!validPaths.includes(location.pathname)) {
-      console.log("[redirect] Current path is invalid for role:", location.pathname, "Navigating to:", homePath);
+    if (["/login", "/"].includes(location.pathname)) {
       navigate(homePath, { replace: true });
-    } else {
-      console.log("[redirect] Current path is valid:", location.pathname, "No redirect needed");
+    } else if (!validPaths.includes(location.pathname)) {
+      navigate(homePath, { replace: true });
     }
-  }, [currentUser, role, booting, navigate, homePath, location.pathname]);
+  }, [currentUser, role, booting, authLoading, navigate, homePath, location.pathname]);
 
-  if (booting || loading) {
+  if (booting || authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="flex flex-col items-center space-y-4">
@@ -95,57 +153,111 @@ function AppContent({
   }
 
   if (!currentUser) {
-    return <Login onLogin={(user) => { }} />;
+    return <Login />;
   }
 
   return (
     <>
       {["admin", "superadmin"].includes(role) && (
-        <div className="flex items-center gap-3 p-3 border-b border-gray-200 bg-white">
-          <span className="font-semibold text-gray-800">View as:</span>
-          <Link to="/user" className="text-blue-600 hover:text-blue-800">User</Link>
-          <Link to="/provider" className="text-blue-600 hover:text-blue-800">Provider</Link>
-          <Link to="/admin" className="text-blue-600 hover:text-blue-800">Admin</Link>
-          <Link to="/manager" className="text-blue-600 hover:text-blue-800">Manager</Link>
+        <div className="relative bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200/60 backdrop-blur-sm">
+          <div className="flex items-center gap-2 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                </svg>
+              </div>
+              <span className="font-medium text-gray-700 text-sm">View as:</span>
+            </div>
+
+            <div className="flex items-center gap-1 ml-2">
+              <Link
+                to="/user"
+                className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-blue-100"
+              >
+                <span className="relative z-10">User</span>
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </Link>
+
+              <Link
+                to="/provider"
+                className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-emerald-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-emerald-100"
+              >
+                <span className="relative z-10">Provider</span>
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </Link>
+
+              <Link
+                to="/admin"
+                className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-purple-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-purple-100"
+              >
+                <span className="relative z-10">Admin</span>
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-50 to-violet-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </Link>
+
+              <Link
+                to="/manager"
+                className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-amber-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-amber-100"
+              >
+                <span className="relative z-10">Manager</span>
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </Link>
+            </div>
+          </div>
+
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent opacity-50"></div>
         </div>
       )}
 
-      <Routes>
-        <Route path="/change-password" element={<ChangePassword onChangePassword={handleChangePassword} />} />
+      <Header currentUser={currentUser} onLogout={logout} isUserRole={role === "user"} />
 
+      <Routes>
+        <Route
+          path="/change-password"
+          element={<ChangePassword onChangePassword={async (pw) => { const { error } = await supabase.auth.updateUser({ password: pw }); return !error; }} />}
+        />
         <Route
           path="/user"
           element={
-            ["user", "provider", "admin", "superadmin"].includes(role) ? (
+            role === "user" || ["admin", "superadmin"].includes(role) ? (
               <UserInterface
                 tours={tours}
                 orders={orders}
                 setOrders={setOrders}
                 currentUser={currentUser}
-                onLogout={handleLogout}
+                selectedTour={selectedTour}
+                setSelectedTour={setSelectedTour}
+                departureDate={departureDate}
+                setDepartureDate={setDepartureDate}
+                passengers={passengers}
+                setPassengers={setPassengers}
+                errors={errors}
+                isGroup={isGroup}
+                setIsGroup={setIsGroup}
+                groupName={groupName}
+                setGroupName={setGroupName}
+                addPassenger={addPassenger}
+                updatePassenger={updatePassenger}
+                removePassenger={removePassenger}
+                validateBooking={validateBooking}
+                showNotification={(type: any, message: any) => alert(`${type}: ${message}`)}
+                onLogout={logout}
               />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
-
         <Route
           path="/provider"
           element={
-            ["provider", "admin", "superadmin", "manager"].includes(role) ? (
-              <ProviderInterface
-                tours={tours}
-                setTours={setTours}
-                currentUser={currentUser}
-                onLogout={handleLogout}
-              />
+            role === "provider" || ["admin", "superadmin"].includes(role) ? (
+              <ProviderInterface tours={tours} setTours={setTours} currentUser={currentUser} />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
-
         <Route
           path="/admin"
           element={
@@ -158,18 +270,17 @@ function AppContent({
                 orders={orders}
                 setOrders={setOrders}
                 currentUser={currentUser}
-                onLogout={handleLogout}
+                onLogout={logout}
               />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
-
         <Route
           path="/manager"
           element={
-            ["manager", "admin", "superadmin"].includes(role) ? (
+            role === "manager" || ["admin", "superadmin"].includes(role) ? (
               <ManagerInterface
                 tours={tours}
                 setTours={setTours}
@@ -178,14 +289,12 @@ function AppContent({
                 passengers={passengers}
                 setPassengers={setPassengers}
                 currentUser={currentUser}
-                onLogout={handleLogout}
               />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
-
         <Route path="/" element={<Navigate to={homePath} replace />} />
         <Route path="/login" element={<Navigate to={homePath} replace />} />
         <Route path="*" element={<Navigate to={homePath} replace />} />
@@ -194,276 +303,61 @@ function AppContent({
   );
 }
 
-// Rest of the App component remains unchanged
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [users, setUsers] = useState<UserType[]>([]);
   const [tours, setTours] = useState<Tour[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [booting, setBooting] = useState(true);
-  const [loading, setLoading] = useState(false);
-
-  const role = useMemo<Role>(() => toRole(currentUser?.role), [currentUser]);
-  console.log("[App] Current user role:", role, "Current user:", currentUser);
-
-  const initedRef = useRef(false);
 
   useEffect(() => {
-    if (initedRef.current) {
-      console.log("[boot] Skipping duplicate init due to StrictMode");
-      return;
-    }
-    initedRef.current = true;
-
-    console.log("[boot] Starting initialization...");
-    let cancelled = false;
-
-    const watchdog = setTimeout(() => {
-      if (!cancelled) {
-        console.warn("[boot] Watchdog triggered after 3s — forcing boot complete");
-        setBooting(false);
-      }
-    }, 3000);
-
-    const init = async () => {
+    const fetchData = async () => {
       try {
-        console.log("[boot] Step 1: Checking supabase client...");
-        if (!supabase) {
-          console.error("[boot] Supabase client is undefined!");
-          return;
-        }
+        // Fetch users
+        const { data: usersData, error: usersError } = await supabase.from("users").select("*");
+        if (usersError) throw usersError;
+        setUsers(usersData || []);
 
-        console.log("[boot] Step 2: Getting session...");
-        const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-        console.log("[boot] Session result:", { sessionData, sessionErr });
+        // Fetch tours
+        const { data: toursData, error: toursError } = await supabase.from("tours").select("*");
+        if (toursError) throw toursError;
+        setTours(toursData || []);
 
-        if (sessionErr) {
-          console.error("[boot] getSession error:", sessionErr);
-          return;
-        }
+        // Fetch orders
+        const { data: ordersData, error: ordersError } = await supabase.from("orders").select("*");
+        if (ordersError) throw ordersError;
+        setOrders(ordersData || []);
 
-        let userId: string | null = sessionData?.session?.user?.id ?? null;
-        console.log("[boot] User ID from session:", userId);
-
-        if (!userId) {
-          console.log("[boot] Step 3: No session, trying getUser...");
-          const { data: authData, error: authErr } = await supabase.auth.getUser();
-          console.log("[boot] getUser result:", { authData, authErr });
-
-          if (authErr) {
-            console.error("[boot] getUser error:", authErr);
-            return;
-          }
-          userId = authData?.user?.id ?? null;
-          console.log("[boot] User ID from getUser:", userId);
-        }
-
-        if (userId) {
-          console.log("[boot] Step 4: Fetching user profile for ID:", userId);
-          const { data: row, error: rowErr } = await supabase
-            .from("users")
-            .select("*")
-            .eq("id", userId)
-            .maybeSingle();
-
-          console.log("[boot] User profile result:", { row, rowErr });
-
-          if (rowErr) {
-            console.error("[boot] Fetch current user row error:", rowErr);
-          } else if (row) {
-            console.log("[boot] Step 5: Creating user object from row:", row);
-            try {
-              const full: UserType = {
-                userId: String(row.id),
-                id: String(row.id),
-                first_name: String(row.first_name ?? ""),
-                last_name: String(row.last_name ?? ""),
-                username: String(row.username ?? ""),
-                role: toRole(row.role),
-                phone: String(row.phone ?? ""),
-                email: String(row.email ?? ""),
-                password: "",
-                blacklist: Boolean(row.blacklist ?? false),
-                company: String(row.company ?? ""),
-                access: String(row.access ?? "active"),
-                birth_date: String(row.birth_date ?? ""),
-                id_card_number: String(row.id_card_number ?? ""),
-                travel_history: Array.isArray(row.travel_history) ? row.travel_history : [],
-                passport_number: String(row.passport_number ?? ""),
-                passport_expire: String(row.passport_expiry ?? ""),
-                allergy: String(row.allergy ?? ""),
-                emergency_phone: String(row.emergency_phone ?? ""),
-                membership_rank: String(row.membership_rank ?? ""),
-                membership_points: Number(row.membership_points ?? 0),
-                registered_by: String(row.registered_by ?? ""),
-                createdBy: String(row.createdBy ?? ""),
-                createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
-                updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
-              };
-              console.log("[boot] Step 5b: User object created successfully:", full);
-              setCurrentUser(full);
-            } catch (userObjError) {
-              console.error("[boot] Error creating user object:", userObjError);
-            }
-          } else {
-            console.warn("[boot] No public.users row found for auth user", userId);
-          }
-        } else {
-          console.info("[boot] No active session - user not logged in");
-        }
-      } catch (e) {
-        console.error("[boot] Unexpected init error:", e);
+        // Fetch passengers
+        const { data: passengersData, error: passengersError } = await supabase.from("passengers").select("*");
+        if (passengersError) throw passengersError;
+        setPassengers(passengersData || []);
+      } catch (err) {
+        console.error("Error fetching data:", err);
       } finally {
-        console.log("[boot] Step 7: Boot complete, setting booting to false");
         setBooting(false);
-        clearTimeout(watchdog);
       }
     };
 
-    init().catch((err) => {
-      console.error("[boot] init() failed:", err);
-      setBooting(false);
-      clearTimeout(watchdog);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log("[auth change] Auth state changed:", _event, session?.user?.id);
-      if (!session?.user) {
-        setCurrentUser(null);
-        return;
-      }
-      const { data: row, error } = await supabase.from("users").select("*").eq("id", session.user.id).maybeSingle();
-      if (error) {
-        console.error("[auth change] load users row error:", error);
-        return;
-      }
-      if (row) {
-        const full: UserType = {
-          userId: String(row.id),
-          id: String(row.id),
-          first_name: String(row.first_name ?? ""),
-          last_name: String(row.last_name ?? ""),
-          username: String(row.username ?? ""),
-          role: toRole(row.role),
-          phone: String(row.phone ?? ""),
-          email: String(row.email ?? ""),
-          password: "",
-          blacklist: Boolean(row.blacklist ?? false),
-          company: String(row.company ?? ""),
-          access: String(row.access ?? "active"),
-          birth_date: String(row.birth_date ?? ""),
-          id_card_number: String(row.id_card_number ?? ""),
-          travel_history: Array.isArray(row.travel_history) ? row.travel_history : [],
-          passport_number: String(row.passport_number ?? ""),
-          passport_expire: String(row.passport_expiry ?? ""),
-          allergy: String(row.allergy ?? ""),
-          emergency_phone: String(row.emergency_phone ?? ""),
-          membership_rank: String(row.membership_rank ?? ""),
-          membership_points: Number(row.membership_points ?? 0),
-          registered_by: String(row.registered_by ?? ""),
-          createdBy: String(row.createdBy ?? ""),
-          createdAt: new Date(row.createdAt ?? Date.now()),
-          updatedAt: new Date(row.updatedAt ?? Date.now()),
-        };
-        console.log("[auth change] Setting currentUser:", full);
-        setCurrentUser(full);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(watchdog);
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      if (role === "admin" || role === "superadmin" || role === "manager") {
-        const { data: usersData, error: usersErr } = await supabase.from("users").select("*");
-        if (usersErr) console.error("Load users error:", usersErr);
-        setUsers((usersData as any) || []);
-      } else {
-        const { data: me } = await supabase.from("users").select("*").eq("id", currentUser!.id).maybeSingle();
-        setUsers(me ? [me as any] : []);
-      }
-
-      const { data: toursData, error: toursErr } = await supabase.from("tours").select("*");
-      if (toursErr) console.error("Load tours error:", toursErr);
-      setTours((toursData as any) || []);
-
-      if (role === "admin" || role === "superadmin" || role === "manager") {
-        const { data: ordersData, error: ordersErr } = await supabase.from("orders").select("*, passengers(*)");
-        if (ordersErr) console.error("Load orders error:", ordersErr);
-        setOrders((ordersData as any) || []);
-      } else {
-        const { data: ordersData, error: ordersErr } = await supabase
-          .from("orders")
-          .select("*, passengers(*)")
-          .eq("user_id", currentUser!.id);
-        if (ordersErr) console.error("Load orders error:", ordersErr);
-        setOrders((ordersData as any) || []);
-      }
-
-      if (role === "admin" || role === "superadmin" || role === "manager") {
-        const { data: passengersData, error: passengersErr } = await supabase.from("passengers").select("*");
-        if (passengersErr) console.error("Load passengers error:", passengersErr);
-        setPassengers((passengersData as any) || []);
-      } else {
-        setPassengers([]);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!currentUser) return;
     fetchData();
-  }, [currentUser?.id, role]);
-
-  const handleLogout = async () => {
-    console.log("[App] Logging out user:", currentUser?.email);
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setUsers([]);
-    setTours([]);
-    setOrders([]);
-    setPassengers([]);
-  };
-
-  const handleChangePassword = async (newPassword: string): Promise<boolean> => {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) {
-      alert("Failed to change password: " + error.message);
-      return false;
-    }
-    alert("Password updated successfully!");
-    return true;
-  };
+  }, []);
 
   return (
     <Router>
-      <AppContent
-        currentUser={currentUser}
-        role={role}
-        booting={booting}
-        loading={loading}
-        users={users}
-        tours={tours}
-        orders={orders}
-        passengers={passengers}
-        setUsers={setUsers}
-        setTours={setTours}
-        setOrders={setOrders}
-        setPassengers={setPassengers}
-        handleLogout={handleLogout}
-        handleChangePassword={handleChangePassword}
-      />
+      <AuthProvider>
+        <AppContent
+          booting={booting}
+          loading={false}
+          users={users}
+          tours={tours}
+          orders={orders}
+          passengers={passengers}
+          setUsers={setUsers}
+          setTours={setTours}
+          setOrders={setOrders}
+          setPassengers={setPassengers}
+        />
+      </AuthProvider>
     </Router>
   );
 }

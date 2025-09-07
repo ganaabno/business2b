@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import type { Passenger, User as UserType } from "../types/type";
 
@@ -15,6 +15,71 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
   const [passengerStatusFilter, setPassengerStatusFilter] = useState<string>("all");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
+  // Fetch passengers with tour_title
+  const fetchPassengers = async () => {
+    try {
+      let query = supabase
+        .from("passengers")
+        .select(`
+          *,
+          orders (
+            id,
+            tour_id,
+            tours (
+              id,
+              title
+            )
+          )
+        `);
+      if (currentUser.role === "user") {
+        query = query.eq("user_id", currentUser.userId);
+      }
+      const { data, error } = await query;
+      if (error) {
+        console.error("Error fetching passengers:", error);
+        showNotification("error", `Failed to fetch passengers: ${error.message}`);
+        return;
+      }
+      console.log("Fetched passengers:", data);
+      const enrichedPassengers = data.map((p: any) => ({
+        ...p,
+        tour_title: p.orders?.tours?.title || "Unknown Tour",
+      }));
+      setPassengers(enrichedPassengers);
+    } catch (error) {
+      console.error("Unexpected error fetching passengers:", error);
+      showNotification("error", "An unexpected error occurred while fetching passengers.");
+    }
+  };
+
+  // Real-time subscription for passengers
+  useEffect(() => {
+    fetchPassengers(); // Initial fetch
+    const subscription = supabase
+      .channel("passengers_tab_channel")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "passengers",
+          filter: currentUser.role === "user" ? `user_id=eq.${currentUser.userId}` : undefined,
+        },
+        (payload) => {
+          console.log("Real-time passenger update:", payload);
+          fetchPassengers(); // Refetch on update
+        }
+      )
+      .subscribe((status) => {
+        console.log("Passenger subscription status:", status);
+      });
+
+    return () => {
+      console.log("Unsubscribing from passengers_tab_channel");
+      supabase.removeChannel(subscription);
+    };
+  }, [currentUser.userId, currentUser.role, showNotification]);
+
   const handlePassengerChange = async (id: string, field: keyof Passenger, value: any) => {
     const previousPassengers = [...passengers];
     const updatedPassengers = passengers.map((p) => (p.id === id ? { ...p, [field]: value } : p));
@@ -28,6 +93,8 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
         console.error("Error updating passenger:", error);
         showNotification("error", `Failed to update passenger: ${error.message}`);
         setPassengers(previousPassengers);
+      } else {
+        console.log(`Updated passenger id=${id}, field=${field}, value=`, value);
       }
     } catch (error) {
       console.error("Unexpected error updating passenger:", error);
@@ -45,6 +112,9 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
         console.error("Error deleting passenger:", error);
         showNotification("error", `Failed to delete passenger: ${error.message}`);
         setPassengers(previousPassengers);
+      } else {
+        console.log(`Deleted passenger id=${id}`);
+        showNotification("success", "Passenger deleted successfully");
       }
       setShowDeleteConfirm(null);
     } catch (error) {
@@ -102,7 +172,10 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             >
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
+              <option value="rejected">Rejected</option>
+              <option value="pending">Pending</option>
               <option value="cancelled">Cancelled</option>
+              <option value="inactive">Inactive</option>
             </select>
           </div>
         </div>
@@ -113,6 +186,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-48 shadow-sm">Name</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-[108px] z-10 bg-gray-50 w-32 shadow-sm">Order ID</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tour</th>
               <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DOB</th>
               <th className="px-10 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Age</th>
               <th className="px-12 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Gender</th>
@@ -147,6 +221,9 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Order ID..."
                   />
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                  {passenger.tour_title || "Unknown Tour"}
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap">
                   <input
@@ -285,7 +362,10 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                   >
                     <option value="active">✅ Active</option>
-                    <option value="cancelled">❌ Cancelled</option>
+                    <option value="rejected">❌ Rejected</option>
+                    <option value="pending">⏳ Pending</option>
+                    <option value="cancelled">🚫 Cancelled</option>
+                    <option value="inactive">😴 Inactive</option>
                   </select>
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap">

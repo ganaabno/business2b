@@ -26,6 +26,7 @@ export default function ProgressSteps({ activeStep }: ProgressStepsProps) {
           </div>
         ))}
       </div>
+      
     </div>
   );
 }

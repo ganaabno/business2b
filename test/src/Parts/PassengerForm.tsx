@@ -1,4 +1,3 @@
-import { useState, useRef } from "react";
 import type { Tour, Passenger, ValidationError } from "../types/type";
 
 interface PassengerFormProps {
@@ -24,20 +23,9 @@ interface PassengerFormProps {
 
 export default function PassengerForm({
   passengers,
-  setPassengers,
-  selectedTourData,
   errors,
   updatePassenger,
   removePassenger,
-  downloadTemplate,
-  handleUploadCSV,
-  addPassenger,
-  setActiveStep,
-  isGroup,
-  setIsGroup,
-  groupName,
-  setGroupName,
-  showNotification,
   expandedPassengerId,
   setExpandedPassengerId,
   newPassengerRef,
@@ -183,7 +171,7 @@ export default function PassengerForm({
                       {errors.find((e) => e.field === `passenger_${index}_nationality`)?.message}
                     </p>
                   )}
-                </div>
+              </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Room Type *</label>
                   <input

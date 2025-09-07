@@ -1,115 +1,17 @@
 @import "tailwindcss";
 
-body {
-  font-family: 'Roboto', sans-serif;
-  background-color: #f8f9fa;
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
 }
-
-.navbar {
-  background-color: #007BFF;
-}
-
-.navbar-brand, .nav-link {
-  color: #FFFFFF !important;
-}
-
-.nav-link:hover {
-  color: #d0e7ff !important;
-}
-
-.card {
-  border: none;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  border-radius: 10px;
-}
-
-.btn-primary {
-  background-color: #007BFF;
-  border-color: #007BFF;
-  border-radius: 8px;
-  transition: background-color 0.3s, transform 0.2s;
-}
-
-.btn-primary:hover {
-  background-color: #0056b3;
-  transform: translateY(-2px);
-}
-
-.btn-danger, .btn-secondary {
-  border-radius: 8px;
-  transition: background-color 0.3s, transform 0.2s;
-}
-
-.btn-danger:hover {
-  background-color: #c82333;
-  transform: translateY(-2px);
-}
-
-.table {
-  background-color: #FFFFFF;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.table th, .table td {
-  vertical-align: middle;
-}
-
-.table-striped tbody tr:nth-of-type(odd) {
-  background-color: #f2f2f2;
-}
-
-.form-label {
-  font-weight: 500;
-}
-
-.login-container {
-  max-width: 400px;
-  margin: 100px auto;
-}
-
-.expired {
-  background-color: #ff0000;
-  color: #FFFFFF;
-}
-
-.warning {
-  background-color: #ffff00;
-}
-
-.birthday {
-  background-color: #00ff00;
-}
-
-.form-control, .form-select {
-  border-radius: 8px;
-  white-space: normal;
-  word-wrap: break-word;
-}
-
-.form-control:focus, .form-select:focus {
-  border-color: #007BFF;
-  box-shadow: 0 0 5px rgba(0,123,255,0.5);
-}
-
-.sub-row {
-  background-color: #e9ecef;
-}
-
-.total-cell {
-  font-weight: bold;
-  background-color: #007BFF;
-  color: #FFFFFF;
-}
-
-td input, td select {
-  width: 100%;
-  max-width: 300px;
-}
-
-.alert {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1050;
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
 }

@@ -1,55 +1,98 @@
 // src/api/auth.ts
-import { supabase } from '../supabaseClient';
-import type { User } from '../types/type';
+import { supabase } from "../supabaseClient";
+import type { User, Role } from "../types/type";
 
-// loginUser now works with your Database typing
-export async function loginUser(email: string, password: string): Promise<User | null> {
+// Convert DB role to Role type
+function toRole(value: any): Role {
+  const v = String(value ?? "user") as Role;
+  return ["user", "provider", "admin", "superadmin", "manager"].includes(v)
+    ? v
+    : "user";
+}
+
+// Login function
+export async function loginUser(
+  email: string,
+  password: string
+): Promise<User | null> {
   try {
-    // 1️⃣ Sign in with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError) {
-      console.error('Login error:', authError.message);
-      return null;
-    }
-
-    if (!authData.user) {
-      console.error('No user returned from Supabase Auth');
-      return null;
-    }
+    const { data: authData, error: authError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+    if (authError) throw authError;
+    if (!authData.user) return null;
 
     const uid = authData.user.id;
-
-    // 2️⃣ Fetch the corresponding row from your "users" table
     const { data: userData, error: userError } = await supabase
-      .from('users')  // ✅ do NOT pass <User> here
-      .select('*')
-      .eq('id', uid)
-      .single();
+      .from("users")
+      .select("*")
+      .eq("id", uid)
+      .maybeSingle();
 
-    if (userError) {
-      console.error('Error fetching user record:', userError.message);
-      return null;
-    }
-
+    if (userError) throw userError;
     if (!userData) return null;
 
-    // 3️⃣ Map snake_case to camelCase if you prefer
     const user: User = {
-      ...userData,
-      createdBy: userData.createdAby,
-      createdAt: userData.createdAt,
-      updatedAt: userData.updatedAt,
+      userId: String(userData.id),
+      id: String(userData.id),
+      first_name: String(userData.first_name ?? ""),
+      last_name: String(userData.last_name ?? ""),
+      username: String(userData.username ?? ""),
+      role: toRole(userData.role),
+      status: ["pending", "declined", "approved"].includes(
+        String(userData.status)
+      )
+        ? (userData.status as "pending" | "declined" | "approved")
+        : "pending", // fallback
+      email: String(userData.email ?? ""),
+      password: "",
+      phone: String(userData.phone ?? ""),
+      blacklist: Boolean(userData.blacklist ?? false),
+      access: String(userData.access ?? "active"),
+      company: String(userData.company ?? ""),
+      birth_date: String(userData.birth_date ?? ""),
+      id_card_number: String(userData.id_card_number ?? ""),
+      passport_number: String(userData.passport_number ?? ""),
+      passport_expire: String(userData.passport_expiry ?? ""),
+      allergy: String(userData.allergy ?? ""),
+      emergency_phone: String(userData.emergency_phone ?? ""),
+      membership_rank: String(userData.membership_rank ?? ""),
+      membership_points: Number(userData.membership_points ?? 0),
+      registered_by: String(userData.registered_by ?? ""),
+      createdBy: String(userData.createdBy ?? ""),
+      createdAt: new Date(userData.createdAt ?? Date.now()),
+      updatedAt: new Date(userData.updatedAt ?? Date.now()),
+      travel_history: Array.isArray(userData.travel_history)
+        ? userData.travel_history
+        : [],
     };
-
-    console.log('Logged in as:', user.username, 'role:', user.role);
     return user;
-
-  } catch (err) {
-    console.error('Unexpected login error:', err);
+  } catch (err: any) {
+    console.error("Login error:", err);
     return null;
+  }
+}
+
+// Signup request (sends confirmation link)
+export async function signupUser(
+  email: string,
+  password: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: window.location.origin + "/pending", // redirect after signup
+      },
+    });
+    if (error) throw error;
+    console.log("Signup request sent:", data);
+    return true;
+  } catch (err: any) {
+    console.error("Signup error:", err);
+    return false;
   }
 }
