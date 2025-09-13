@@ -5,8 +5,50 @@ import Notifications from "../Parts/Notification";
 import ProgressSteps from "../Parts/ProgressSteps";
 import ErrorSummary from "../Parts/ErrorSummary";
 import BookingSummary from "../Parts/BookingSummary";
-import TourSelection from "../Parts/TourSelection";
+import TourSelectionUser from "../Pages/userInterface/TourSlelectionUser";
 import AddPassengerTabUser from "../components/AddPassengerTabUser";
+import { checkSeatLimit } from "../utils/seatLimitChecks";
+
+// Type for Supabase passenger data with nested orders and tours
+interface SupabasePassenger {
+  id: string;
+  order_id: string;
+  user_id: string | null;
+  tour_title: string;
+  departure_date: string;
+  name: string;
+  room_allocation: string;
+  serial_no: string;
+  last_name: string;
+  first_name: string;
+  date_of_birth: string;
+  age: number;
+  gender: string;
+  passport_number: string;
+  passport_expiry: string;
+  nationality: string;
+  roomType: string;
+  hotel: string;
+  additional_services: string[];
+  price: number;
+  email: string;
+  phone: string;
+  passport_upload: string;
+  allergy: string;
+  emergency_phone: string;
+  created_at: string;
+  updated_at: string;
+  status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
+  orders?: {
+    id: string;
+    tour_id: string;
+    departureDate: string;
+    tours?: {
+      id: string;
+      title: string;
+    };
+  };
+}
 
 // Generate unique passenger ID
 const generatePassengerId = (): string => `passenger_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -43,9 +85,9 @@ const createNewPassenger = (
   return {
     id: generatePassengerId(),
     order_id: "",
+    user_id: currentUser.userId,
     tour_title: selectedTourData?.title || "",
     departure_date: "",
-    user_id: currentUser.userId,
     name: "",
     room_allocation: "",
     serial_no: serialNo,
@@ -85,6 +127,7 @@ interface UserInterfaceProps {
   tours: Tour[];
   orders: Order[];
   setOrders: Dispatch<SetStateAction<Order[]>>;
+  setTours: Dispatch<SetStateAction<Tour[]>>;
   selectedTour: string;
   setSelectedTour: Dispatch<SetStateAction<string>>;
   departureDate: string;
@@ -110,6 +153,7 @@ export default function UserInterface({
   errors,
   showNotification,
   currentUser,
+  setTours,
 }: UserInterfaceProps) {
   const [activeStep, setActiveStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -121,6 +165,8 @@ export default function UserInterface({
     action: "clearAll" | "resetForm" | null;
     message: string;
   } | null>(null);
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>(errors);
   const [currentPage, setCurrentPage] = useState(1);
@@ -177,20 +223,21 @@ export default function UserInterface({
 
   // Filter passengers for BookingSummary (unsubmitted only)
   const bookingPassengers = useMemo(() => {
+    const tour = tours.find((t) => t.title === selectedTour);
     return passengers
       .filter(
         (p) =>
           p.user_id === currentUser.userId &&
-          p.tour_title === selectedTour &&
+          p.tour_title === tour?.title &&
           p.departure_date === departureDate &&
           p.order_id === ""
       )
       .map((passenger) => {
         const order = orders.find((o) => o.id === passenger.order_id);
-        const tour = tours.find((t) => t.id === order?.tour_id);
+        const tourMatch = tours.find((t) => t.id === order?.tour_id || t.title === selectedTour);
         return {
           ...passenger,
-          tour_title: tour?.title || passenger.tour_title || "Unknown Tour",
+          tour_title: tourMatch?.title || passenger.tour_title || "Unknown Tour",
           departure_date: order?.departureDate || passenger.departure_date || "",
         };
       });
@@ -198,19 +245,33 @@ export default function UserInterface({
 
   // Get selected tour data for passenger creation
   const selectedTourData = useMemo(() => {
-    return tours.find((t) => t.title === selectedTour);
+    const tour = tours.find((t) => t.title === selectedTour);
+    return tour;
   }, [tours, selectedTour]);
 
-  const remainingSeats =
-    selectedTourData?.available_seats !== undefined
-      ? Math.max(0, selectedTourData.available_seats - bookingPassengers.length)
-      : undefined;
+  const [remainingSeats, setRemainingSeats] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (selectedTourData?.id && departureDate) {
+      checkSeatLimit(selectedTourData.id, departureDate)
+        .then(({ seats }) => {
+          console.log(`Updated remaining seats for tour ${selectedTourData.id}: ${seats}`);
+          setRemainingSeats(seats);
+        })
+        .catch((error) => {
+          console.error("Error fetching remaining seats:", error);
+          setRemainingSeats(0);
+        });
+    } else {
+      setRemainingSeats(undefined);
+    }
+  }, [selectedTourData, departureDate]);
 
   const canAddPassenger = () => {
     if (bookingPassengers.length >= MAX_PASSENGERS) return false;
-    if (!selectedTourData) return true;
-    if (selectedTourData.available_seats === undefined) return true;
-    return bookingPassengers.length < selectedTourData.available_seats;
+    if (!selectedTourData) return false;
+    if (remainingSeats === undefined) return true;
+    return remainingSeats > 0;
   };
 
   const wrappedShowNotification = useCallback(
@@ -222,9 +283,10 @@ export default function UserInterface({
     [showNotification]
   );
 
-  // Real-time subscription for passengers
+  // Real-time subscriptions for passengers, orders, and tours
   useEffect(() => {
-    const subscription = supabase
+    // Passenger subscription
+    const passengerSubscription = supabase
       .channel("passengers_channel")
       .on(
         "postgres_changes",
@@ -235,7 +297,6 @@ export default function UserInterface({
           filter: `user_id=eq.${currentUser.userId}`,
         },
         async (payload) => {
-          console.log("Real-time passenger update:", payload);
           try {
             const { data, error } = await supabase
               .from("passengers")
@@ -257,29 +318,187 @@ export default function UserInterface({
               wrappedShowNotification("error", `Failed to refresh passengers: ${error.message}`);
               return;
             }
-            console.log("Fetched updated passengers:", data);
             setPassengers(
-              data.map((p: any) => ({
-                ...p,
+              data.map((p: SupabasePassenger): Passenger => ({
+                id: p.id,
+                order_id: p.order_id,
+                user_id: p.user_id,
                 tour_title: p.orders?.tours?.title || p.tour_title || "Unknown Tour",
                 departure_date: p.orders?.departureDate || p.departure_date || "",
+                name: p.name,
+                room_allocation: p.room_allocation,
+                serial_no: p.serial_no,
+                last_name: p.last_name,
+                first_name: p.first_name,
+                date_of_birth: p.date_of_birth,
+                age: p.age,
+                gender: p.gender,
+                passport_number: p.passport_number,
+                passport_expiry: p.passport_expiry,
+                nationality: p.nationality,
+                roomType: p.roomType,
+                hotel: p.hotel,
+                additional_services: p.additional_services,
+                price: p.price,
+                email: p.email,
+                phone: p.phone,
+                passport_upload: p.passport_upload,
+                allergy: p.allergy,
+                emergency_phone: p.emergency_phone,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+                status: p.status,
               }))
             );
+            // Trigger seat limit check after passenger update
+            if (selectedTourData?.id && departureDate) {
+              const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
+              wrappedShowNotification(isValid ? "success" : "error", message);
+            }
           } catch (error) {
-            console.error("Error in real-time handler:", error);
+            console.error("Error in passenger real-time handler:", error);
             wrappedShowNotification("error", "Failed to refresh passengers");
           }
         }
       )
-      .subscribe((status) => {
-        console.log("Passenger subscription status:", status);
-      });
+      .subscribe();
+
+    // Order subscription
+    const orderSubscription = supabase
+      .channel("orders_channel")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `user_id=eq.${currentUser.userId}`,
+        },
+        async (payload) => {
+          try {
+            const { data, error } = await supabase
+              .from("orders")
+              .select(`
+                *,
+                tours (
+                  id,
+                  title
+                )
+              `)
+              .eq("user_id", currentUser.userId);
+            if (error) {
+              console.error("Error fetching updated orders:", error);
+              wrappedShowNotification("error", `Failed to refresh orders: ${error.message}`);
+              return;
+            }
+            setOrders(
+              data.map((o): Order => ({
+                id: o.id,
+                user_id: o.user_id,
+                tour_id: o.tour_id,
+                departureDate: o.departureDate,
+                tour: o.tours?.title || o.tour || "Unknown Tour",
+                phone: o.phone,
+                last_name: o.last_name,
+                first_name: o.first_name,
+                email: o.email,
+                age: o.age,
+                gender: o.gender,
+                passport_number: o.passport_number,
+                passport_expire: o.passport_expire,
+                passport_copy: o.passport_copy,
+                created_by: o.created_by,
+                createdBy: o.createdBy,
+                edited_by: o.edited_by,
+                edited_at: o.edited_at,
+                travel_choice: o.travel_choice,
+                status: o.status,
+                hotel: o.hotel,
+                room_number: o.room_number,
+                payment_method: o.payment_method,
+                created_at: o.created_at,
+                updated_at: o.updated_at,
+                show_in_provider: o.show_in_provider,
+                total_price: o.total_price,
+                total_amount: o.total_amount,
+                paid_amount: o.paid_amount,
+                balance: o.balance,
+                commission: o.commission || 0,
+                passengers: passengers.filter((p) => p.order_id === o.id),
+              }))
+            );
+            // Trigger seat limit check after order update
+            if (selectedTourData?.id && departureDate) {
+              const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
+              wrappedShowNotification(isValid ? "success" : "error", message);
+            }
+          } catch (error) {
+            console.error("Error in order real-time handler:", error);
+            wrappedShowNotification("error", "Failed to refresh orders");
+          }
+        }
+      )
+      .subscribe();
+
+    // Tour subscription
+    const tourSubscription = supabase
+      .channel("tours_channel")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tours",
+        },
+        async (payload) => {
+          try {
+            const { data, error } = await supabase
+              .from("tours")
+              .select(`
+                id,
+                title,
+                name,
+                description,
+                seats,
+                base_price,
+                dates,
+                hotels,
+                services
+              `);
+            if (error) {
+              console.error("Error fetching updated tours:", error);
+              wrappedShowNotification("error", `Failed to refresh tours: ${error.message}`);
+              return;
+            }
+            // Validate data shape
+            const validatedTours = data.filter((tour): tour is Tour => {
+              const isValid = tour.id && tour.title;
+              if (!isValid) {
+                console.warn("Invalid tour data:", tour);
+              }
+              return isValid;
+            });
+            console.log("Updated tours:", JSON.stringify(validatedTours, null, 2));
+            setTours(validatedTours);
+            // Trigger seat limit check after tour update
+            if (selectedTourData?.id && departureDate) {
+              const { isValid, message, seats } = await checkSeatLimit(selectedTourData.id, departureDate);
+              wrappedShowNotification(isValid ? "success" : "error", message);
+            }
+          } catch (error) {
+            console.error("Error in tour real-time handler:", error);
+            wrappedShowNotification("error", "Failed to refresh tours");
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      console.log("Unsubscribing from passengers_channel");
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(passengerSubscription);
+      supabase.removeChannel(orderSubscription);
+      supabase.removeChannel(tourSubscription);
     };
-  }, [currentUser.userId, wrappedShowNotification, setPassengers]);
+  }, [currentUser.userId, setPassengers, setOrders, setTours, selectedTourData, departureDate, wrappedShowNotification]);
 
   const calculateAge = (dateOfBirth: string): number => {
     if (!dateOfBirth) return 0;
@@ -295,15 +514,15 @@ export default function UserInterface({
     return services.reduce((sum, serviceName) => {
       const service = tourData.services.find((s) => s.name === serviceName);
       return sum + (service ? service.price : 0);
-    }, 0);
+    }, tourData.base_price || 0);
   };
 
-  const addPassenger = useCallback(() => {
+  const addPassenger = useCallback(async () => {
     if (!canAddPassenger()) {
       if (bookingPassengers.length >= MAX_PASSENGERS) {
         wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
-      } else if (selectedTourData?.available_seats !== undefined) {
-        wrappedShowNotification("error", "Cannot add more passengers. Tour is fully booked.");
+      } else {
+        wrappedShowNotification("error", "Cannot add passenger. Tour is fully booked or invalid.");
       }
       return;
     }
@@ -312,22 +531,64 @@ export default function UserInterface({
       const newPassenger = createNewPassenger(currentUser, bookingPassengers, selectedTourData);
       setPassengers((prev) => [
         ...prev,
-        { ...newPassenger, tour_title: selectedTour, departure_date: departureDate },
+        { ...newPassenger, tour_title: selectedTourData?.title || "Unknown Tour", departure_date: departureDate },
       ]);
       setExpandedPassengerId(newPassenger.id);
-      const passengerCount = bookingPassengers.length + 1;
-      wrappedShowNotification("success", `Added passenger ${passengerCount}`);
+      wrappedShowNotification("success", `Passenger added`);
       newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      // Trigger seat limit check after adding passenger
+      if (selectedTourData?.id && departureDate) {
+        const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
+        wrappedShowNotification(isValid ? "success" : "error", message);
+      }
     } catch (error) {
-      wrappedShowNotification("error", "Failed to add passenger. Please try again.");
+      console.error("Error adding passenger:", error);
+      wrappedShowNotification("error", "Failed to add passenger");
     }
-  }, [bookingPassengers, currentUser, selectedTourData, wrappedShowNotification, setPassengers, selectedTour, departureDate]);
+  }, [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers]);
+
+  const addMultiplePassengers = useCallback(
+    async (count: number) => {
+      if (!canAddPassenger() || bookingPassengers.length + count > MAX_PASSENGERS) {
+        wrappedShowNotification("error", `Cannot add ${count} passengers. Maximum ${MAX_PASSENGERS} allowed.`);
+        return;
+      }
+      if (selectedTourData?.seats !== undefined && bookingPassengers.length + count > selectedTourData.seats) {
+        wrappedShowNotification("error", "Cannot add passengers. Tour is fully booked.");
+        return;
+      }
+      try {
+        const newPassengers = Array.from({ length: count }, () =>
+          createNewPassenger(currentUser, bookingPassengers, selectedTourData)
+        ).map((p, idx) => ({
+          ...p,
+          serial_no: (bookingPassengers.length + idx + 1).toString(),
+          tour_title: selectedTourData?.title || "Unknown Tour",
+          departure_date: departureDate,
+        }));
+        setPassengers((prev) => [...prev, ...newPassengers]);
+        setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
+        wrappedShowNotification("success", `${count} passengers added`);
+        newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // Trigger seat limit check after adding passengers
+        if (selectedTourData?.id && departureDate) {
+          const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
+          wrappedShowNotification(isValid ? "success" : "error", message);
+        }
+      } catch (error) {
+        console.error("Error adding passengers:", error);
+        wrappedShowNotification("error", `Failed to add ${count} passengers`);
+      }
+    },
+    [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers, MAX_PASSENGERS]
+  );
 
   const updatePassenger = async (passengerId: string, field: keyof Passenger, value: any) => {
     const updatedPassengers = [...passengers];
     const passengerIndex = passengers.findIndex((p) => p.id === passengerId && p.user_id === currentUser.userId);
     if (passengerIndex === -1) {
-      console.error(`Passenger not found or not owned by user: id=${passengerId}, userId=${currentUser.userId}`);
       wrappedShowNotification("error", "Passenger not found or not owned by user");
       return;
     }
@@ -362,7 +623,7 @@ export default function UserInterface({
           return;
         }
         updatedPassengers[passengerIndex].passport_upload = data.path;
-        wrappedShowNotification("success", "Passport uploaded successfully");
+        wrappedShowNotification("success", "Passport uploaded");
       } catch (error) {
         wrappedShowNotification("error", "Failed to upload passport");
       } finally {
@@ -372,7 +633,6 @@ export default function UserInterface({
 
     updatedPassengers[passengerIndex].updated_at = new Date().toISOString();
     setPassengers(updatedPassengers);
-    console.log(`Updated passenger id=${passengerId}, field=${field}, value=`, value);
   };
 
   const removePassenger = useCallback(
@@ -399,12 +659,20 @@ export default function UserInterface({
         if (expandedPassengerId === passengerId) {
           setExpandedPassengerId(null);
         }
-        wrappedShowNotification("success", `Removed passenger`);
+        wrappedShowNotification("success", `Passenger removed`);
+
+        // Trigger seat limit check after removing passenger
+        if (selectedTourData?.id && departureDate) {
+          checkSeatLimit(selectedTourData.id, departureDate).then(({ isValid, message }) => {
+            wrappedShowNotification(isValid ? "success" : "error", message);
+          });
+        }
       } catch (error) {
-        wrappedShowNotification("error", "Failed to remove passenger. Please try again.");
+        console.error("Error removing passenger:", error);
+        wrappedShowNotification("error", "Failed to remove passenger");
       }
     },
-    [bookingPassengers, passengers, expandedPassengerId, currentUser.userId, wrappedShowNotification, setPassengers]
+    [bookingPassengers, passengers, expandedPassengerId, currentUser.userId, selectedTourData, departureDate, wrappedShowNotification, setPassengers]
   );
 
   const clearAllPassengers = useCallback(() => {
@@ -431,7 +699,14 @@ export default function UserInterface({
       const updatedPassengers = passengers.filter((p) => p.user_id !== currentUser.userId || p.order_id !== "");
       setPassengers(updatedPassengers);
       setExpandedPassengerId(null);
-      wrappedShowNotification("success", "All unsubmitted passengers cleared");
+      wrappedShowNotification("success", "All unsubmitted passengers removed");
+
+      // Trigger seat limit check after clearing passengers
+      if (selectedTourData?.id && departureDate) {
+        checkSeatLimit(selectedTourData.id, departureDate).then(({ isValid, message }) => {
+          wrappedShowNotification(isValid ? "success" : "error", message);
+        });
+      }
     } else if (showConfirmModal?.action === "resetForm") {
       const updatedPassengers = passengers.filter((p) => p.user_id !== currentUser.userId || p.order_id !== "");
       setPassengers(updatedPassengers);
@@ -442,10 +717,12 @@ export default function UserInterface({
       setShowInProvider(false);
       setExpandedPassengerId(null);
       setValidationErrors([]);
-      wrappedShowNotification("success", "Booking form reset successfully");
+      setIsGroup(false);
+      setGroupName("");
+      wrappedShowNotification("success", "Booking form reset");
     }
     setShowConfirmModal(null);
-  }, [showConfirmModal, bookingPassengers, passengers, currentUser.userId, wrappedShowNotification, setPassengers, setSelectedTour, setDepartureDate]);
+  }, [showConfirmModal, bookingPassengers, passengers, currentUser.userId, selectedTourData, departureDate, wrappedShowNotification, setPassengers, setSelectedTour, setDepartureDate]);
 
   const validatePassenger = (passenger: Passenger, departureDate: string): ValidationError[] => {
     const errors: ValidationError[] = [];
@@ -486,7 +763,6 @@ export default function UserInterface({
       allErrors.push(...passengerErrors);
     });
 
-    console.log("Validation errors:", allErrors);
     setValidationErrors(allErrors);
     return allErrors.length === 0;
   };
@@ -509,7 +785,7 @@ export default function UserInterface({
       return;
     }
 
-    if (tourData.available_seats !== undefined && tourData.available_seats < bookingPassengers.length) {
+    if (tourData.seats !== undefined && tourData.seats < bookingPassengers.length) {
       wrappedShowNotification("error", "Cannot save booking. The tour is fully booked.");
       return;
     }
@@ -534,7 +810,7 @@ export default function UserInterface({
         tour: tourData.title,
         edited_by: null,
         edited_at: null,
-        travel_choice: selectedTour,
+        travel_choice: tourData.title,
         status: "pending",
         hotel: bookingPassengers[0].hotel || null,
         room_number: bookingPassengers[0].room_allocation || null,
@@ -543,9 +819,12 @@ export default function UserInterface({
         updated_at: new Date().toISOString(),
         departureDate: departureDate,
         show_in_provider: currentUser.role !== "user" ? showInProvider : true,
+        total_price: bookingPassengers.reduce((sum, p) => sum + p.price, 0),
+        total_amount: bookingPassengers.length,
+        paid_amount: 0,
+        balance: bookingPassengers.reduce((sum, p) => sum + p.price, 0),
       };
 
-      console.log("Submitting order:", newOrder);
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert([newOrder])
@@ -563,7 +842,6 @@ export default function UserInterface({
         };
       });
 
-      console.log("Submitting passenger requests:", passengersWithOrderId);
       const { error: passengerError } = await supabase
         .from("passengers")
         .insert(passengersWithOrderId);
@@ -588,8 +866,10 @@ export default function UserInterface({
       setShowInProvider(false);
       setExpandedPassengerId(null);
       setValidationErrors([]);
+      setIsGroup(false);
+      setGroupName("");
 
-      wrappedShowNotification("success", "Passenger registration request sent! Pretty please, await manager approval 😊");
+      wrappedShowNotification("success", "Booking request submitted. Awaiting manager approval.");
     } catch (error) {
       console.error("Error saving booking:", error);
       wrappedShowNotification("error", `Error saving booking: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -653,10 +933,10 @@ export default function UserInterface({
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `booking_${selectedTour}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `booking_${selectedTourData?.title || "tour"}_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    wrappedShowNotification("success", "CSV downloaded successfully");
+    wrappedShowNotification("success", "Booking data exported to CSV");
   };
 
   const handleUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -717,7 +997,7 @@ export default function UserInterface({
           }, {});
         });
 
-        if (tourData.available_seats !== undefined && data.length + bookingPassengers.length > tourData.available_seats) {
+        if (tourData.seats !== undefined && data.length + bookingPassengers.length > tourData.seats) {
           wrappedShowNotification("error", "Cannot import passengers. The tour is fully booked.");
           return;
         }
@@ -727,6 +1007,8 @@ export default function UserInterface({
             id: generatePassengerId(),
             order_id: "",
             user_id: currentUser.userId,
+            tour_title: tourData.title,
+            departure_date: departureDate,
             name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
             room_allocation: row["Room Allocation"] || "",
             serial_no: (bookingPassengers.length + idx + 1).toString(),
@@ -743,7 +1025,7 @@ export default function UserInterface({
             additional_services: row["Additional Services"]
               ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
               : [],
-            price: parseFloat(row["Price"]) || 0,
+            price: parseFloat(row["Price"]) || tourData.base_price || 0,
             email: row["Email"] || "",
             phone: row["Phone"] || "",
             passport_upload: "",
@@ -752,8 +1034,6 @@ export default function UserInterface({
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             status: "pending",
-            tour_title: selectedTour,
-            departure_date: departureDate,
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
@@ -763,9 +1043,17 @@ export default function UserInterface({
 
         setPassengers([...passengers, ...newPassengers]);
         setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
-        wrappedShowNotification("success", `Successfully imported ${newPassengers.length} passengers`);
+        wrappedShowNotification("success", `${newPassengers.length} passengers imported from CSV`);
         newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // Trigger seat limit check after importing passengers
+        if (tourData.id && departureDate) {
+          checkSeatLimit(tourData.id, departureDate).then(({ isValid, message }) => {
+            wrappedShowNotification(isValid ? "success" : "error", message);
+          });
+        }
       } catch (error) {
+        console.error("Error parsing CSV:", error);
         wrappedShowNotification("error", "Failed to parse CSV file. Please check the format.");
       }
     };
@@ -788,16 +1076,8 @@ export default function UserInterface({
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Start Your Booking</h3>
               <p className="text-sm text-gray-600">Select your tour, date, and add passengers to get started</p>
-              {remainingSeats !== undefined && (
-                <p
-                  className={`text-sm font-medium mt-2 ${remainingSeats > 5 ? "text-green-600" : remainingSeats > 0 ? "text-orange-600" : "text-red-600"
-                    }`}
-                >
-                  {remainingSeats} seats available
-                </p>
-              )}
             </div>
-            <TourSelection
+            <TourSelectionUser
               tours={tours}
               selectedTour={selectedTour}
               setSelectedTour={setSelectedTour}
@@ -806,109 +1086,8 @@ export default function UserInterface({
               errors={validationErrors}
               setActiveStep={setActiveStep}
               userRole={currentUser.role}
-              showAvailableSeats={currentUser.role !== "user"}
+              showAvailableSeats={currentUser.role === "admin" || currentUser.role === "superadmin"}
             />
-            <div className="mt-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Your Passengers</h4>
-              {sortedPassengers.length === 0 ? (
-                <p className="text-gray-600">No passengers added yet. Add a passenger to continue.</p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Number
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Name
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Passport
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Tour
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Departure
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {paginatedPassengers.map((passenger, index) => (
-                          <tr key={passenger.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {index + 1}  {/* <-- this gives 1, 2, 3, ... */}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {passenger.first_name} {passenger.last_name}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {passenger.passport_number}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {passenger.tour_title}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatDisplayDate(passenger.departure_date)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              <span
-                                className={`px-2 py-1 rounded-full text-xs font-medium ${passenger.status === "active"
-                                    ? "bg-green-100 text-green-800"
-                                    : passenger.status === "rejected"
-                                      ? "bg-red-100 text-red-800"
-                                      : "bg-yellow-100 text-yellow-800"
-                                  }`}
-                              >
-                                {passenger.status.charAt(0).toUpperCase() + passenger.status.slice(1)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                              {passenger.order_id === "" && (
-                                <button
-                                  onClick={() => removePassenger(passenger.id)}
-                                  className="text-red-600 hover:text-red-800"
-                                  disabled={loading}
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="flex justify-end gap-3">
-                    <button
-                      onClick={handlePreviousPage}
-                      disabled={currentPage === 1}
-                      className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg disabled:bg-gray-200 disabled:cursor-not-allowed hover:bg-gray-400 transition-colors"
-                    >
-                      Previous
-                    </button>
-                    <span className="self-center text-sm text-gray-700">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      onClick={handleNextPage}
-                      disabled={currentPage === totalPages}
-                      className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg disabled:bg-gray-200 disabled:cursor-not-allowed hover:bg-gray-400 transition-colors"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -916,20 +1095,18 @@ export default function UserInterface({
           <AddPassengerTabUser
             tours={tours}
             selectedTour={selectedTour}
+            departureDate={departureDate}
+            setDepartureDate={setDepartureDate}
             passengers={bookingPassengers}
             setPassengers={setPassengers}
             errors={validationErrors}
-            isGroup={false}
-            setIsGroup={() => { }}
-            groupName=""
-            setGroupName={() => { }}
             addPassenger={addPassenger}
-            addMultiplePassengers={() => { }}
+            addMultiplePassengers={addMultiplePassengers}
             clearAllPassengers={clearAllPassengers}
             handleUploadCSV={handleUploadCSV}
             updatePassenger={updatePassenger}
             removePassenger={removePassenger}
-            showNotification={showNotification}
+            showNotification={wrappedShowNotification}
             currentUser={currentUser}
             setActiveStep={setActiveStep}
             validateBooking={validateBooking}
@@ -937,37 +1114,38 @@ export default function UserInterface({
         )}
 
         {activeStep === 3 && (
-          <BookingSummary
-            selectedTour={selectedTour}
-            departureDate={departureDate}
-            passengers={bookingPassengers}
-            paymentMethod={paymentMethod}
-            setPaymentMethod={setPaymentMethod}
-            errors={validationErrors}
-            downloadCSV={handleDownloadCSV}
-            saveOrder={saveOrder}
-            setActiveStep={setActiveStep}
-            loading={loading}
-            showInProvider={showInProvider}
-            setShowInProvider={setShowInProvider}
-            currentUser={currentUser}
-          />
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+            <BookingSummary
+              selectedTour={selectedTourData?.name || ""}
+              departureDate={departureDate}
+              passengers={bookingPassengers}
+              paymentMethod={paymentMethod}
+              setPaymentMethod={setPaymentMethod}
+              errors={validationErrors}
+              saveOrder={saveOrder}
+              setActiveStep={setActiveStep}
+              loading={loading}
+              setShowInProvider={setShowInProvider}
+              currentUser={currentUser}
+            />
+          </div>
         )}
 
         {showConfirmModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">{showConfirmModal.message}</h3>
-              <div className="flex justify-end gap-3">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
+              <p className="text-sm text-gray-600 mb-6">{showConfirmModal.message}</p>
+              <div className="flex justify-end space-x-4">
                 <button
                   onClick={() => setShowConfirmModal(null)}
-                  className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 transition-colors"
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmAction}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
                   Confirm
                 </button>
@@ -976,12 +1154,48 @@ export default function UserInterface({
           </div>
         )}
 
-        {loading && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 flex items-center">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-              <span className="text-gray-900">Processing your request...</span>
+        {sortedPassengers.length > 0 && (
+          <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Bookings</h3>
+            <div className="space-y-4">
+              {paginatedPassengers.map((passenger) => (
+                <div key={passenger.id} className="border-b border-gray-200 py-2">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Tour:</span> {passenger.tour_title}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Departure:</span> {formatDisplayDate(passenger.departure_date)}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Name:</span> {passenger.name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Status:</span> {passenger.status}
+                  </p>
+                </div>
+              ))}
             </div>
+            {totalPages > 1 && (
+              <div className="flex justify-between mt-4">
+                <button
+                  onClick={handlePreviousPage}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={handleNextPage}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

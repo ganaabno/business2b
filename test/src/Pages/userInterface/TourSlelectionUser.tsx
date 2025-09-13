@@ -1,5 +1,7 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { MapPin, Calendar, Hotel, Package } from "lucide-react";
+import { toast } from "react-toastify";
+import { checkSeatLimit } from "../../utils/seatLimitChecks";
 import type { Tour, ValidationError } from "../../types/type";
 
 interface TourSelectionUserProps {
@@ -31,12 +33,14 @@ export default function TourSelectionUser({
   errors,
   setActiveStep,
   userRole,
-  showAvailableSeats = true,
+  showAvailableSeats = userRole === "admin" || userRole === "superadmin",
 }: TourSelectionUserProps) {
+  const [availableSeats, setAvailableSeats] = useState<number | undefined>(undefined);
+
   useEffect(() => {
-    console.log("TourSelectionUser mounted, setSelectedTour:", setSelectedTour);
+    console.log("TourSelectionUser mounted, userRole:", userRole, "showAvailableSeats:", showAvailableSeats);
     return () => console.log("TourSelectionUser unmounted");
-  }, [setSelectedTour]);
+  }, [userRole, showAvailableSeats]);
 
   const mergedTours = useMemo(() => {
     const map = new Map<string, Tour & { dates: string[] }>();
@@ -51,8 +55,7 @@ export default function TourSelectionUser({
           ...tour,
           title: tour.title.trim(),
           dates: [...(tour.dates || [])],
-          seats: tour.seats ?? tour.available_seats ?? 0,
-          available_seats: tour.available_seats ?? tour.seats ?? 0,
+          seats: tour.seats ?? 0,
         });
       } else {
         const existing = map.get(normalizedTitle)!;
@@ -67,10 +70,10 @@ export default function TourSelectionUser({
   useEffect(() => {
     console.log("Tours received in TourSelectionUser:", JSON.stringify(tours, null, 2));
     console.log("Current selectedTour:", selectedTour);
-    console.log("Merged tours titles:", mergedTours.map(tour => tour.title));
+    console.log("Merged tours titles:", mergedTours.map((tour) => tour.title));
     if (
       selectedTour &&
-      !mergedTours.some(tour => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase())
+      !mergedTours.some((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase())
     ) {
       console.warn("Selected tour not found in mergedTours, resetting:", selectedTour);
       setSelectedTour("");
@@ -91,11 +94,57 @@ export default function TourSelectionUser({
     return tour;
   }, [mergedTours, selectedTour]);
 
+  useEffect(() => {
+    if (selectedTourData?.id && departureDate) {
+      checkSeatLimit(selectedTourData.id, departureDate)
+        .then(({ isValid, message, seats }) => {
+          console.log("Seat check in TourSelectionUser:", { isValid, message, seats });
+          setAvailableSeats(seats);
+          if (!isValid) {
+            toast.error(message);
+          }
+        })
+        .catch((error) => {
+          console.error("Error checking seats in TourSelectionUser:", error);
+          toast.error("Failed to check seat availability");
+          setAvailableSeats(0);
+        });
+    } else {
+      setAvailableSeats(selectedTourData?.seats);
+    }
+  }, [selectedTourData, departureDate]);
+
   const hasTourError = errors.some((e) => e.field === "tour");
   const hasDepartureError = errors.some((e) => e.field === "departure");
   const hasDates = (selectedTourData?.dates?.length ?? 0) > 0;
 
   console.log("Rendering tour select with value:", selectedTour, "disabled:", mergedTours.length === 0);
+
+  const handleContinue = async () => {
+    console.log("Continue to Passengers clicked, selectedTour:", selectedTour, "departureDate:", departureDate);
+    if (!selectedTour || !departureDate) {
+      toast.error("Please select a tour and departure date.");
+      return;
+    }
+
+    if (!selectedTourData) {
+      toast.error("Invalid tour selected");
+      return;
+    }
+
+    try {
+      const seatCheck = await checkSeatLimit(selectedTourData.id, departureDate);
+      console.log("Seat check result:", seatCheck);
+      if (!seatCheck.isValid) {
+        toast.error(seatCheck.message);
+        return;
+      }
+      setActiveStep(2);
+    } catch (error) {
+      console.error("Error in handleContinue:", error);
+      toast.error("Failed to validate seat availability");
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
@@ -114,7 +163,9 @@ export default function TourSelectionUser({
             </label>
             <select
               id="tourSelectUser"
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${hasTourError ? "border-red-300" : "border-gray-300"}`}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                hasTourError ? "border-red-300" : "border-gray-300"
+              }`}
               value={selectedTour}
               onChange={(e) => {
                 const newTour = e.target.value.trim();
@@ -133,10 +184,7 @@ export default function TourSelectionUser({
               </option>
               {mergedTours.map((tour, index) => (
                 <option key={`${tour.id}-${index}`} value={tour.title}>
-                  {tour.title}{" "}
-                  {showAvailableSeats && (tour.available_seats ?? tour.seats) !== undefined
-                    ? `(${(tour.available_seats ?? tour.seats)!} seats)`
-                    : ""}
+                  {tour.title}
                 </option>
               ))}
             </select>
@@ -155,7 +203,9 @@ export default function TourSelectionUser({
               <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="dateSelectUser"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg ${hasDepartureError ? "border-red-300" : "border-gray-300"}`}
+                className={`w-full pl-10 pr-3 py-2 border rounded-lg ${
+                  hasDepartureError ? "border-red-300" : "border-gray-300"
+                }`}
                 value={departureDate}
                 onChange={(e) => {
                   console.log("Departure date selected in TourSelectionUser:", e.target.value);
@@ -207,10 +257,14 @@ export default function TourSelectionUser({
                 <span className="font-medium">Description:</span> {selectedTourData.description}
               </p>
             )}
-            {showAvailableSeats && (selectedTourData.available_seats ?? selectedTourData.seats) !== undefined && (
+            {showAvailableSeats && availableSeats !== undefined && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Available Seats:</span>{" "}
-                {(selectedTourData.available_seats ?? selectedTourData.seats)!}
+                <span className="font-medium">Available Seats:</span> {availableSeats}
+              </p>
+            )}
+            {selectedTourData.base_price !== undefined && (
+              <p className="text-sm text-gray-600">
+                <span className="font-medium">Base Price:</span> ${selectedTourData.base_price.toLocaleString()}
               </p>
             )}
             {selectedTourData.hotels && selectedTourData.hotels.length > 0 && (
@@ -245,26 +299,9 @@ export default function TourSelectionUser({
         </div>
       )}
 
-      {userRole !== "user" && mergedTours.length > 0 && (
-        <div className="mb-6">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Tour Availability</h4>
-          {mergedTours.map((tour, index) => (
-            <p key={`${tour.id}-${index}`} className="text-sm text-gray-600">
-              {tour.title}:{" "}
-              {typeof (tour.available_seats ?? tour.seats) === "number"
-                ? `${(tour.available_seats ?? tour.seats)!} seats available`
-                : "No seat limit"}
-            </p>
-          ))}
-        </div>
-      )}
-
       <div className="flex justify-end">
         <button
-          onClick={() => {
-            console.log("Continue to Passengers clicked, selectedTour:", selectedTour, "departureDate:", departureDate);
-            setActiveStep(2);
-          }}
+          onClick={handleContinue}
           disabled={!selectedTour || !departureDate || mergedTours.length === 0}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >

@@ -14,6 +14,8 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
   const [passengerOrderFilter, setPassengerOrderFilter] = useState<string>("");
   const [passengerStatusFilter, setPassengerStatusFilter] = useState<string>("all");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const passengersPerPage = 10;
 
   // Fetch passengers with tour_title
   const fetchPassengers = async () => {
@@ -138,8 +140,27 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
     });
   }, [passengers, passengerNameFilter, passengerOrderFilter, passengerStatusFilter]);
 
+  // Pagination logic
+  const totalPages = Math.ceil(filteredPassengers.length / passengersPerPage);
+  const paginatedPassengers = useMemo(() => {
+    const startIndex = (currentPage - 1) * passengersPerPage;
+    return filteredPassengers.slice(startIndex, startIndex + passengersPerPage);
+  }, [filteredPassengers, currentPage]);
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
       <div className="p-4 border-b border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Passengers</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -206,7 +227,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredPassengers.map((passenger) => (
+            {paginatedPassengers.map((passenger) => (
               <tr key={passenger.id} className="hover:bg-gray-50 transition-colors duration-150">
                 <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-48 shadow-sm">
                   <div className="text-sm font-medium text-gray-900">
@@ -405,7 +426,48 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             ))}
           </tbody>
         </table>
+        {/* Empty State */}
+        {filteredPassengers.length === 0 && (
+          <div className="text-center py-16">
+            <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No passengers found</h3>
+            <p className="text-gray-500">Try adjusting your search filters to find what you're looking for.</p>
+          </div>
+        )}
       </div>
+      {/* Pagination Controls */}
+      {filteredPassengers.length > passengersPerPage && (
+        <div className="sticky bottom-0 bg-white p-4 border-t border-gray-200 flex justify-end">
+          <div className="flex space-x-2">
+            <button
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                currentPage === 1
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              }`}
+            >
+              Previous
+            </button>
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                currentPage === totalPages
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              }`}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

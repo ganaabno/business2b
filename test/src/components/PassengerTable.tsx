@@ -1,5 +1,4 @@
-import { useState, useCallback } from "react";
-import { supabase } from "../supabaseClient";
+import { useState } from "react";
 import type { Passenger, ValidationError } from "../types/type";
 import { Pencil, Trash2 } from "lucide-react";
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../supabaseClient";
-import type { Passenger, ValidationError } from "../types/type";
+import type { Passenger, ValidationError, Tour } from "../types/type";
 import { CheckCircle, XCircle } from "lucide-react";
 
 interface PassengerWithUser extends Passenger {
@@ -13,7 +13,7 @@ interface PassengerWithUser extends Passenger {
     departureDate: string;
     createdBy: string;
     user_id: string;
-    tours: { id: string; title: string } | null;
+    tours: Tour | null;
   } | null;
 }
 
@@ -29,7 +29,7 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
     passengerId: string | null;
     message: string;
   } | null>(null);
-  const [errors, setErrors] = useState<ValidationError[]>([]);
+  const [errors] = useState<ValidationError[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -58,7 +58,22 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             user_id,
             tours (
               id,
-              title
+              title,
+              seats,
+              departuredate,
+              status,
+              show_in_provider,
+              description,
+              creator_name,
+              tour_number,
+              name,
+              dates,
+              hotels,
+              services,
+              created_by,
+              created_at,
+              updated_at,
+              base_price
             )
           ),
           users (
@@ -68,7 +83,8 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
           )
         `)
         .neq("status", "active")
-        .order("created_at", { ascending: false }); // Sort by latest first
+        .order("created_at", { ascending: false });
+
       if (error) {
         console.error("Error fetching passenger requests:", error);
         showNotification("error", `Failed to fetch passenger requests: ${error.message}`);
@@ -91,6 +107,21 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
                 ? {
                     id: p.orders.tours.id,
                     title: p.orders.tours.title,
+                    seats: p.orders.tours.seats ?? 0,
+                    departureDate: p.orders.tours.departuredate || "",
+                    status: p.orders.tours.status,
+                    show_in_provider: p.orders.tours.show_in_provider,
+                    description: p.orders.tours.description || "",
+                    creator_name: p.orders.tours.creator_name || "",
+                    tour_number: p.orders.tours.tour_number || "",
+                    name: p.orders.tours.name || p.orders.tours.title,
+                    dates: p.orders.tours.dates || [],
+                    hotels: p.orders.tours.hotels || [],
+                    services: p.orders.tours.services || [],
+                    created_by: p.orders.tours.created_by || "",
+                    created_at: p.orders.tours.created_at || "",
+                    updated_at: p.orders.tours.updated_at || "",
+                    base_price: p.orders.tours.base_price ?? 0,
                   }
                 : null,
             }
@@ -100,6 +131,7 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
       setPassengers(passengerData);
       console.log("Fetched passenger requests:", passengerData);
     } catch (error) {
+      console.error("Unexpected error fetching passenger requests:", error);
       showNotification("error", "Failed to fetch passenger requests");
     } finally {
       setLoading(false);
@@ -150,7 +182,7 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         if (tourId) {
           const { data: tourData, error: tourError } = await supabase
             .from("tours")
-            .select("available_seats")
+            .select("seats")
             .eq("id", tourId)
             .single();
           if (tourError) {
@@ -158,30 +190,31 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             showNotification("error", `Failed to fetch tour: ${tourError.message}`);
             return;
           }
-          if (tourData.available_seats !== undefined && tourData.available_seats <= 0) {
+          if (tourData.seats !== undefined && tourData.seats <= 0) {
             showNotification("error", "Cannot approve passenger: No seats available");
             return;
           }
         }
       }
 
-      const { error } = await supabase
+      // Update passenger status to 'active'
+      const { error: passengerError } = await supabase
         .from("passengers")
         .update({ status: "active", updated_at: new Date().toISOString() })
         .eq("id", passengerId);
-      if (error) {
-        console.error("Error approving passenger:", error);
-        showNotification("error", `Failed to approve passenger: ${error.message}`);
+      if (passengerError) {
+        console.error("Error approving passenger:", passengerError);
+        showNotification("error", `Failed to approve passenger: ${passengerError.message}`);
         return;
       }
 
-      // Update available seats if moving from pending/rejected to active
+      // Update seats if moving from pending/rejected to active
       if (passenger.status !== "active") {
         const tourId = passenger.orders?.tour_id;
         if (tourId) {
           const { data: tourData, error: tourError } = await supabase
             .from("tours")
-            .select("available_seats")
+            .select("seats")
             .eq("id", tourId)
             .single();
           if (tourError) {
@@ -189,23 +222,25 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             showNotification("error", `Failed to fetch tour: ${tourError.message}`);
             return;
           }
-          if (tourData.available_seats !== undefined && tourData.available_seats > 0) {
+          if (tourData.seats !== undefined && tourData.seats > 0) {
             const { error: updateError } = await supabase
               .from("tours")
-              .update({ available_seats: tourData.available_seats - 1 })
+              .update({ seats: tourData.seats - 1 })
               .eq("id", tourId);
             if (updateError) {
               console.error("Error updating seats:", updateError);
               showNotification("error", `Failed to update seats: ${updateError.message}`);
               return;
             }
+            console.log(`Updated seats for tour ${tourId}: ${tourData.seats - 1}`);
           }
         }
       }
 
       showNotification("success", "Passenger approved successfully");
-      fetchPassengerRequests();
+      await fetchPassengerRequests();
     } catch (error) {
+      console.error("Unexpected error approving passenger:", error);
       showNotification("error", "Failed to approve passenger");
     } finally {
       setLoading(false);
@@ -222,13 +257,13 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         return;
       }
 
-      // If previously approved, increment available seats
+      // If previously approved, increment seats
       if (passenger.status === "active") {
         const tourId = passenger.orders?.tour_id;
         if (tourId) {
           const { data: tourData, error: tourError } = await supabase
             .from("tours")
-            .select("available_seats")
+            .select("seats")
             .eq("id", tourId)
             .single();
           if (tourError) {
@@ -236,20 +271,22 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             showNotification("error", `Failed to fetch tour: ${tourError.message}`);
             return;
           }
-          if (tourData.available_seats !== undefined) {
+          if (tourData.seats !== undefined) {
             const { error: updateError } = await supabase
               .from("tours")
-              .update({ available_seats: tourData.available_seats + 1 })
+              .update({ seats: tourData.seats + 1 })
               .eq("id", tourId);
             if (updateError) {
               console.error("Error updating seats:", updateError);
               showNotification("error", `Failed to update seats: ${updateError.message}`);
               return;
             }
+            console.log(`Updated seats for tour ${tourId}: ${tourData.seats + 1}`);
           }
         }
       }
 
+      // Update passenger status to 'rejected'
       const { error } = await supabase
         .from("passengers")
         .update({ status: "rejected", updated_at: new Date().toISOString() })
@@ -261,8 +298,9 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
       }
 
       showNotification("success", "Passenger rejected successfully");
-      fetchPassengerRequests();
+      await fetchPassengerRequests();
     } catch (error) {
+      console.error("Unexpected error rejecting passenger:", error);
       showNotification("error", "Failed to reject passenger");
     } finally {
       setLoading(false);

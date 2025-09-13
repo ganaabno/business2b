@@ -15,8 +15,10 @@ import AdminInterface from "./Pages/AdminInterface";
 import ProviderInterface from "./Pages/ProviderInterface";
 import ManagerInterface from "./Pages/ManagerInterface";
 import ChangePassword from "./Pages/ChangePassword";
-import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
 import Header from "./Parts/Header";
+import AnalyticDashboard from "./Pages/Overview";
+
+import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
 import { AuthProvider, useAuth, toRole } from "./context/AuthProvider";
 
 function AppContent({
@@ -94,7 +96,7 @@ function AppContent({
   }, [currentUser]);
 
   // Pending / Declined check
-  if (currentUser && currentUser.access === "pending") {
+  if (currentUser && currentUser.access === "active" && ["pending", "declined"].includes(currentUser.role)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-yellow-50">
         <div className="text-center p-6 bg-yellow-100 rounded-xl shadow-md">
@@ -105,7 +107,7 @@ function AppContent({
     );
   }
 
-  if (currentUser && currentUser.access === "declined") {
+  if (currentUser && currentUser.access === "suspended") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
         <div className="text-center p-6 bg-red-100 rounded-xl shadow-md">
@@ -127,7 +129,7 @@ function AppContent({
 
     const validPaths =
       ["admin", "superadmin"].includes(role)
-        ? ["/user", "/provider", "/admin", "/manager", "/change-password"]
+        ? ["/user", "/provider", "/admin", "/manager", "/change-password", "/analytics"]
         : role === "provider"
           ? ["/provider", "/change-password"]
           : role === "manager"
@@ -202,6 +204,15 @@ function AppContent({
                 <span className="relative z-10">Manager</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
+
+              <Link
+                to="/analytics"
+                className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-orange-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-orange-100"
+              >
+                <span className="relative z-10">Charts</span>
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </Link>
+
             </div>
           </div>
 
@@ -224,6 +235,7 @@ function AppContent({
                 tours={tours}
                 orders={orders}
                 setOrders={setOrders}
+                setTours={setTours}
                 currentUser={currentUser}
                 selectedTour={selectedTour}
                 setSelectedTour={setSelectedTour}
@@ -232,14 +244,6 @@ function AppContent({
                 passengers={passengers}
                 setPassengers={setPassengers}
                 errors={errors}
-                isGroup={isGroup}
-                setIsGroup={setIsGroup}
-                groupName={groupName}
-                setGroupName={setGroupName}
-                addPassenger={addPassenger}
-                updatePassenger={updatePassenger}
-                removePassenger={removePassenger}
-                validateBooking={validateBooking}
                 showNotification={(type: any, message: any) => alert(`${type}: ${message}`)}
                 onLogout={logout}
               />
@@ -295,6 +299,23 @@ function AppContent({
             )
           }
         />
+
+        <Route
+          path="/analytics"
+          element={
+            ["admin", "superadmin"].includes(role) ? (
+              <AnalyticDashboard 
+              tours={tours} 
+              orders={orders} 
+              passengers={passengers} 
+              currentUser={currentUser} />
+            ) : (
+              <Navigate to={homePath} replace />
+            )
+          }
+        />
+
+
         <Route path="/" element={<Navigate to={homePath} replace />} />
         <Route path="/login" element={<Navigate to={homePath} replace />} />
         <Route path="*" element={<Navigate to={homePath} replace />} />

@@ -5,6 +5,7 @@ import { Plus, Trash2, Search, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { useTours } from "../hooks/useTours";
 import type { Tour } from "../types/type";
+import { useAuth } from "../context/AuthProvider";
 
 interface ToursTabProps {
   tours: Tour[];
@@ -12,6 +13,9 @@ interface ToursTabProps {
 }
 
 export default function ToursTab({ tours, setTours }: ToursTabProps) {
+  const { currentUser } = useAuth(); // Get userRole from auth context
+  const userRole = currentUser?.role || "user";
+
   const {
     filteredTours,
     titleFilter,
@@ -29,7 +33,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
     formatDisplayDate,
     viewFilter,
     setViewFilter,
-  } = useTours(tours, setTours);
+  } = useTours({ userRole, tours, setTours });
 
   const [newTourTitle, setNewTourTitle] = useState("");
   const [newTourName, setNewTourName] = useState("");
@@ -73,23 +77,24 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
       }
 
       const creator_name = userData?.username || userData?.email || created_by;
-      const insertData = { 
-        ...newTour, 
-        created_by, 
+      const insertData: any = {
+        ...newTour,
+        created_by,
         tour_number: null,
-        departuredate: newTour.departureDate // Map to lowercase for DB
+        departuredate: newTour.departureDate,
       };
-      insertData.departureDate; // Remove camelCase field
+
+      delete insertData.departureDate;
 
       // Check if show_in_provider column exists
       const { data: schemaData, error: schemaError } = await supabase
-        .rpc('get_table_columns', { table_name: 'tours' });
+        .rpc("get_table_columns", { table_name: "tours" });
       if (schemaError) {
         console.error("Error checking schema:", schemaError);
         toast.error(`Failed to verify schema: ${schemaError.message}`);
         return;
       }
-      const hasShowInProvider = schemaData.some((col: any) => col.column_name === 'show_in_provider');
+      const hasShowInProvider = schemaData.some((col: any) => col.column_name === "show_in_provider");
       if (!hasShowInProvider) {
         console.warn("show_in_provider column not found in tours table. Omitting from insert.");
         delete insertData.show_in_provider;
@@ -139,6 +144,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
     }
   };
 
+  // Rest of the component remains unchanged
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <ToastContainer />
@@ -312,7 +318,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       )}
                     </td>
                     <td className="px-4 py-3 border-r border-gray-200 text-sm text-gray-900">
-                      {tour.creator_name || 'N/A'}
+                      {tour.creator_name || "N/A"}
                     </td>
                     <td className="px-4 py-3 border-r border-gray-200">
                       <select

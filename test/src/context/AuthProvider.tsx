@@ -14,7 +14,7 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   loading: true,
   login: async () => null,
-  logout: async () => {},
+  logout: async () => { },
 });
 
 export function useAuth() {
@@ -47,13 +47,12 @@ async function fetchUser(uid: string): Promise<User | null> {
       last_name: String(data.last_name ?? ""),
       username: String(data.username ?? ""),
       role: toRole(data.role),
-      status: String(data.access ?? "pending") as "pending" | "declined" | "approved",
       phone: String(data.phone ?? ""),
       email: String(data.email ?? ""),
       password: "",
       blacklist: Boolean(data.blacklist ?? false),
       company: String(data.company ?? ""),
-      access: String(data.access ?? ""),
+      access: String(data.access ?? "active") as "active" | "suspended", // Match DB schema
       birth_date: String(data.birth_date ?? ""),
       id_card_number: String(data.id_card_number ?? ""),
       travel_history: Array.isArray(data.travel_history) ? data.travel_history : [],
@@ -65,8 +64,8 @@ async function fetchUser(uid: string): Promise<User | null> {
       membership_points: Number(data.membership_points ?? 0),
       registered_by: String(data.registered_by ?? ""),
       createdBy: String(data.createdBy ?? ""),
-      createdAt: new Date(data.createdAt ?? Date.now()),
-      updatedAt: new Date(data.updatedAt ?? Date.now()),
+      createdAt: String(data.createdAt ?? new Date().toISOString()), // Keep as string
+      updatedAt: String(data.updatedAt ?? new Date().toISOString()), // Keep as string
     };
   } catch (err) {
     console.error("Unexpected error in fetchUser:", err);

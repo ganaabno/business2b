@@ -215,18 +215,6 @@ export default function TourSelection({
           </div>
         </div>
       )}
-
-      {userRole !== "user" && mergedTours.length > 0 && (
-        <div className="mb-6">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Tour Availability</h4>
-          {mergedTours.map((tour, index) => (
-            <p key={`${tour.title}-${index}`} className="text-sm text-gray-600">
-              {tour.title}:{" "}
-              {typeof tour.available_seats === "number" ? `${tour.available_seats} seats available` : "No seat limit"}
-            </p>
-          ))}
-        </div>
-      )}
   
       <div className="flex justify-end">
         <button

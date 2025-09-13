@@ -2,17 +2,17 @@ import { MapPin, Calendar, Users, DollarSign, CreditCard, Eye, AlertTriangle, Do
 import type { Passenger, ValidationError, User as UserType } from "../types/type";
 
 interface BookingSummaryProps {
-  selectedTour: string;
+  selectedTour?: string; // optional, can be undefined
   departureDate: string;
   passengers: Passenger[];
   paymentMethod: string;
   setPaymentMethod: (value: string) => void;
   errors: ValidationError[];
-  downloadCSV: () => void;
-  saveOrder: () => Promise<void>; // Fixed type
+  downloadCSV?: () => void;
+  saveOrder: () => Promise<void>;
   setActiveStep: (value: number) => void;
   loading: boolean;
-  showInProvider: boolean;
+  showInProvider?: boolean;
   setShowInProvider: React.Dispatch<React.SetStateAction<boolean>>;
   currentUser: UserType;
 }

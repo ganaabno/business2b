@@ -1,31 +1,31 @@
 export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
 
 export interface User {
-  userId: string; // uuid in DB
-  id: string; // uuid in DB
+  userId: string;
+  id: string;
   first_name: string;
   last_name: string;
-  username?: string;
+  username: string;
   role: Role;
-  status: "pending" | "approved" | "declined"; // Matches assumed users table
-  phone: string | null;
+  phone: string;
   email: string;
+  password: string;
   blacklist: boolean;
-  company: string | null;
-  access: "active" | "suspended";
-  birth_date: string | null;
-  id_card_number: string | null;
-  travel_history: any[]; // jsonb in DB
-  passport_number: string | null;
-  passport_expire: string | null;
-  allergy: string | null;
-  emergency_phone: string | null;
+  company: string;
+  access: "active" | "suspended"; // Match DB schema
+  birth_date: string;
+  id_card_number: string;
+  travel_history: any[];
+  passport_number: string;
+  passport_expire: string;
+  allergy: string;
+  emergency_phone: string;
   membership_rank: string;
   membership_points: number;
-  registered_by: string | null;
-  createdBy: string | null;
-  createdAt: string; // timestamptz in DB
-  updatedAt: string; // timestamptz in DB
+  registered_by: string;
+  createdBy: string;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
 }
 
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
@@ -62,25 +62,25 @@ export interface Service {
 }
 
 export interface Tour {
-  id: string; // uuid in DB
+  id: string;
   title: string;
   description: string;
-  creator_name: string | null; // from users table
+  creator_name: string | null;
   tour_number: number | null;
   name: string;
   dates: string[];
-  departureDate: string; // text in DB
+  departureDate: string; // Maps to departuredate in database
   seats: number;
   available_seats?: number;
   hotels: string[];
-  services: Service[];
-  price_base?: number;
-  created_by: string | null; // uuid in DB
-  created_at: string; // timestamptz in DB
-  updated_at: string; // timestamptz in DB
-  status?: "active" | "inactive" | "full" | "hidden";
+  services: { name: string; price: number }[];
+  price_base?: number; // Deprecated
   base_price: number;
-  show_in_provider?: boolean | null; // Optional to handle missing column
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  status?: "active" | "inactive" | "full" | "hidden";
+  show_in_provider?: boolean | null;
 }
 
 export interface Order {

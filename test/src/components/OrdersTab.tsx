@@ -16,6 +16,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tourTitleFilter, setTourTitleFilter] = useState<string>("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const ordersPerPage = 10;
 
   const handleOrderChange = async (id: string, field: keyof Order, value: any) => {
     const previousOrders = [...orders];
@@ -69,6 +71,25 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       return matchesCustomerName && matchesStatus && matchesTourTitle;
     });
   }, [orders, customerNameFilter, statusFilter, tourTitleFilter]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * ordersPerPage;
+    return filteredOrders.slice(startIndex, startIndex + ordersPerPage);
+  }, [filteredOrders, currentPage]);
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -163,7 +184,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
                 Order ID
               </th>
-              <th className="px-3 familles py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tour</th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tour</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Customer</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Departure</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total Price</th>
@@ -176,7 +197,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-50">
-            {filteredOrders.map((order, index) => (
+            {paginatedOrders.map((order, index) => (
               <tr key={order.id} className={`hover:bg-blue-25 transition-all duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}>
                 <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <div className="flex items-center">
@@ -326,6 +347,35 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
             ))}
           </tbody>
         </table>
+        {/* Pagination Controls */}
+        {filteredOrders.length > ordersPerPage && (
+          <div className="flex justify-end p-4">
+            <div className="flex space-x-2">
+              <button
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                  currentPage === 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                }`}
+              >
+                Previous
+              </button>
+              <button
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                  currentPage === totalPages
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
         {/* Empty State */}
         {filteredOrders.length === 0 && (
           <div className="text-center py-16">
