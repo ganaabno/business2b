@@ -17,27 +17,53 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   const [tourTitleFilter, setTourTitleFilter] = useState<string>("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false); // Toggle edit mode for the table
+  const [showCompletedOnly, setShowCompletedOnly] = useState<boolean>(false); // Toggle for completed orders
   const ordersPerPage = 10;
 
-  const handleOrderChange = async (id: string, field: keyof Order, value: any) => {
-    const previousOrders = [...orders];
-    const updatedOrders = orders.map((o) => (o.id === id ? { ...o, [field]: value } : o));
-    setOrders(updatedOrders);
+  const handleOrderChange = (id: string, field: keyof Order, value: any) => {
+    setOrders((prevOrders) =>
+      prevOrders.map((o) => {
+        if (o.id === id) {
+          const updatedOrder = { ...o, [field]: value };
+          if (field === "status" && value === "Completed") {
+            showNotification("success", "Travel done completely! Good Job 😎");
+          }
+          return updatedOrder;
+        }
+        return o;
+      })
+    );
+  };
+
+  const handleSaveEdits = async () => {
+    const updatedOrders = showCompletedOnly ? orders : orders.filter((order) => order.status !== "Travel ended completely" && order.status !== "Completed");
+    const previousOrders = [...updatedOrders];
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ [field]: value, updated_at: new Date().toISOString(), edited_by: currentUser.id })
-        .eq("id", id);
-      if (error) {
-        console.error("Error updating order:", error);
-        showNotification("error", `Failed to update order: ${error.message}`);
-        setOrders(previousOrders);
+      const updates = updatedOrders.map((order) =>
+        supabase
+          .from("orders")
+          .update({ ...order, updated_at: new Date().toISOString(), edited_by: currentUser.id })
+          .eq("id", order.id)
+      );
+      const results = await Promise.all(updates);
+      const hasError = results.some((result) => result.error);
+      if (hasError) {
+        const error = results.find((result) => result.error)?.error;
+        console.error("Error updating orders:", error);
+        if (error?.code === "23514") {
+          showNotification("error", `Invalid status or value: ${error.message}. Choose from allowed statuses.`);
+        } else {
+          showNotification("error", `Failed to update orders: ${error?.message || "Unknown error"}`);
+        }
+        setOrders(previousOrders); // Revert on error
       } else {
-        showNotification("success", "Order updated successfully");
+        showNotification("success", "Saved completely! 😎");
+        setIsEditMode(false); // Exit edit mode after successful save
       }
     } catch (error) {
-      console.error("Unexpected error updating order:", error);
-      showNotification("error", "An unexpected error occurred while updating the order.");
+      console.error("Unexpected error updating orders:", error);
+      showNotification("error", "An unexpected error occurred while updating orders.");
       setOrders(previousOrders);
     }
   };
@@ -63,16 +89,23 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   };
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      const customerName = `${order.first_name} ${order.last_name}`.toLowerCase();
-      const matchesCustomerName = customerName.includes(customerNameFilter.toLowerCase());
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-      const matchesTourTitle = order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) || "";
-      return matchesCustomerName && matchesStatus && matchesTourTitle;
-    });
-  }, [orders, customerNameFilter, statusFilter, tourTitleFilter]);
+    // Sort by departureDate first (nearest to furthest)
+    return [...orders]
+      .sort((a, b) => {
+        const dateA = a.departureDate ? new Date(a.departureDate) : new Date(0); // Treat empty as far past
+        const dateB = b.departureDate ? new Date(b.departureDate) : new Date(0);
+        return dateA.getTime() - dateB.getTime();
+      })
+      .filter((order) => {
+        const customerName = `${order.first_name} ${order.last_name}`.toLowerCase();
+        const matchesCustomerName = customerName.includes(customerNameFilter.toLowerCase());
+        const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+        const matchesTourTitle = order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) || "";
+        const isCompleted = order.status === "Completed";
+        return matchesCustomerName && matchesStatus && matchesTourTitle && (showCompletedOnly ? isCompleted : !isCompleted && order.status !== "Travel ended completely");
+      });
+  }, [orders, customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly]);
 
-  // Pagination logic
   const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
   const paginatedOrders = useMemo(() => {
     const startIndex = (currentPage - 1) * ordersPerPage;
@@ -94,15 +127,34 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       pending: "bg-amber-100 text-amber-800 border-amber-200",
+      "Information given": "bg-blue-100 text-blue-800 border-blue-200",
+      "Need to give information": "bg-yellow-100 text-yellow-800 border-yellow-200",
+      "Need to tell got a seat/in waiting": "bg-purple-100 text-purple-800 border-purple-200",
+      "Need to conclude a contract": "bg-green-100 text-green-800 border-green-200",
+      "Concluded a contract": "bg-teal-100 text-teal-800 border-teal-200",
+      "Postponed the travel": "bg-orange-100 text-orange-800 border-orange-200",
+      "Interested in other travel": "bg-pink-100 text-pink-800 border-pink-200",
+      cancelled: "bg-red-100 text-red-800 border-red-200",
+      "Cancelled after confirmed": "bg-red-200 text-red-900 border-red-300",
+      "Cancelled after ordered a seat": "bg-red-300 text-red-900 border-red-400",
+      "Cancelled after take a information": "bg-red-400 text-red-900 border-red-500",
+      "Paid the advance payment": "bg-indigo-100 text-indigo-800 border-indigo-200",
+      "Need to meet": "bg-gray-100 text-gray-800 border-gray-200",
+      "Sent a claim": "bg-red-100 text-red-800 border-red-200",
+      "Fam Tour": "bg-violet-100 text-violet-800 border-violet-200",
       confirmed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-      cancelled: "bg-red-100 text-red-800 border-red-200"
+      "The travel is going": "bg-blue-200 text-blue-900 border-blue-300",
+      "Has taken seat from another company": "bg-orange-200 text-orange-900 border-orange-300",
+      "Swapped seat with another company": "bg-purple-200 text-purple-900 border-purple-300",
+      "Gave seat to another company": "bg-teal-200 text-teal-900 border-teal-300",
+      "Cancelled and bought travel from another country": "bg-red-500 text-white border-red-600",
+      Completed: "bg-gray-200 text-gray-900 border-gray-300"
     };
     return statusConfig[status as keyof typeof statusConfig] || "bg-gray-100 text-gray-800 border-gray-200";
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-      {/* Header Section */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 border-b border-gray-100">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -115,13 +167,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
             </span>
           </div>
         </div>
-
-        {/* Enhanced Filter Section */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              👤 Search by Customer Name
-            </label>
+            <label className="block text-sm font-semibold text-gray-700">👤 Search by Customer Name</label>
             <div className="relative">
               <input
                 type="text"
@@ -137,11 +185,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               </div>
             </div>
           </div>
-
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              🏷️ Tour Title
-            </label>
+            <label className="block text-sm font-semibold text-gray-700">🏷️ Tour Title</label>
             <div className="relative">
               <input
                 type="text"
@@ -157,26 +202,67 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               </div>
             </div>
           </div>
-
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              📊 Status Filter
-            </label>
+            <label className="block text-sm font-semibold text-gray-700">📊 Status Filter</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">⏳ Pending</option>
-              <option value="confirmed">✅ Confirmed</option>
-              <option value="cancelled">❌ Cancelled</option>
+              <option value="pending">⏳ pending</option>
+              <option value="confirmed">✅ confirmed</option>
+              <option value="cancelled">❌ cancelled</option>
+              <option value="Information given">ℹ️ Information given</option>
+              <option value="Need to give information">📝 Need to give information</option>
+              <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
+              <option value="Need to conclude a contract">📑 Need to conclude a contract</option>
+              <option value="Concluded a contract">✅ Concluded a contract</option>
+              <option value="Postponed the travel">⏳ Postponed the travel</option>
+              <option value="Interested in other travel">🌍 Interested in other travel</option>
+              <option value="Cancelled after confirmed">❌ Cancelled after confirmed</option>
+              <option value="Cancelled after ordered a seat">❌ Cancelled after ordered a seat</option>
+              <option value="Cancelled after take a information">❌ Cancelled after take a information</option>
+              <option value="Paid the advance payment">💸 Paid the advance payment</option>
+              <option value="Need to meet">🤝 Need to meet</option>
+              <option value="Sent a claim">⚠️ Sent a claim</option>
+              <option value="Fam Tour">👨‍👩‍👧 Fam Tour</option>
+              <option value="The travel is going">✈️ The travel is going</option>
+              <option value="Has taken seat from another company">🪑 Has taken seat from another company</option>
+              <option value="Swapped seat with another company">🔄 Swapped seat with another company</option>
+              <option value="Gave seat to another company">🎁 Gave seat to another company</option>
+              <option value="Cancelled and bought travel from another country">🌐 Cancelled and bought travel from another country</option>
+              <option value="Completed">🏁 Completed</option>
             </select>
+            <div className="mt-2">
+              <button
+                onClick={() => setIsEditMode(!isEditMode)}
+                className="w-full px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-all duration-200 font-semibold text-sm"
+              >
+                {isEditMode ? "Cancel Edit 😎" : "Edit Orders xD"}
+              </button>
+              {isEditMode && (
+                <button
+                  onClick={handleSaveEdits}
+                  className="w-full mt-2 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-all duration-200 font-semibold text-sm"
+                >
+                  Save Changes
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowCompletedOnly(!showCompletedOnly);
+                  setStatusFilter("all"); // Reset status filter when toggling
+                  showNotification("success", showCompletedOnly ? "Back to all orders! 😎" : "Showing completed orders! xD");
+                }}
+                className="w-full mt-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-all duration-200 font-semibold text-sm"
+              >
+                {showCompletedOnly ? "Show All Orders 😎" : "Show Completed Orders xD"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Table Section */}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-100 overflow-x-auto">
           <thead className="bg-gray-50">
@@ -184,14 +270,14 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
                 Order ID
               </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tour</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-24 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Tour</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-68 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Passenger</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Departure</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total Price</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Hotel</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Room</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Payment</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+              <th className="px-28 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Provider</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
@@ -207,16 +293,17 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     </div>
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-2 whitespace-nowrap sticky left-24 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <input
                     type="text"
                     value={order.tour || ""}
                     onChange={(e) => handleOrderChange(order.id, "tour", e.target.value)}
-                    className="w-full min-w-[140px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    className="w-full min-w-[140px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    disabled={!isEditMode}
                     placeholder="Tour title..."
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-2 whitespace-nowrap sticky left-68 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-gray-900">
                       {order.first_name} {order.last_name}
@@ -232,7 +319,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                       type="date"
                       value={order.departureDate || ""}
                       onChange={(e) => handleOrderChange(order.id, "departureDate", e.target.value)}
-                      className="w-full min-w-[120px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                      className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                      disabled={!isEditMode}
                     />
                     <div className="text-xs text-gray-500 font-medium">
                       {formatDate(order.departureDate)}
@@ -246,7 +334,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                       type="number"
                       value={order.total_price || ""}
                       onChange={(e) => handleOrderChange(order.id, "total_price", parseFloat(e.target.value) || 0)}
-                      className="w-full min-w-[100px] pl-6 pr-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                      className="w-full min-w-[100px] pl-6 pr-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                      disabled={!isEditMode}
                       placeholder="0.00"
                       min="0"
                       step="0.01"
@@ -258,7 +347,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     type="text"
                     value={order.hotel || ""}
                     onChange={(e) => handleOrderChange(order.id, "hotel", e.target.value)}
-                    className="w-full min-w-[120px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    disabled={!isEditMode}
                     placeholder="Hotel name..."
                   />
                 </td>
@@ -267,7 +357,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     type="text"
                     value={order.room_number || ""}
                     onChange={(e) => handleOrderChange(order.id, "room_number", e.target.value)}
-                    className="w-full min-w-[80px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    className="w-full min-w-[80px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    disabled={!isEditMode}
                     placeholder="Room #..."
                   />
                 </td>
@@ -275,10 +366,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                   <select
                     value={order.payment_method || ""}
                     onChange={(e) => handleOrderChange(order.id, "payment_method", e.target.value)}
-                    className="w-full min-w-[100px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    className="w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
+                    disabled={!isEditMode}
                   >
                     <option value="">Select method</option>
-                    <option value="manual">💰 Manual</option>
+                    <option value="manual">💰 Cash</option>
                     <option value="credit_card">💳 Credit Card</option>
                     <option value="bank_transfer">🏦 Bank Transfer</option>
                   </select>
@@ -287,11 +379,32 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                   <select
                     value={order.status || "pending"}
                     onChange={(e) => handleOrderChange(order.id, "status", e.target.value)}
-                    className={`w-full min-w-[100px] px-3 py-2 text-sm border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(order.status || "pending")}`}
+                    className={`w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(order.status || "pending")}`}
+                    disabled={!isEditMode}
                   >
-                    <option value="pending">⏳ Pending</option>
-                    <option value="confirmed">✅ Confirmed</option>
-                    <option value="cancelled">❌ Cancelled</option>
+                    <option value="pending">⏳ pending</option>
+                    <option value="confirmed">✅ confirmed</option>
+                    <option value="cancelled">❌ cancelled</option>
+                    <option value="Information given">ℹ️ Information given</option>
+                    <option value="Need to give information">📝 Need to give information</option>
+                    <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
+                    <option value="Need to conclude a contract">📑 Need to conclude a contract</option>
+                    <option value="Concluded a contract">✅ Concluded a contract</option>
+                    <option value="Postponed the travel">⏳ Postponed the travel</option>
+                    <option value="Interested in other travel">🌍 Interested in other travel</option>
+                    <option value="Cancelled after confirmed">❌ Cancelled after confirmed</option>
+                    <option value="Cancelled after ordered a seat">❌ Cancelled after ordered a seat</option>
+                    <option value="Cancelled after take a information">❌ Cancelled after take a information</option>
+                    <option value="Paid the advance payment">💸 Paid the advance payment</option>
+                    <option value="Need to meet">🤝 Need to meet</option>
+                    <option value="Sent a claim">⚠️ Sent a claim</option>
+                    <option value="Fam Tour">👨‍👩‍👧 Fam Tour</option>
+                    <option value="The travel is going">✈️ The travel is going</option>
+                    <option value="Has taken seat from another company">🪑 Has taken seat from another company</option>
+                    <option value="Swapped seat with another company">🔄 Swapped seat with another company</option>
+                    <option value="Gave seat to another company">🎁 Gave seat to another company</option>
+                    <option value="Cancelled and bought travel from another country">🌐 Cancelled and bought travel from another country</option>
+                    <option value="Completed">🏁 Completed</option>
                   </select>
                 </td>
                 <td className="px-3 py-2">
@@ -302,6 +415,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                         checked={order.show_in_provider || false}
                         onChange={(e) => handleOrderChange(order.id, "show_in_provider", e.target.checked)}
                         className="sr-only peer"
+                        disabled={!isEditMode}
                       />
                       <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                       <span className="ml-2 text-sm font-medium text-gray-700">
@@ -333,12 +447,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                       title="Delete order"
                     >
                       <svg className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
                   )}
@@ -347,7 +456,6 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
             ))}
           </tbody>
         </table>
-        {/* Pagination Controls */}
         {filteredOrders.length > ordersPerPage && (
           <div className="flex justify-end p-4">
             <div className="flex space-x-2">
@@ -376,7 +484,6 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
             </div>
           </div>
         )}
-        {/* Empty State */}
         {filteredOrders.length === 0 && (
           <div className="text-center py-16">
             <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">

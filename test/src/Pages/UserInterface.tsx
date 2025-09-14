@@ -5,9 +5,18 @@ import Notifications from "../Parts/Notification";
 import ProgressSteps from "../Parts/ProgressSteps";
 import ErrorSummary from "../Parts/ErrorSummary";
 import BookingSummary from "../Parts/BookingSummary";
-import TourSelectionUser from "../Pages/userInterface/TourSlelectionUser";
+import TourSelectionUser from "../Pages/userInterface/TourSlelectionUser"; // Fixed typo
 import AddPassengerTabUser from "../components/AddPassengerTabUser";
 import { checkSeatLimit } from "../utils/seatLimitChecks";
+
+// Format date for display
+function formatDisplayDate(s: string | undefined): string {
+  if (!s) return "";
+  const d = new Date(s);
+  return !Number.isNaN(d.getTime())
+    ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    : s;
+}
 
 // Type for Supabase passenger data with nested orders and tours
 interface SupabasePassenger {
@@ -38,6 +47,7 @@ interface SupabasePassenger {
   emergency_phone: string;
   created_at: string;
   updated_at: string;
+  is_blacklisted?: boolean;
   status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
   orders?: {
     id: string;
@@ -111,17 +121,10 @@ const createNewPassenger = (
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     status: "pending",
+    is_blacklisted: false,
+    blacklisted_date: new Date().toISOString(),
   };
 };
-
-// Format date for display
-function formatDisplayDate(s: string | undefined): string {
-  if (!s) return "";
-  const d = new Date(s);
-  return !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-    : s;
-}
 
 interface UserInterfaceProps {
   tours: Tour[];
@@ -161,16 +164,18 @@ export default function UserInterface({
   const [showInProvider, setShowInProvider] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [expandedPassengerId, setExpandedPassengerId] = useState<string | null>(null);
-  const [showConfirmModal, setShowConfirmModal] = useState<{
-    action: "clearAll" | "resetForm" | null;
-    message: string;
-  } | null>(null);
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
+  const [showConfirmModal, setShowConfirmModal] = useState<
+    | {
+      action: "clearAll" | "resetForm" | null;
+      message: string;
+    }
+    | null
+  >(null);
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>(errors);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [isAdding, setIsAdding] = useState(false); // Add loading state for passenger addition
 
   const MAX_PASSENGERS = 20;
 
@@ -318,38 +323,47 @@ export default function UserInterface({
               wrappedShowNotification("error", `Failed to refresh passengers: ${error.message}`);
               return;
             }
-            setPassengers(
-              data.map((p: SupabasePassenger): Passenger => ({
-                id: p.id,
-                order_id: p.order_id,
-                user_id: p.user_id,
-                tour_title: p.orders?.tours?.title || p.tour_title || "Unknown Tour",
-                departure_date: p.orders?.departureDate || p.departure_date || "",
-                name: p.name,
-                room_allocation: p.room_allocation,
-                serial_no: p.serial_no,
-                last_name: p.last_name,
-                first_name: p.first_name,
-                date_of_birth: p.date_of_birth,
-                age: p.age,
-                gender: p.gender,
-                passport_number: p.passport_number,
-                passport_expiry: p.passport_expiry,
-                nationality: p.nationality,
-                roomType: p.roomType,
-                hotel: p.hotel,
-                additional_services: p.additional_services,
-                price: p.price,
-                email: p.email,
-                phone: p.phone,
-                passport_upload: p.passport_upload,
-                allergy: p.allergy,
-                emergency_phone: p.emergency_phone,
-                created_at: p.created_at,
-                updated_at: p.updated_at,
-                status: p.status,
-              }))
-            );
+            // Update passengers, avoiding duplicates by ID
+            setPassengers((prev) => {
+              const existingIds = new Set(prev.map((p) => p.id));
+              return [
+                ...prev.filter((p) => p.order_id !== ""), // Keep submitted passengers
+                ...data
+                  .map((p: SupabasePassenger): Passenger => ({
+                    id: p.id,
+                    order_id: p.order_id,
+                    user_id: p.user_id,
+                    tour_title: p.orders?.tours?.title || p.tour_title || "Unknown Tour",
+                    departure_date: p.orders?.departureDate || p.departure_date || "",
+                    name: p.name,
+                    room_allocation: p.room_allocation,
+                    serial_no: p.serial_no,
+                    last_name: p.last_name,
+                    first_name: p.first_name,
+                    date_of_birth: p.date_of_birth,
+                    age: p.age,
+                    gender: p.gender,
+                    passport_number: p.passport_number,
+                    passport_expiry: p.passport_expiry,
+                    nationality: p.nationality,
+                    roomType: p.roomType,
+                    hotel: p.hotel,
+                    additional_services: p.additional_services,
+                    price: p.price,
+                    email: p.email,
+                    phone: p.phone,
+                    passport_upload: p.passport_upload,
+                    allergy: p.allergy,
+                    emergency_phone: p.emergency_phone,
+                    created_at: p.created_at,
+                    updated_at: p.updated_at,
+                    status: p.status,
+                    is_blacklisted: p.is_blacklisted ?? false,
+                    blacklisted_date: (p as any).blacklisted_date ?? null,
+                  }))
+                  .filter((p) => !existingIds.has(p.id) || p.order_id !== ""), // Add only new or updated unsubmitted
+              ];
+            });
             // Trigger seat limit check after passenger update
             if (selectedTourData?.id && departureDate) {
               const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
@@ -518,7 +532,7 @@ export default function UserInterface({
   };
 
   const addPassenger = useCallback(async () => {
-    if (!canAddPassenger()) {
+    if (isAdding || !canAddPassenger()) {
       if (bookingPassengers.length >= MAX_PASSENGERS) {
         wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
       } else {
@@ -527,10 +541,11 @@ export default function UserInterface({
       return;
     }
 
+    setIsAdding(true);
     try {
       const newPassenger = createNewPassenger(currentUser, bookingPassengers, selectedTourData);
       setPassengers((prev) => [
-        ...prev,
+        ...prev.filter((p) => p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)), // Remove duplicates
         { ...newPassenger, tour_title: selectedTourData?.title || "Unknown Tour", departure_date: departureDate },
       ]);
       setExpandedPassengerId(newPassenger.id);
@@ -545,12 +560,14 @@ export default function UserInterface({
     } catch (error) {
       console.error("Error adding passenger:", error);
       wrappedShowNotification("error", "Failed to add passenger");
+    } finally {
+      setIsAdding(false);
     }
-  }, [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers]);
+  }, [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers, isAdding]);
 
   const addMultiplePassengers = useCallback(
     async (count: number) => {
-      if (!canAddPassenger() || bookingPassengers.length + count > MAX_PASSENGERS) {
+      if (isAdding || !canAddPassenger() || bookingPassengers.length + count > MAX_PASSENGERS) {
         wrappedShowNotification("error", `Cannot add ${count} passengers. Maximum ${MAX_PASSENGERS} allowed.`);
         return;
       }
@@ -558,6 +575,8 @@ export default function UserInterface({
         wrappedShowNotification("error", "Cannot add passengers. Tour is fully booked.");
         return;
       }
+
+      setIsAdding(true);
       try {
         const newPassengers = Array.from({ length: count }, () =>
           createNewPassenger(currentUser, bookingPassengers, selectedTourData)
@@ -567,7 +586,10 @@ export default function UserInterface({
           tour_title: selectedTourData?.title || "Unknown Tour",
           departure_date: departureDate,
         }));
-        setPassengers((prev) => [...prev, ...newPassengers]);
+        setPassengers((prev) => [
+          ...prev.filter((p) => p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)), // Remove duplicates
+          ...newPassengers,
+        ]);
         setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
         wrappedShowNotification("success", `${count} passengers added`);
         newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -580,9 +602,11 @@ export default function UserInterface({
       } catch (error) {
         console.error("Error adding passengers:", error);
         wrappedShowNotification("error", `Failed to add ${count} passengers`);
+      } finally {
+        setIsAdding(false);
       }
     },
-    [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers, MAX_PASSENGERS]
+    [bookingPassengers, currentUser, selectedTourData, departureDate, wrappedShowNotification, setPassengers, isAdding, MAX_PASSENGERS]
   );
 
   const updatePassenger = async (passengerId: string, field: keyof Passenger, value: any) => {
@@ -717,8 +741,7 @@ export default function UserInterface({
       setShowInProvider(false);
       setExpandedPassengerId(null);
       setValidationErrors([]);
-      setIsGroup(false);
-      setGroupName("");
+
       wrappedShowNotification("success", "Booking form reset");
     }
     setShowConfirmModal(null);
@@ -857,7 +880,7 @@ export default function UserInterface({
         } as Order,
       ]);
 
-      setPassengers((prev) => prev.filter((p) => !bookingPassengers.some((up) => up.id === p.id)));
+      setPassengers((prev) => prev.filter((p) => !bookingPassengers.some((bp) => bp.id === p.id)));
 
       setSelectedTour("");
       setDepartureDate("");
@@ -866,8 +889,6 @@ export default function UserInterface({
       setShowInProvider(false);
       setExpandedPassengerId(null);
       setValidationErrors([]);
-      setIsGroup(false);
-      setGroupName("");
 
       wrappedShowNotification("success", "Booking request submitted. Awaiting manager approval.");
     } catch (error) {
@@ -1034,6 +1055,8 @@ export default function UserInterface({
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             status: "pending",
+            is_blacklisted: false,
+            blacklisted_date: new Date().toISOString(),
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
@@ -1041,7 +1064,10 @@ export default function UserInterface({
           return passenger;
         });
 
-        setPassengers([...passengers, ...newPassengers]);
+        setPassengers((prev) => [
+          ...prev.filter((p) => p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)), // Remove duplicates
+          ...newPassengers,
+        ]);
         setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
         wrappedShowNotification("success", `${newPassengers.length} passengers imported from CSV`);
         newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });

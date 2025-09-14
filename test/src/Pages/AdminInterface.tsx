@@ -3,8 +3,6 @@ import {
   Users,
   MapPin,
   FileText,
-  Trash2,
-  Plus,
   Edit,
   Save,
 } from "lucide-react";
@@ -12,6 +10,7 @@ import type { User as UserType, Tour, Order } from "../types/type";
 import { supabase } from "../supabaseClient";
 import Navbar from "./Navbar";
 import RoleChanger from "../components/RoleChanger";
+import AddTourTab from "../components/AddTourTab";
 
 interface AdminInterfaceProps {
   users: UserType[];
@@ -30,11 +29,13 @@ function AdminInterface({
   tours,
   setTours,
   orders,
-  setOrders,
   currentUser,
   onLogout,
 }: AdminInterfaceProps) {
-  const [selectedTab, setSelectedTab] = useState<"users" | "tours" | "orders">("orders");
+  const [selectedTab, setSelectedTab] = useState<
+    "users" | "tours" | "orders" | "addTourTab"
+  >("orders");
+
   const [newTour, setNewTour] = useState({
     title: "",
     description: "",
@@ -45,7 +46,7 @@ function AdminInterface({
   });
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
 
-  const handleAddTour = async () => {
+  const handleAddTourTab = async () => {
     if (!newTour.departure_date) {
       alert("Departure date is required");
       return;
@@ -131,17 +132,17 @@ function AdminInterface({
             <button
               onClick={() => setSelectedTab("orders")}
               className={`pb-4 px-1 text-sm font-medium ${selectedTab === "orders"
-                  ? "border-b-2 border-blue-600 text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-gray-500 hover:text-gray-700"
                 }`}
             >
               Orders
             </button>
             <button
-              onClick={() => setSelectedTab("tours")}
-              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "tours"
-                  ? "border-b-2 border-blue-600 text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
+              onClick={() => setSelectedTab("addTourTab")}
+              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "addTourTab"
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-gray-500 hover:text-gray-700"
                 }`}
             >
               Tours
@@ -150,8 +151,8 @@ function AdminInterface({
               <button
                 onClick={() => setSelectedTab("users")}
                 className={`pb-4 px-1 text-sm font-medium ${selectedTab === "users"
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "text-gray-500 hover:text-gray-700"
+                  ? "border-b-2 border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
                   }`}
               >
                 Users
@@ -252,174 +253,13 @@ function AdminInterface({
           </div>
         )}
 
-        {selectedTab === "tours" && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                <MapPin className="w-5 h-5 mr-2" />
-                Add New Tour
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Title
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.title}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, title: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Departure Date
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.departure_date}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, departure_date: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Seats
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.seats}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, seats: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Hotels (comma-separated)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Hotel A, Hotel B, Hotel C"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.hotels}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, hotels: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Services
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.services}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, services: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    value={newTour.description}
-                    onChange={(e) =>
-                      setNewTour({ ...newTour, description: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end mt-4">
-                <button
-                  onClick={handleAddTour}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  <Plus className="w-4 h-4 mr-2 inline" />
-                  Add Tour
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border">
-              <div className="p-6 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <MapPin className="w-5 h-5 mr-2" />
-                  All Tours
-                </h3>
-              </div>
-              <div className="overflow-x-auto">
-                {tours.length === 0 ? (
-                  <div className="text-center py-12">
-                    <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">No tours available yet.</p>
-                  </div>
-                ) : (
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Tour Details
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Departure Date
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Seats
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {tours.map((tour) => (
-                        <tr key={tour.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {tour.title}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {tour.description || "No description"}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {tour.dates && tour.dates.length > 0
-                              ? new Date(tour.dates[0]).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })
-                              : "No date set"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {tour.seats ?? "No limit"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <button
-                              onClick={() => handleDeleteTour(tour.id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
+        {selectedTab === "addTourTab" && (
+          <AddTourTab
+            tours={tours}
+            setTours={setTours}
+            currentUser={currentUser}
+            showNotification={(type: any, message: any) => alert(`${type}: ${message}`)}
+          />
         )}
 
         {selectedTab === "users" && currentUser.role === "superadmin" && (

@@ -21,6 +21,7 @@
     "@types/chart.js": "^4.0.1",
     "@types/react-router-dom": "^5.3.3",
     "bootstrap": "^5.3.7",
+    "browser-image-compression": "^2.0.2",
     "chart.js": "^4.5.0",
     "chartjs": "^0.3.24",
     "date-fns": "^4.1.0",

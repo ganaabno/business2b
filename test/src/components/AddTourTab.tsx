@@ -180,6 +180,13 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
             </svg>
             Add Tour
           </button>
+          <button>
+            Sanya Template
+          </button>
+
+          <button>
+            Shanghai templates
+          </button>
         </div>
       </div>
 
@@ -311,6 +318,25 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+
+      <div>
+        <h1>Select a template</h1>
+
+        <div className="flex grid-cols-3 justify-between p-12 m-2 shadow-2xl rounded-lg font-serif bg-slate-100">
+          <div className="p-3 shadow-2xl rounded-2xl">
+            <p className="text-xl">Sanya Template</p>
+            <p className=""><span className="font-bold">Title:</span></p>
+          </div>
+
+          <div>
+            div2
+          </div>
+
+          <div>
+            div3
+          </div>
         </div>
       </div>
     </div>

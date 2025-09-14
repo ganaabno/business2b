@@ -15,6 +15,8 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
   const [passengerStatusFilter, setPassengerStatusFilter] = useState<string>("all");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isEditMode, setIsEditMode] = useState<boolean>(false); // Toggle edit mode
+  const [isSaving, setIsSaving] = useState<boolean>(false); // Loading state for save
   const passengersPerPage = 10;
 
   // Fetch passengers with tour_title
@@ -46,8 +48,12 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
       const enrichedPassengers = data.map((p: any) => ({
         ...p,
         tour_title: p.orders?.tours?.title || "Unknown Tour",
-      }));
+        is_blacklisted: p.is_blacklisted || false, // Default to false if missing
+        name: `${p.first_name || ""} ${p.last_name || ""}`.trim(),
+        departure_date: p.orders?.departureDate || p.departure_date || "",
+      })) as Passenger[];
       setPassengers(enrichedPassengers);
+      console.log("Enriched passengers with is_blacklisted:", enrichedPassengers.map(p => ({ id: p.id, is_blacklisted: p.is_blacklisted })));
     } catch (error) {
       console.error("Unexpected error fetching passengers:", error);
       showNotification("error", "An unexpected error occurred while fetching passengers.");
@@ -62,7 +68,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
       .on(
         "postgres_changes",
         {
-          event: "UPDATE",
+          event: "*",
           schema: "public",
           table: "passengers",
           filter: currentUser.role === "user" ? `user_id=eq.${currentUser.userId}` : undefined,
@@ -82,26 +88,47 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
     };
   }, [currentUser.userId, currentUser.role, showNotification]);
 
-  const handlePassengerChange = async (id: string, field: keyof Passenger, value: any) => {
-    const previousPassengers = [...passengers];
-    const updatedPassengers = passengers.map((p) => (p.id === id ? { ...p, [field]: value } : p));
-    setPassengers(updatedPassengers);
+  const handlePassengerChange = (id: string, field: keyof Passenger, value: any) => {
+    setPassengers((prevPassengers) =>
+      prevPassengers.map((p) =>
+        p.id === id ? { ...p, [field]: value } : p
+      )
+    );
+  };
+
+  const handleSaveEdits = async () => {
+    if (isSaving) return; // Prevent multiple saves
+    setIsSaving(true);
+    const previousPassengers = [...passengers]; // Store original state for revert
     try {
-      const { error } = await supabase
-        .from("passengers")
-        .update({ [field]: value, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) {
-        console.error("Error updating passenger:", error);
-        showNotification("error", `Failed to update passenger: ${error.message}`);
-        setPassengers(previousPassengers);
+      const updates = passengers.map(async (passenger) => {
+        const { error } = await supabase
+          .from("passengers")
+          .update({
+            ...passenger,
+            updated_at: new Date().toISOString(),
+            edited_by: currentUser.id,
+          })
+          .eq("id", passenger.id);
+        return { passenger, error };
+      });
+      const results = await Promise.all(updates);
+      const hasError = results.some((result) => result.error);
+      if (hasError) {
+        const error = results.find((result) => result.error)?.error;
+        console.error("Error updating passengers:", error);
+        showNotification("error", `Failed to update passengers: ${error?.message || "Unknown error"}`);
+        setPassengers(previousPassengers); // Revert on error
       } else {
-        console.log(`Updated passenger id=${id}, field=${field}, value=`, value);
+        showNotification("success", "Saved completely! 😎");
+        setIsEditMode(false); // Exit edit mode after successful save
       }
     } catch (error) {
-      console.error("Unexpected error updating passenger:", error);
-      showNotification("error", "An unexpected error occurred while updating the passenger.");
+      console.error("Unexpected error updating passengers:", error);
+      showNotification("error", "An unexpected error occurred while updating passengers.");
       setPassengers(previousPassengers);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -126,18 +153,51 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
     }
   };
 
+  const handleBlacklistToggle = async (id: string, isChecked: boolean) => {
+    const previousPassengers = [...passengers];
+    const updatedPassengers = passengers.map((p) => 
+      p.id === id ? { ...p, is_blacklisted: isChecked } : p
+    );
+    setPassengers(updatedPassengers);
+    try {
+      const { error } = await supabase
+        .from("passengers")
+        .update({ is_blacklisted: isChecked, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) {
+        console.error("Error updating blacklist:", error);
+        showNotification("error", `Failed to update blacklist: ${error.message}`);
+        setPassengers(previousPassengers); // Revert on error
+      } else {
+        console.log(`Blacklist updated for passenger ${id}: ${isChecked}`);
+        showNotification("success", isChecked ? "Passenger blacklisted! 🚫" : "Passenger unblacklisted! ✅");
+      }
+    } catch (error) {
+      console.error("Unexpected error updating blacklist:", error);
+      showNotification("error", "An unexpected error occurred while updating blacklist.");
+      setPassengers(previousPassengers);
+    }
+  };
+
   const filteredPassengers = useMemo(() => {
-    return passengers.filter((passenger) => {
-      const matchesName = `${passenger.first_name || ""} ${passenger.last_name || ""}`
-        .toLowerCase()
-        .includes(passengerNameFilter.toLowerCase());
-      const orderIdString = passenger.order_id != null ? String(passenger.order_id) : "";
-      const matchesOrder = orderIdString.toLowerCase().includes(passengerOrderFilter.toLowerCase());
-      const matchesStatus = passengerStatusFilter === "all" || 
+    // Sort by departure_date first (nearest to furthest)
+    return [...passengers]
+      .sort((a, b) => {
+        const dateA = a.departure_date ? new Date(a.departure_date) : new Date(0); // Treat empty as far past
+        const dateB = b.departure_date ? new Date(b.departure_date) : new Date(0);
+        return dateA.getTime() - dateB.getTime();
+      })
+      .filter((passenger) => {
+        const matchesName = `${passenger.first_name || ""} ${passenger.last_name || ""}`
+          .toLowerCase()
+          .includes(passengerNameFilter.toLowerCase());
+        const orderIdString = passenger.order_id != null ? String(passenger.order_id) : "";
+        const matchesOrder = orderIdString.toLowerCase().includes(passengerOrderFilter.toLowerCase());
+        const matchesStatus = passengerStatusFilter === "all" || 
                            passenger.status === passengerStatusFilter || 
                            (!passenger.status && passengerStatusFilter === "active");
-      return matchesName && matchesOrder && matchesStatus;
-    });
+        return matchesName && matchesOrder && matchesStatus && !passenger.is_blacklisted; // Exclude blacklisted
+      });
   }, [passengers, passengerNameFilter, passengerOrderFilter, passengerStatusFilter]);
 
   // Pagination logic
@@ -192,12 +252,30 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="rejected">Rejected</option>
-              <option value="pending">Pending</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="inactive">Inactive</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="approved">✅ Approved</option>
+              <option value="rejected">❌ Rejected</option>
+              <option value="active">✅ Active</option>
+              <option value="inactive">😴 Inactive</option>
+              <option value="cancelled">🚫 Cancelled</option>
             </select>
+            <div className="mt-2">
+              <button
+                onClick={() => setIsEditMode(!isEditMode)}
+                className="w-full px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-all duration-200 font-semibold text-sm"
+              >
+                {isEditMode ? "Cancel Edit 😎" : "Edit Passengers xD"}
+              </button>
+              {isEditMode && (
+                <button
+                  onClick={handleSaveEdits}
+                  disabled={isSaving}
+                  className="w-full mt-2 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 font-semibold text-sm"
+                >
+                  {isSaving ? "Saving..." : "Save Changes"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -208,217 +286,163 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-48 shadow-sm">Name</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider sticky left-[108px] z-10 bg-gray-50 w-32 shadow-sm">Order ID</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tour</th>
+              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Departure Date</th>
               <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">DOB</th>
               <th className="px-10 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Age</th>
               <th className="px-12 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Gender</th>
               <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Passport</th>
               <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Passport Expiry</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Nationality</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room Type</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room Allocation</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Hotel</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Additional Services</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Allergies</th>
-              <th className="px-24 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-              <th className="px-18 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
-              <th className="px-18 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Emergency Phone</th>
-              <th className="px-48 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+              <th className="px-14 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+              <th className="px-10 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Blacklist</th>
+              <th className="px-10 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedPassengers.map((passenger) => (
-              <tr key={passenger.id} className="hover:bg-gray-50 transition-colors duration-150">
-                <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-48 shadow-sm">
-                  <div className="text-sm font-medium text-gray-900">
-                    {passenger.first_name} {passenger.last_name}
-                  </div>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap sticky left-[108px] z-10 bg-white w-32 shadow-sm">
-                  <input
-                    type="text"
-                    value={passenger.order_id ?? ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "order_id", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Order ID..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                  {passenger.tour_title || "Unknown Tour"}
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="date"
-                    value={passenger.date_of_birth || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "date_of_birth", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="number"
-                    value={passenger.age || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "age", parseInt(e.target.value) || 0)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Age..."
-                    min="0"
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <select
-                    value={passenger.gender || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "gender", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.passport_number || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "passport_number", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Passport..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="date"
-                    value={passenger.passport_expiry || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "passport_expiry", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.nationality || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "nationality", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Nationality..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.roomType || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "roomType", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Room Type..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.room_allocation || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "room_allocation", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Room Alloc..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.hotel || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "hotel", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Hotel..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.additional_services?.join(", ") || ""}
-                    onChange={(e) =>
-                      handlePassengerChange(passenger.id, "additional_services", e.target.value.split(",").map((s) => s.trim()))
-                    }
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Services..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="text"
-                    value={passenger.allergy || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "allergy", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Allergies..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="email"
-                    value={passenger.email || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "email", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Email..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="tel"
-                    value={passenger.phone || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "phone", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Phone..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <input
-                    type="tel"
-                    value={passenger.emergency_phone || ""}
-                    onChange={(e) => handlePassengerChange(passenger.id, "emergency_phone", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Emergency..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <select
-                    value={passenger.status || "active"}
-                    onChange={(e) => handlePassengerChange(passenger.id, "status", e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="active">✅ Active</option>
-                    <option value="rejected">❌ Rejected</option>
-                    <option value="pending">⏳ Pending</option>
-                    <option value="cancelled">🚫 Cancelled</option>
-                    <option value="inactive">😴 Inactive</option>
-                  </select>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  {showDeleteConfirm === passenger.id ? (
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleDeletePassenger(passenger.id)}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(null)}
-                        className="px-3 py-1 bg-gray-200 rounded-lg hover:bg-gray-300"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+              <tr key={passenger.id}>
+                <td className="px-4 py-2 text-sm text-gray-900 sticky left-0 bg-white z-0">
+                  {isEditMode ? (
+                    <input
+                      type="text"
+                      value={`${passenger.first_name} ${passenger.last_name}`}
+                      onChange={(e) => {
+                        const [first, ...last] = e.target.value.split(" ");
+                        handlePassengerChange(passenger.id, "first_name", first);
+                        handlePassengerChange(passenger.id, "last_name", last.join(" "));
+                      }}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
                   ) : (
+                    `${passenger.first_name} ${passenger.last_name}`
+                  )}
+                </td>
+                <td className="px-4 py-2 text-sm text-gray-900 sticky left-[108px] bg-white z-0">
+                  {passenger.order_id || "N/A"}
+                </td>
+                <td className="px-4 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="text"
+                      value={passenger.tour_title}
+                      onChange={(e) => handlePassengerChange(passenger.id, "tour_title", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.tour_title
+                  )}
+                </td>
+                <td className="px-14 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="date"
+                      value={passenger.departure_date}
+                      onChange={(e) => handlePassengerChange(passenger.id, "departure_date", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.departure_date
+                  )}
+                </td>
+                <td className="px-14 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="date"
+                      value={passenger.date_of_birth}
+                      onChange={(e) => handlePassengerChange(passenger.id, "date_of_birth", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.date_of_birth
+                  )}
+                </td>
+                <td className="px-10 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="number"
+                      value={passenger.age}
+                      onChange={(e) => handlePassengerChange(passenger.id, "age", parseInt(e.target.value))}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.age
+                  )}
+                </td>
+                <td className="px-12 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <select
+                      value={passenger.gender}
+                      onChange={(e) => handlePassengerChange(passenger.id, "gender", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  ) : (
+                    passenger.gender
+                  )}
+                </td>
+                <td className="px-14 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="text"
+                      value={passenger.passport_number}
+                      onChange={(e) => handlePassengerChange(passenger.id, "passport_number", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.passport_number
+                  )}
+                </td>
+                <td className="px-14 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      type="date"
+                      value={passenger.passport_expiry}
+                      onChange={(e) => handlePassengerChange(passenger.id, "passport_expiry", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    />
+                  ) : (
+                    passenger.passport_expiry
+                  )}
+                </td>
+                <td className="px-14 py-2 text-sm text-gray-900">
+                  {isEditMode ? (
+                    <select
+                      value={passenger.status}
+                      onChange={(e) => handlePassengerChange(passenger.id, "status", e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  ) : (
+                    passenger.status
+                  )}
+                </td>
+                <td className="px-10 py-2 text-sm text-gray-900">
+                  {isEditMode && (
+                    <input
+                      type="checkbox"
+                      checked={passenger.is_blacklisted || false}
+                      onChange={(e) => handleBlacklistToggle(passenger.id, e.target.checked)}
+                      className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                  )}
+                  {!isEditMode && (passenger.is_blacklisted ? "Yes" : "No")}
+                </td>
+                <td className="px-10 py-2 text-sm text-gray-900">
+                  {isEditMode && (
                     <button
                       onClick={() => setShowDeleteConfirm(passenger.id)}
-                      className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg"
-                      title="Delete passenger"
+                      className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
+                      Delete
                     </button>
                   )}
                 </td>
@@ -426,45 +450,48 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             ))}
           </tbody>
         </table>
-        {/* Empty State */}
-        {filteredPassengers.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No passengers found</h3>
-            <p className="text-gray-500">Try adjusting your search filters to find what you're looking for.</p>
-          </div>
-        )}
       </div>
-      {/* Pagination Controls */}
-      {filteredPassengers.length > passengersPerPage && (
-        <div className="sticky bottom-0 bg-white p-4 border-t border-gray-200 flex justify-end">
-          <div className="flex space-x-2">
-            <button
-              onClick={handlePreviousPage}
-              disabled={currentPage === 1}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
-                currentPage === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              }`}
-            >
-              Previous
-            </button>
-            <button
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
-                currentPage === totalPages
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              }`}
-            >
-              Next
-            </button>
+      {filteredPassengers.length === 0 && (
+        <div className="p-4 text-center text-gray-500">No passengers found matching the filters.</div>
+      )}
+      {totalPages > 1 && (
+        <div className="p-4 flex justify-end items-center space-x-2">
+          <button
+            onClick={handlePreviousPage}
+            disabled={currentPage === 1}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-600">{`Page ${currentPage} of ${totalPages}`}</span>
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete this passenger?</p>
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeletePassenger(showDeleteConfirm)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

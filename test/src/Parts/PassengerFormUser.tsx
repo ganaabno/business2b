@@ -1,4 +1,7 @@
 import type { Tour, Passenger, ValidationError, User as UserType } from "../types/type";
+import imageCompression from "browser-image-compression";
+import { supabase } from "../supabaseClient";
+import { useState } from "react";
 
 interface PassengerFormUserProps {
   currentUser: UserType;
@@ -21,20 +24,21 @@ interface PassengerFormUserProps {
   setExpandedPassengerId: React.Dispatch<React.SetStateAction<string | null>>;
   newPassengerRef: React.MutableRefObject<HTMLDivElement | null>;
   validateBooking: () => boolean;
+  isAdding?: boolean; // Optional prop to sync with UserInterface's loading state
 }
 
 const getPassportExpiryColor = (expiryDate: string): string => {
-  if (!expiryDate) return 'border-gray-300 bg-white';
+  if (!expiryDate) return "border-gray-300 bg-white";
   const today = new Date();
   const expiry = new Date(expiryDate);
   const diffTime = expiry.getTime() - today.getTime();
   const monthsRemaining = diffTime / (1000 * 60 * 60 * 24 * 30);
 
-  if (monthsRemaining <= 0) return 'border-red-500 bg-red-50';
-  if (monthsRemaining <= 1) return 'border-red-400 bg-red-50';
-  if (monthsRemaining <= 3) return 'border-orange-400 bg-orange-50';
-  if (monthsRemaining <= 7) return 'border-yellow-400 bg-yellow-50';
-  return 'border-green-400 bg-lime-50';
+  if (monthsRemaining <= 0) return "border-red-500 bg-red-50";
+  if (monthsRemaining <= 1) return "border-red-400 bg-red-50";
+  if (monthsRemaining <= 3) return "border-orange-400 bg-orange-50";
+  if (monthsRemaining <= 7) return "border-yellow-400 bg-yellow-50";
+  return "border-green-400 bg-lime-50";
 };
 
 export default function PassengerFormUser({
@@ -48,7 +52,10 @@ export default function PassengerFormUser({
   newPassengerRef,
   showNotification,
   validateBooking,
+  isAdding = false, // Default to false if not provided
 }: PassengerFormUserProps) {
+  const [uploading, setUploading] = useState(false);
+
   const togglePassenger = (id: string) => {
     setExpandedPassengerId(expandedPassengerId === id ? null : id);
   };
@@ -72,6 +79,51 @@ export default function PassengerFormUser({
     }
     setActiveStep(3);
   };
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>, passengerId: string) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+
+    try {
+      // Compress before upload
+      const options = {
+        maxSizeMB: 0.2, // ~200KB target
+        maxWidthOrHeight: 1080, // Resize if needed
+        useWebWorker: true,
+      };
+
+      const compressedFile = await imageCompression(file, options);
+
+      // Use the actual passenger ID
+      const fileName = `${passengerId}/${compressedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}_${Date.now()}`; // Unique filename
+      const { data, error } = await supabase.storage
+        .from("passports")
+        .upload(fileName, compressedFile, {
+          cacheControl: "3600",
+          upsert: true, // Overwrite if exists
+        });
+
+      if (error) throw error;
+
+      console.log("Uploaded:", data);
+
+      // Get a public URL (if bucket is public) or signed URL
+      const { data: publicUrl } = supabase.storage
+        .from("passports")
+        .getPublicUrl(fileName);
+
+      // Update passenger state with the passport URL
+      await updatePassenger(passengerId, "passport_upload", publicUrl.publicUrl);
+      showNotification("success", "Passport uploaded successfully");
+    } catch (err) {
+      console.error("Upload failed:", err);
+      showNotification("error", "Failed to upload passport");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -227,10 +279,11 @@ export default function PassengerFormUser({
                       : "border-gray-300"
                       }`}
                   >
-                    <option value="default">Mongolia</option>
-                    <option value="Male">China</option>
-                    <option value="Female">France</option>
-                    <option value="Other">Russia</option>
+                    <option value="">Select</option>
+                    <option value="Mongolia">Mongolia</option>
+                    <option value="China">China</option>
+                    <option value="France">France</option>
+                    <option value="Russia">Russia</option>
                   </select>
                   {errors.find((e) => e.field === `passenger_${passenger.id}_nationality`) && (
                     <p className="text-sm text-red-600 mt-1">
@@ -360,10 +413,14 @@ export default function PassengerFormUser({
                   <label className="block text-sm font-medium text-gray-700 mb-1">Passport Upload</label>
                   <input
                     type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => updatePassenger(passenger.id, "passport_upload", e.target.files?.[0])}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    accept="image/*"
+                    onChange={(e) => handleUpload(e, passenger.id)} // Pass passenger ID
+                    disabled={uploading || isAdding} // Disable during upload or adding
                   />
+                  {uploading && <p>Uploading...</p>}
+                  {passenger.passport_upload && (
+                    <p className="text-sm text-green-600 mt-1">Passport uploaded: {passenger.passport_upload}</p>
+                  )}
                 </div>
               </div>
               <div className="mt-4 flex justify-end space-x-2">
@@ -376,7 +433,7 @@ export default function PassengerFormUser({
                 </button>
                 <button
                   onClick={handleNextClick}
-                  disabled={passengers.length === 0}
+                  disabled={passengers.length === 0 || isAdding} // Disable during adding
                   className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
                   Next

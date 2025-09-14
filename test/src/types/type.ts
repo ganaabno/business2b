@@ -142,7 +142,7 @@ export type OrderStatus =
   | "Swapped seat with another company"
   | "Gave seat to another company"
   | "Cancelled and bought travel from another country"
-  | "confirmed";
+  | "Completed"; 
 
 export type PaymentMethod =
   | "Cash"
@@ -184,6 +184,8 @@ export interface Passenger {
   created_at: string; // timestamptz in DB
   updated_at: string; // timestamptz in DB
   status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
+  is_blacklisted: boolean;
+  blacklisted_date: string | null;
 }
 
 export interface PassengerRequest {
