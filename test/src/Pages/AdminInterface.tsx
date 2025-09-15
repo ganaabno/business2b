@@ -10,7 +10,6 @@ import type { User as UserType, Tour, Order } from "../types/type";
 import { supabase } from "../supabaseClient";
 import Navbar from "./Navbar";
 import RoleChanger from "../components/RoleChanger";
-import AddTourTab from "../components/AddTourTab";
 
 interface AdminInterfaceProps {
   users: UserType[];
@@ -33,7 +32,7 @@ function AdminInterface({
   onLogout,
 }: AdminInterfaceProps) {
   const [selectedTab, setSelectedTab] = useState<
-    "users" | "tours" | "orders" | "addTourTab"
+    "users" | "orders" | "addTourTab"
   >("orders");
 
   const [newTour, setNewTour] = useState({
@@ -137,15 +136,6 @@ function AdminInterface({
                 }`}
             >
               Orders
-            </button>
-            <button
-              onClick={() => setSelectedTab("addTourTab")}
-              className={`pb-4 px-1 text-sm font-medium ${selectedTab === "addTourTab"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-                }`}
-            >
-              Tours
             </button>
             {currentUser.role === "superadmin" && (
               <button
@@ -251,15 +241,6 @@ function AdminInterface({
               )}
             </div>
           </div>
-        )}
-
-        {selectedTab === "addTourTab" && (
-          <AddTourTab
-            tours={tours}
-            setTours={setTours}
-            currentUser={currentUser}
-            showNotification={(type: any, message: any) => alert(`${type}: ${message}`)}
-          />
         )}
 
         {selectedTab === "users" && currentUser.role === "superadmin" && (

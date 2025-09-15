@@ -2,6 +2,8 @@ import { useState } from "react";
 import { supabase } from "../supabaseClient";
 import type { Tour, User as UserType } from "../types/type";
 import { formatDate } from "../utils/tourUtils";
+import SanyaTemplate from "../Templates/SanyaTemplate";
+import ShanghaiTemplate from "../Templates/ShanghaiTemplate";
 
 interface AddTourTabProps {
   tours: Tour[];
@@ -22,6 +24,18 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
   });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
+  // Function to handle template selection
+  const handleSelectTemplate = (templateData: Partial<typeof newTour>) => {
+    setNewTour((prev) => ({
+      ...prev,
+      ...templateData,
+      departure_date: "", // Keep departure date empty for user input
+      seats: "", // Keep seats empty for user input
+    }));
+    showNotification("success", `Template ${templateData.title} loaded! Please set departure date and seats.`);
+  };
+
+  // In AddTourTab.tsx
   const handleAddTour = async () => {
     if (!newTour.departure_date) {
       showNotification("error", "Departure date is required");
@@ -32,11 +46,13 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       return;
     }
 
+    const seatsValue = newTour.seats ? parseInt(newTour.seats, 10) : null;
     const tourData = {
       title: newTour.title.trim() || null,
       description: newTour.description.trim() || null,
       dates: newTour.departure_date ? [newTour.departure_date] : [],
-      seats: newTour.seats ? parseInt(newTour.seats, 10) : null,
+      seats: seatsValue,
+      available_seats: seatsValue, // Set available_seats to match seats
       hotels: newTour.hotels.trim() ? newTour.hotels.trim().split(",").map((h) => h.trim()) : [],
       services: newTour.services.trim()
         ? newTour.services.trim().split(",").map((s) => ({ name: s.trim(), price: 0 }))
@@ -169,7 +185,7 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
             />
           </div>
         </div>
-        <div className="flex justify-end mt-6">
+        <div className="flex justify-end mt-6 space-x-4">
           <button
             onClick={handleAddTour}
             disabled={!newTour.title || !newTour.departure_date}
@@ -180,13 +196,8 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
             </svg>
             Add Tour
           </button>
-          <button>
-            Sanya Template
-          </button>
-
-          <button>
-            Shanghai templates
-          </button>
+          <SanyaTemplate onSelect={handleSelectTemplate} />
+          <ShanghaiTemplate onSelect={handleSelectTemplate} />
         </div>
       </div>
 
@@ -261,23 +272,22 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          tour.status === "active"
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${tour.status === "active"
                             ? "bg-green-100 text-green-800"
                             : tour.status === "inactive"
-                            ? "bg-gray-100 text-gray-800"
-                            : tour.status === "full"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
+                              ? "bg-gray-100 text-gray-800"
+                              : tour.status === "full"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-blue-100 text-blue-800"
+                          }`}
                       >
                         {tour.status === "active"
                           ? "✅ Active"
                           : tour.status === "inactive"
-                          ? "⏸️ Inactive"
-                          : tour.status === "full"
-                          ? "🚫 Full"
-                          : "📍 " + (tour.status || "Active")}
+                            ? "⏸️ Inactive"
+                            : tour.status === "full"
+                              ? "🚫 Full"
+                              : "📍 " + (tour.status || "Active")}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -318,25 +328,6 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
               </tbody>
             </table>
           )}
-        </div>
-      </div>
-
-      <div>
-        <h1>Select a template</h1>
-
-        <div className="flex grid-cols-3 justify-between p-12 m-2 shadow-2xl rounded-lg font-serif bg-slate-100">
-          <div className="p-3 shadow-2xl rounded-2xl">
-            <p className="text-xl">Sanya Template</p>
-            <p className=""><span className="font-bold">Title:</span></p>
-          </div>
-
-          <div>
-            div2
-          </div>
-
-          <div>
-            div3
-          </div>
         </div>
       </div>
     </div>

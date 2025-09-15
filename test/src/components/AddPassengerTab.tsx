@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import type { Tour, Passenger, User as UserType, ValidationError, Order } from "../types/type";
 import Notifications from "../Parts/Notification";
@@ -8,11 +8,12 @@ import TourSelection from "../Parts/TourSelection";
 import PassengerForm from "../Parts/PassengerForm";
 import BookingSummary from "../Parts/BookingSummary";
 import { downloadTemplate } from "../utils/csvUtils";
+import { checkSeatLimit } from "../utils/seatLimitChecks";
 
 interface AddPassengerTabProps {
   tours: Tour[];
-  orders: Order[]; // Added orders prop
-  setOrders: React.Dispatch<React.SetStateAction<Order[]>>; // Added setOrders prop
+  orders: Order[];
+  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   selectedTour: string;
   setSelectedTour: React.Dispatch<React.SetStateAction<string>>;
   departureDate: string;
@@ -32,10 +33,8 @@ interface AddPassengerTabProps {
   currentUser: UserType;
 }
 
-// Generate unique passenger ID
 const generatePassengerId = () => `passenger_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-// Create new passenger with smart defaults
 const createNewPassenger = (
   currentUser: UserType,
   existingPassengers: Passenger[],
@@ -93,13 +92,15 @@ const createNewPassenger = (
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     status: "active",
+    is_blacklisted: false,
+    blacklisted_date: null,
   };
 };
 
 export default function AddPassengerTab({
   tours,
-  orders, // Added to props destructuring
-  setOrders, // Added to props destructuring
+  orders,
+  setOrders,
   selectedTour,
   setSelectedTour,
   departureDate,
@@ -122,41 +123,40 @@ export default function AddPassengerTab({
   const [expandedPassengerId, setExpandedPassengerId] = useState<string | null>(null);
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
 
-  // Constants
   const MAX_PASSENGERS = 20;
+  const isManager = currentUser.role === "manager" || currentUser.role === "superadmin";
 
-  // Filter tours to remove available_seats for regular users
-  const filteredTours = currentUser.role === "user"
-    ? tours.map(({ available_seats, ...rest }) => rest)
-    : tours;
+  const filteredTours = isManager ? tours : tours.map(({ available_seats, ...rest }) => rest);
 
-  // Get selected tour data
   const selectedTourData = tours.find((t) => t.title === selectedTour);
 
-  // Calculate remaining seats
-  const remainingSeats = selectedTourData?.available_seats !== undefined
-    ? Math.max(0, selectedTourData.available_seats - passengers.length)
-    : undefined;
+  const remainingSeats = isManager
+    ? undefined
+    : selectedTourData?.available_seats !== undefined
+      ? Math.max(0, selectedTourData.available_seats - passengers.length)
+      : undefined;
 
-  // Check if we can add more passengers
-  const canAddPassenger = () => {
-    if (passengers.length >= MAX_PASSENGERS) return false;
-    if (!selectedTourData) return true;
-    if (selectedTourData.available_seats === undefined) return true;
-    return passengers.length < selectedTourData.available_seats;
-  };
-
-  // Reset departureDate when selectedTour changes
-  useEffect(() => {
-    setDepartureDate("");
-  }, [selectedTour, setDepartureDate]);
-
-  // Auto-scroll to new passenger
-  useEffect(() => {
-    if (passengers.length > 0 && newPassengerRef.current) {
-      newPassengerRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  const canAddPassenger = async () => {
+    if (passengers.length >= MAX_PASSENGERS) {
+      wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
+      return false;
     }
-  }, [passengers.length]);
+    if (!selectedTour || !departureDate) {
+      wrappedShowNotification("error", "Please select a tour and departure date");
+      return false;
+    }
+    if (!selectedTourData) {
+      wrappedShowNotification("error", "Invalid tour selected");
+      return false;
+    }
+    if (isManager) return true; // Managers bypass seat limits
+    const { isValid, message } = await checkSeatLimit(selectedTourData.id, departureDate);
+    if (!isValid) {
+      wrappedShowNotification("error", message);
+      return false;
+    }
+    return true;
+  };
 
   const wrappedShowNotification = useCallback((type: "success" | "error", message: string) => {
     setNotification({ type, message });
@@ -193,15 +193,9 @@ export default function AddPassengerTab({
     return "border-green-400 bg-green-50";
   };
 
-  const addPassenger = useCallback(() => {
-    if (!canAddPassenger()) {
-      if (passengers.length >= MAX_PASSENGERS) {
-        wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
-      } else if (selectedTourData?.available_seats !== undefined) {
-        wrappedShowNotification("error", "Cannot add more passengers. Tour is fully booked.");
-      }
-      return;
-    }
+  const addPassenger = useCallback(async () => {
+    const canAdd = await canAddPassenger();
+    if (!canAdd) return;
 
     if (isGroup && !groupName.trim()) {
       wrappedShowNotification("error", "Please enter a group name before adding passengers");
@@ -209,13 +203,7 @@ export default function AddPassengerTab({
     }
 
     try {
-      const newPassenger = createNewPassenger(
-        currentUser,
-        passengers,
-        isGroup,
-        groupName,
-        selectedTourData
-      );
+      const newPassenger = createNewPassenger(currentUser, passengers, isGroup, groupName, selectedTourData);
       setPassengers(prev => [...prev, newPassenger]);
       setExpandedPassengerId(newPassenger.id);
       const passengerCount = passengers.length + 1;
@@ -223,12 +211,13 @@ export default function AddPassengerTab({
         ? `Added passenger ${passengerCount} to group "${groupName}"`
         : `Added passenger ${passengerCount}`;
       wrappedShowNotification("success", message);
+      newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (error) {
       wrappedShowNotification("error", "Failed to add passenger. Please try again.");
     }
   }, [passengers, isGroup, groupName, currentUser, selectedTourData, wrappedShowNotification]);
 
-  const addMultiplePassengers = useCallback((count: number) => {
+  const addMultiplePassengers = useCallback(async (count: number) => {
     if (count < 1 || count > 10) {
       wrappedShowNotification("error", "Can add between 1-10 passengers at once");
       return;
@@ -239,10 +228,13 @@ export default function AddPassengerTab({
       return;
     }
 
-    if (selectedTourData?.available_seats !== undefined &&
-      passengers.length + count > selectedTourData.available_seats) {
-      wrappedShowNotification("error", `Cannot add ${count} passengers. Only ${selectedTourData.available_seats - passengers.length} seats available.`);
-      return;
+    if (!isManager) {
+      const canAdd = await canAddPassenger();
+      if (!canAdd) return;
+      if (selectedTourData?.available_seats !== undefined && passengers.length + count > selectedTourData.available_seats) {
+        wrappedShowNotification("error", `Cannot add ${count} passengers. Only ${selectedTourData.available_seats - passengers.length} seats available.`);
+        return;
+      }
     }
 
     if (isGroup && !groupName.trim()) {
@@ -252,21 +244,16 @@ export default function AddPassengerTab({
 
     try {
       const newPassengers = Array.from({ length: count }, (_, index) =>
-        createNewPassenger(
-          currentUser,
-          [...passengers, ...Array(index).fill(null)],
-          isGroup,
-          groupName,
-          selectedTourData
-        )
+        createNewPassenger(currentUser, [...passengers, ...Array(index).fill(null)], isGroup, groupName, selectedTourData)
       );
       setPassengers(prev => [...prev, ...newPassengers]);
       setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
       wrappedShowNotification("success", `Added ${count} passengers successfully`);
+      newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (error) {
       wrappedShowNotification("error", "Failed to add passengers. Please try again.");
     }
-  }, [passengers, isGroup, groupName, currentUser, selectedTourData, wrappedShowNotification]);
+  }, [passengers, isGroup, groupName, currentUser, selectedTourData, wrappedShowNotification, isManager]);
 
   const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
     if (index < 0 || index >= passengers.length) {
@@ -428,7 +415,7 @@ export default function AddPassengerTab({
       return;
     }
 
-    if (tourData.available_seats !== undefined && tourData.available_seats < passengers.length) {
+    if (!isManager && tourData.available_seats !== undefined && tourData.available_seats < passengers.length) {
       wrappedShowNotification("error", "Cannot save booking. The tour is fully booked.");
       return;
     }
@@ -472,7 +459,6 @@ export default function AddPassengerTab({
         show_in_provider: currentUser.role !== "user" ? showInProvider : false,
       };
 
-      // Insert order into Supabase
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert(newOrder)
@@ -482,21 +468,18 @@ export default function AddPassengerTab({
 
       const orderId = orderData.id as string;
 
-      // Ensure passengersWithOrderId matches the Passenger type
       const passengersWithOrderId: Passenger[] = passengers.map((p) => ({
         ...p,
         order_id: orderId,
-        status: p.status ?? "active", // Ensure status is not undefined
+        status: p.status ?? "active",
       }));
 
-      // Insert passengers into Supabase
       const { error: passengerError } = await supabase
         .from("passengers")
         .insert(passengersWithOrderId);
       if (passengerError) throw new Error(passengerError.message);
 
-      // Update available seats in tours table
-      if (tourData.available_seats !== undefined) {
+      if (!isManager && tourData.available_seats !== undefined) {
         const { error: tourUpdateError } = await supabase
           .from("tours")
           .update({ available_seats: tourData.available_seats - passengers.length, updated_at: new Date().toISOString() })
@@ -504,7 +487,6 @@ export default function AddPassengerTab({
         if (tourUpdateError) console.warn("Failed to update tour seats:", tourUpdateError.message);
       }
 
-      // Update orders state
       setOrders(prev => [
         ...prev,
         {
@@ -554,7 +536,7 @@ export default function AddPassengerTab({
     wrappedShowNotification("success", "CSV downloaded successfully");
   };
 
-  const handleUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -566,6 +548,11 @@ export default function AddPassengerTab({
     if (!tourData) {
       wrappedShowNotification("error", "No tour selected");
       return;
+    }
+
+    if (!isManager) {
+      const canAdd = await canAddPassenger();
+      if (!canAdd) return;
     }
 
     const reader = new FileReader();
@@ -597,7 +584,7 @@ export default function AddPassengerTab({
           }, {});
         });
 
-        if (tourData.available_seats !== undefined && data.length + passengers.length > tourData.available_seats) {
+        if (!isManager && tourData.available_seats !== undefined && data.length + passengers.length > tourData.available_seats) {
           wrappedShowNotification("error", "Cannot import passengers. The tour is fully booked.");
           return;
         }
@@ -607,7 +594,9 @@ export default function AddPassengerTab({
             id: generatePassengerId(),
             order_id: "",
             user_id: currentUser.id,
-            name: isGroup ? `${groupName} - ${row["First Name"]} ${row["Last Name"]}`.trim() : `${row["First Name"]} ${row["Last Name"]}`.trim(),
+            name: isGroup
+              ? `${groupName} - ${row["First Name"]} ${row["Last Name"]}`.trim()
+              : `${row["First Name"]} ${row["Last Name"]}`.trim(),
             room_allocation: row["Room Allocation"] || "",
             serial_no: (passengers.length + idx + 1).toString(),
             last_name: row["Last Name"] || "",
@@ -621,7 +610,10 @@ export default function AddPassengerTab({
             roomType: row["Room Type"] || "",
             hotel: row["Hotel"] || "",
             additional_services: row["Additional Services"]
-              ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
+              ? row["Additional Services"]
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean)
               : [],
             price: parseFloat(row["Price"]) || 0,
             email: row["Email"] || "",
@@ -634,6 +626,8 @@ export default function AddPassengerTab({
             status: "active",
             tour_title: selectedTour,
             departure_date: departureDate,
+            is_blacklisted: false,
+            blacklisted_date: null,
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
@@ -708,21 +702,28 @@ export default function AddPassengerTab({
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Who's traveling?</h3>
                 <p className="text-sm text-gray-600">Choose your booking type to get started</p>
-                {remainingSeats !== undefined && (
+                {remainingSeats !== undefined ? (
                   <p className={`text-sm font-medium mt-2 ${remainingSeats > 5 ? 'text-green-600' : remainingSeats > 0 ? 'text-orange-600' : 'text-red-600'}`}>
                     {remainingSeats} seats available
+                  </p>
+                ) : isManager && (
+                  <p className="text-sm font-medium mt-2 text-green-600">
+                    Unlimited seats available
                   </p>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <button
-                  onClick={() => {
-                    setIsGroup(false);
-                    setGroupName("");
-                    addPassenger();
+                  onClick={async () => {
+                    const canAdd = await canAddPassenger();
+                    if (canAdd) {
+                      setIsGroup(false);
+                      setGroupName("");
+                      addPassenger();
+                    }
                   }}
-                  disabled={!canAddPassenger()}
+                  disabled={passengers.length >= MAX_PASSENGERS}
                   className="group relative p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex flex-col items-center">
@@ -737,10 +738,13 @@ export default function AddPassengerTab({
                 </button>
 
                 <button
-                  onClick={() => {
-                    setIsGroup(true);
+                  onClick={async () => {
+                    const canAdd = await canAddPassenger();
+                    if (canAdd) {
+                      setIsGroup(true);
+                    }
                   }}
-                  disabled={!canAddPassenger()}
+                  disabled={passengers.length >= MAX_PASSENGERS}
                   className="group relative p-6 bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl hover:from-green-100 hover:to-emerald-100 hover:border-green-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex flex-col items-center">
@@ -786,14 +790,14 @@ export default function AddPassengerTab({
                           {Array.from({ length: 10 }, (_, i) => i + 1).map(num => (
                             <button
                               key={num}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (groupName.trim()) {
-                                  addMultiplePassengers(num);
+                                  await addMultiplePassengers(num);
                                 } else {
                                   wrappedShowNotification("error", "Please enter a group name first");
                                 }
                               }}
-                              disabled={!groupName.trim() || !canAddPassenger()}
+                              disabled={!groupName.trim() || passengers.length + num > MAX_PASSENGERS}
                               className="w-12 h-12 text-sm font-semibold bg-white border-2 border-green-300 text-green-700 rounded-xl hover:bg-green-600 hover:text-white hover:border-green-600 focus:ring-2 focus:ring-green-500 focus:border-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md"
                             >
                               {num}
@@ -805,15 +809,15 @@ export default function AddPassengerTab({
                           <input
                             type="number"
                             min="1"
-                            max={Math.min(remainingSeats || MAX_PASSENGERS, MAX_PASSENGERS)}
+                            max={MAX_PASSENGERS - passengers.length}
                             placeholder="Custom"
                             className="w-20 px-3 py-2 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                            onKeyDown={(e) => {
+                            onKeyDown={async (e) => {
                               if (e.key === 'Enter') {
                                 const value = parseInt((e.target as HTMLInputElement).value);
-                                if (value && value >= 1 && value <= (remainingSeats || MAX_PASSENGERS)) {
+                                if (value && value >= 1 && value <= (MAX_PASSENGERS - passengers.length)) {
                                   if (groupName.trim()) {
-                                    addMultiplePassengers(value);
+                                    await addMultiplePassengers(value);
                                     (e.target as HTMLInputElement).value = '';
                                   } else {
                                     wrappedShowNotification("error", "Please enter a group name first");
@@ -823,12 +827,12 @@ export default function AddPassengerTab({
                             }}
                           />
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
                               const value = parseInt(input.value);
-                              if (value && value >= 1 && value <= (remainingSeats || MAX_PASSENGERS)) {
+                              if (value && value >= 1 && value <= (MAX_PASSENGERS - passengers.length)) {
                                 if (groupName.trim()) {
-                                  addMultiplePassengers(value);
+                                  await addMultiplePassengers(value);
                                   input.value = '';
                                 } else {
                                   wrappedShowNotification("error", "Please enter a group name first");
@@ -842,23 +846,32 @@ export default function AddPassengerTab({
                           </button>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-600 mt-3">Quick select 1-10 people, or enter a custom number (max {Math.min(remainingSeats || MAX_PASSENGERS, MAX_PASSENGERS)})</p>
+                      <p className="text-xs text-gray-600 mt-3">Quick select 1-10 people, or enter a custom number (max {MAX_PASSENGERS - passengers.length})</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {!canAddPassenger() && (
+              {passengers.length >= MAX_PASSENGERS && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center">
                     <svg className="h-5 w-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
                     </svg>
                     <p className="text-sm text-red-800">
-                      {passengers.length >= MAX_PASSENGERS
-                        ? `Maximum ${MAX_PASSENGERS} passengers allowed per booking`
-                        : "No more seats available for this tour"
-                      }
+                      Maximum {MAX_PASSENGERS} passengers allowed per booking
+                    </p>
+                  </div>
+                </div>
+              )}
+              {!isManager && remainingSeats !== undefined && remainingSeats === 0 && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center">
+                    <svg className="h-5 w-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <p className="text-sm text-red-800">
+                      No more seats available for this tour
                     </p>
                   </div>
                 </div>
@@ -901,13 +914,22 @@ export default function AddPassengerTab({
                           </svg>
                           ${totalPrice.toLocaleString()}
                         </span>
-                        {remainingSeats !== undefined && (
+                        {!isManager && remainingSeats !== undefined && (
                           <span className={`flex items-center font-medium ${remainingSeats > 5 ? 'text-green-600' : remainingSeats > 0 ? 'text-amber-600' : 'text-red-600'}`}>
                             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
                             {remainingSeats} seats left
+                          </span>
+                        )}
+                        {isManager && (
+                          <span className="flex items-center font-medium text-green-600">
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Unlimited seats
                           </span>
                         )}
                       </p>
@@ -920,7 +942,7 @@ export default function AddPassengerTab({
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={addPassenger}
-                      disabled={!canAddPassenger()}
+                      disabled={passengers.length >= MAX_PASSENGERS}
                       className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                     >
                       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -981,7 +1003,14 @@ export default function AddPassengerTab({
                       Back
                     </button>
                     <button
-                      onClick={() => setActiveStep(3)}
+                      onClick={async () => {
+                        const isValid = await validateBooking();
+                        if (isValid) {
+                          setActiveStep(3);
+                        } else {
+                          wrappedShowNotification("error", "Please fix all validation errors before proceeding");
+                        }
+                      }}
                       disabled={passengers.length === 0}
                       className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                     >
@@ -1051,7 +1080,7 @@ export default function AddPassengerTab({
           <div className="flex gap-2 mb-2">
             <button
               onClick={addPassenger}
-              disabled={!canAddPassenger()}
+              disabled={passengers.length >= MAX_PASSENGERS}
               className="flex-1 inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1096,9 +1125,13 @@ export default function AddPassengerTab({
           )}
           {activeStep < 3 && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (activeStep === 1 && selectedTour && departureDate) setActiveStep(2);
-                else if (activeStep === 2 && passengers.length > 0) setActiveStep(3);
+                else if (activeStep === 2 && passengers.length > 0) {
+                  const isValid = await validateBooking();
+                  if (isValid) setActiveStep(3);
+                  else wrappedShowNotification("error", "Please fix all validation errors before proceeding");
+                }
               }}
               disabled={(activeStep === 1 && (!selectedTour || !departureDate)) || (activeStep === 2 && passengers.length === 0)}
               className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
@@ -1121,7 +1154,7 @@ export default function AddPassengerTab({
             </button>
           )}
         </div>
-      </div> 
+      </div>
 
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

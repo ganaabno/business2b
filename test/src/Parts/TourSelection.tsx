@@ -15,7 +15,7 @@ interface TourSelectionProps {
 }
 
 function formatDisplayDate(s: string | undefined): string {
-  if (!s) return "";
+  if (!s) return "N/A";
   const d = new Date(s);
   return !Number.isNaN(d.getTime())
     ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
@@ -42,27 +42,60 @@ export default function TourSelection({
       }
       const normalizedTitle = tour.title.trim().toLowerCase();
       if (!map.has(normalizedTitle)) {
-        map.set(normalizedTitle, { ...tour, title: tour.title.trim(), dates: [...(tour.dates || [])] });
+        map.set(normalizedTitle, {
+          ...tour,
+          title: tour.title.trim(),
+          dates: [...(tour.dates || [])],
+          available_seats: tour.available_seats ?? tour.seats ?? 0, // Fallback to seats
+        });
       } else {
         const existing = map.get(normalizedTitle)!;
         existing.dates = Array.from(new Set([...existing.dates, ...(tour.dates || [])]));
+        // Use the maximum available_seats or seats to avoid incorrect merging
+        existing.available_seats = Math.max(
+          existing.available_seats ?? 0,
+          tour.available_seats ?? tour.seats ?? 0
+        );
       }
     }
     const result = Array.from(map.values());
-    console.log("Merged tours:", result);
+    console.log("Merged tours:", result.map(t => ({
+      id: t.id,
+      title: t.title,
+      seats: t.seats,
+      available_seats: t.available_seats,
+      dates: t.dates,
+    })));
     return result;
   }, [tours]);
 
   useEffect(() => {
-    console.log("TourSelection rendered with props:", { selectedTour, tours: mergedTours });
-    console.log("Tours received:", tours);
-    console.log("Current selectedTour:", selectedTour);
-    console.log("Merged tours titles:", mergedTours.map(tour => tour.title));
-  }, [tours, selectedTour, mergedTours]);
+    console.log("TourSelection rendered with props:", {
+      selectedTour,
+      departureDate,
+      tours: tours.map(t => ({
+        id: t.id,
+        title: t.title,
+        seats: t.seats,
+        available_seats: t.available_seats,
+      })),
+    });
+    console.log("Merged tours titles and seats:", mergedTours.map(tour => ({
+      title: tour.title,
+      seats: tour.seats,
+      available_seats: tour.available_seats,
+    })));
+  }, [tours, selectedTour, departureDate, mergedTours]);
 
   const selectedTourData = useMemo(() => {
     const tour = mergedTours.find((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase());
-    console.log("Selected tour data:", tour);
+    console.log("Selected tour data:", tour ? {
+      id: tour.id,
+      title: tour.title,
+      seats: tour.seats,
+      available_seats: tour.available_seats,
+      dates: tour.dates,
+    } : null);
     return tour;
   }, [mergedTours, selectedTour]);
 
@@ -107,8 +140,8 @@ export default function TourSelection({
               {mergedTours.map((tour, index) => (
                 <option key={`${tour.title}-${index}`} value={tour.title}>
                   {tour.title}{" "}
-                  {showAvailableSeats && tour.available_seats !== undefined
-                    ? `(${tour.available_seats} seats)`
+                  {showAvailableSeats
+                    ? `(${tour.available_seats ?? tour.seats ?? "No limit"} seats)`
                     : ""}
                 </option>
               ))}
@@ -128,11 +161,14 @@ export default function TourSelection({
               <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="dateSelect"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg ${
+                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                   hasDepartureError ? "border-red-300" : "border-gray-300"
                 }`}
                 value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
+                onChange={(e) => {
+                  console.log("Departure date selected:", e.target.value);
+                  setDepartureDate(e.target.value);
+                }}
                 disabled={!selectedTour || !hasDates}
                 aria-invalid={hasDepartureError}
                 aria-describedby={hasDepartureError ? "departure-error" : undefined}
@@ -141,11 +177,13 @@ export default function TourSelection({
                   {selectedTour ? "Select a date" : "Select a tour first"}
                 </option>
                 {hasDates &&
-                  selectedTourData!.dates.map((d, index) => (
-                    <option key={`${d}-${index}`} value={d}>
-                      {formatDisplayDate(d)}
-                    </option>
-                  ))}
+                  selectedTourData!.dates
+                    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime()) // Sort dates chronologically
+                    .map((d, index) => (
+                      <option key={`${d}-${index}`} value={d}>
+                        {formatDisplayDate(d)}
+                      </option>
+                    ))}
               </select>
             </div>
             {hasDepartureError && (
@@ -179,9 +217,10 @@ export default function TourSelection({
                 <span className="font-medium">Description:</span> {selectedTourData.description}
               </p>
             )}
-            {showAvailableSeats && selectedTourData.available_seats !== undefined && (
+            {showAvailableSeats && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Available Seats:</span> {selectedTourData.available_seats}
+                <span className="font-medium">Available Seats:</span>{" "}
+                {selectedTourData.available_seats ?? selectedTourData.seats ?? "No limit"}
               </p>
             )}
             {selectedTourData.hotels && selectedTourData.hotels.length > 0 && (
@@ -215,7 +254,7 @@ export default function TourSelection({
           </div>
         </div>
       )}
-  
+
       <div className="flex justify-end">
         <button
           onClick={() => setActiveStep(2)}

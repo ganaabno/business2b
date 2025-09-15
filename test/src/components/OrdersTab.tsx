@@ -278,7 +278,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Room</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Payment</th>
               <th className="px-28 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Provider</th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Show to Provider</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
