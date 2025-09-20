@@ -10,6 +10,7 @@ import {
 } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Login from "./Pages/Login";
+import SignUp from "./Pages/SignUp";
 import UserInterface from "./Pages/UserInterface";
 import AdminInterface from "./Pages/AdminInterface";
 import ProviderInterface from "./Pages/ProviderInterface";
@@ -154,13 +155,10 @@ function AppContent({
     );
   }
 
-  if (!currentUser) {
-    return <Login />;
-  }
-
   return (
     <>
-      {["admin", "superadmin"].includes(role) && (
+      {/* Admin View Switcher - Only show for admin/superadmin */}
+      {currentUser && ["admin", "superadmin"].includes(role) && (
         <div className="relative bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200/60 backdrop-blur-sm">
           <div className="flex items-center gap-2 p-4">
             <div className="flex items-center gap-3">
@@ -212,7 +210,6 @@ function AppContent({
                 <span className="relative z-10">Charts</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
-
             </div>
           </div>
 
@@ -220,17 +217,25 @@ function AppContent({
         </div>
       )}
 
-      <Header currentUser={currentUser} onLogout={logout} isUserRole={role === "user"} />
+      {/* Header - Only show for authenticated users */}
+      {currentUser && <Header currentUser={currentUser} onLogout={logout} isUserRole={role === "user"} />}
 
       <Routes>
+        {/* PROTECTED ROUTES - Require authentication */}
         <Route
           path="/change-password"
-          element={<ChangePassword onChangePassword={async (pw) => { const { error } = await supabase.auth.updateUser({ password: pw }); return !error; }} />}
+          element={
+            currentUser ? (
+              <ChangePassword onChangePassword={async (pw) => { const { error } = await supabase.auth.updateUser({ password: pw }); return !error; }} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
         />
         <Route
           path="/user"
           element={
-            role === "user" || ["admin", "superadmin"].includes(role) ? (
+            currentUser && (role === "user" || ["admin", "superadmin"].includes(role)) ? (
               <UserInterface
                 tours={tours}
                 orders={orders}
@@ -255,7 +260,7 @@ function AppContent({
         <Route
           path="/provider"
           element={
-            role === "provider" || ["admin", "superadmin"].includes(role) ? (
+            currentUser && (role === "provider" || ["admin", "superadmin"].includes(role)) ? (
               <ProviderInterface tours={tours} setTours={setTours} currentUser={currentUser} />
             ) : (
               <Navigate to={homePath} replace />
@@ -265,7 +270,7 @@ function AppContent({
         <Route
           path="/admin"
           element={
-            ["admin", "superadmin"].includes(role) ? (
+            currentUser && ["admin", "superadmin"].includes(role) ? (
               <AdminInterface
                 users={users}
                 setUsers={setUsers}
@@ -284,7 +289,7 @@ function AppContent({
         <Route
           path="/manager"
           element={
-            role === "manager" || ["admin", "superadmin"].includes(role) ? (
+            currentUser && (role === "manager" || ["admin", "superadmin"].includes(role)) ? (
               <ManagerInterface
                 tours={tours}
                 setTours={setTours}
@@ -299,25 +304,45 @@ function AppContent({
             )
           }
         />
-
         <Route
           path="/analytics"
           element={
-            ["admin", "superadmin"].includes(role) ? (
+            currentUser && ["admin", "superadmin"].includes(role) ? (
               <AnalyticDashboard 
-              tours={tours} 
-              orders={orders} 
-              passengers={passengers} 
-              currentUser={currentUser} />
+                tours={tours} 
+                orders={orders} 
+                passengers={passengers} 
+                currentUser={currentUser} />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
 
-
+        {/* PUBLIC ROUTES - No authentication required */}
+        <Route 
+          path="/login" 
+          element={
+            !currentUser ? (
+              <Login />
+            ) : (
+              <Navigate to={homePath} replace />
+            )
+          } 
+        />
+        <Route 
+          path="/signup" 
+          element={
+            !currentUser ? (
+              <SignUp />
+            ) : (
+              <Navigate to={homePath} replace />
+            )
+          } 
+        />
         <Route path="/" element={<Navigate to={homePath} replace />} />
-        <Route path="/login" element={<Navigate to={homePath} replace />} />
+        
+        {/* CATCH-ALL ROUTE */}
         <Route path="*" element={<Navigate to={homePath} replace />} />
       </Routes>
     </>

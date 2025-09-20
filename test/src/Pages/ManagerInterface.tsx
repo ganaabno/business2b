@@ -1,13 +1,12 @@
 import { useState } from "react";
 import "react-toastify/dist/ReactToastify.css";
-import type { User as UserType, Tour, Order, Passenger } from "../types/type";
+import type { User as UserType, Tour, Order, Passenger, ValidationError } from "../types/type";
 import OrdersTab from "../components/OrdersTab";
 import PassengersTab from "../components/PassengerTab";
 import AddTourTab from "../components/AddTourTab";
 import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
-import { usePassengers } from "../hooks/usePassengers";
 import { useNotifications } from "../hooks/useNotifications";
 
 interface ManagerInterfaceProps {
@@ -36,32 +35,25 @@ export default function ManagerInterface({
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const { showNotification } = useNotifications();
-  const {
-    passengers,
-    errors,
-    isGroup,
-    setIsGroup,
-    groupName,
-    setGroupName,
-    addPassenger,
-    updatePassenger,
-    removePassenger,
-    validateBooking,
-  } = usePassengers(initialPassengers, setPassengers, currentUser, selectedTour, tours, showNotification);
+  
+  // ✅ LOCAL STATE FOR ADD PASSENGER TAB
+  const [errors, setErrors] = useState<ValidationError[]>([]);
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Management Dashboard</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Manager Dashboard</h1>
             <p className="mt-2 text-gray-600">Manage your tours, orders, and passengers efficiently</p>
           </div>
         </div>
 
         <div className="mb-6">
           <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-16">
+            <nav className="-mb-px flex justify-between">
               {[
                 "orders",
                 "passengers",
@@ -106,9 +98,9 @@ export default function ManagerInterface({
                         {tab === "orders"
                           ? orders.length
                           : tab === "passengers"
-                          ? passengers.length
+                          ? initialPassengers.length
                           : tab === "blacklist"
-                          ? passengers.filter((p) => p.is_blacklisted).length
+                          ? initialPassengers.filter((p) => p.is_blacklisted).length
                           : 0}
                       </span>
                     )}
@@ -122,7 +114,7 @@ export default function ManagerInterface({
         {activeTab === "orders" && <OrdersTab orders={orders} setOrders={setOrders} currentUser={currentUser} />}
         {activeTab === "passengers" && (
           <PassengersTab
-            passengers={passengers}
+            passengers={initialPassengers}
             setPassengers={setPassengers}
             currentUser={currentUser}
             showNotification={showNotification}
@@ -139,24 +131,14 @@ export default function ManagerInterface({
             setSelectedTour={setSelectedTour}
             departureDate={departureDate}
             setDepartureDate={setDepartureDate}
-            passengers={passengers}
-            setPassengers={setPassengers}
             errors={errors}
-            isGroup={isGroup}
-            setIsGroup={setIsGroup}
-            groupName={groupName}
-            setGroupName={setGroupName}
-            addPassenger={addPassenger}
-            updatePassenger={updatePassenger}
-            removePassenger={removePassenger}
-            validateBooking={validateBooking}
             showNotification={showNotification}
             currentUser={currentUser}
           />
         )}
         {activeTab === "blacklist" && (
           <BlackListTab
-            passengers={passengers}
+            passengers={initialPassengers}
             setPassengers={setPassengers}
             currentUser={currentUser}
             showNotification={showNotification}

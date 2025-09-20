@@ -7,6 +7,7 @@ interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User | null>;
+  signup: (email: string, password: string, name?: string) => Promise<User | null>;
   logout: () => Promise<void>;
 }
 
@@ -14,7 +15,8 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   loading: true,
   login: async () => null,
-  logout: async () => { },
+  signup: async () => null,
+  logout: async () => {},
 });
 
 export function useAuth() {
@@ -28,18 +30,10 @@ export function toRole(value: any): Role {
 
 async function fetchUser(uid: string): Promise<User | null> {
   try {
-    console.log(`Fetching user with ID: ${uid}`);
     const { data, error } = await supabase.from("users").select("*").eq("id", uid).maybeSingle();
-    if (error) {
-      console.error("fetchUser error:", error.message);
-      return null;
-    }
-    if (!data) {
-      console.warn(`No user found for ID: ${uid}`);
-      return null;
-    }
+    if (error) return null;
+    if (!data) return null;
 
-    console.log("User fetched successfully:", data);
     return {
       userId: String(data.id),
       id: String(data.id),
@@ -52,7 +46,7 @@ async function fetchUser(uid: string): Promise<User | null> {
       password: "",
       blacklist: Boolean(data.blacklist ?? false),
       company: String(data.company ?? ""),
-      access: String(data.access ?? "active") as "active" | "suspended", // Match DB schema
+      access: String(data.access ?? "active") as "active" | "suspended",
       birth_date: String(data.birth_date ?? ""),
       id_card_number: String(data.id_card_number ?? ""),
       travel_history: Array.isArray(data.travel_history) ? data.travel_history : [],
@@ -64,11 +58,10 @@ async function fetchUser(uid: string): Promise<User | null> {
       membership_points: Number(data.membership_points ?? 0),
       registered_by: String(data.registered_by ?? ""),
       createdBy: String(data.createdBy ?? ""),
-      createdAt: String(data.createdAt ?? new Date().toISOString()), // Keep as string
-      updatedAt: String(data.updatedAt ?? new Date().toISOString()), // Keep as string
+      createdAt: String(data.createdAt ?? new Date().toISOString()),
+      updatedAt: String(data.updatedAt ?? new Date().toISOString()),
     };
-  } catch (err) {
-    console.error("Unexpected error in fetchUser:", err);
+  } catch {
     return null;
   }
 }
@@ -82,31 +75,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const init = async () => {
       try {
-        console.log("Starting auth initialization");
-        // Add timeout to prevent hanging
-        const sessionPromise = supabase.auth.getSession();
-        const sessionResult = await Promise.race([
-          sessionPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Session fetch timeout")), 5000)),
-        ]);
-        const { data: { session }, error } = sessionResult as any;
+        const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
-          console.error("getSession error:", error.message);
           setCurrentUser(null);
           return;
         }
-        console.log("Session fetched:", session ? "User present" : "No session");
         if (session?.user) {
           const user = await fetchUser(session.user.id);
           setCurrentUser(user);
         } else {
           setCurrentUser(null);
         }
-      } catch (err) {
-        console.error("Error in auth initialization:", err);
-        setCurrentUser(null);
       } finally {
-        console.log("Auth initialization complete, setting loading to false");
         setLoading(false);
       }
     };
@@ -114,59 +94,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state change:", event, session ? "User present" : "No session");
-      // Debounce to prevent multiple rapid SIGNED_IN events
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
-        try {
-          if (!session?.user) {
-            console.log("No user in session, clearing currentUser");
-            setCurrentUser(null);
-            return;
-          }
-          const user = await fetchUser(session.user.id);
-          console.log("Setting currentUser from auth state change:", user);
-          setCurrentUser(user);
-        } catch (err) {
-          console.error("Error in onAuthStateChange:", err);
+        if (!session?.user) {
           setCurrentUser(null);
+          return;
         }
+        const user = await fetchUser(session.user.id);
+        setCurrentUser(user);
       }, 500);
     });
 
     return () => {
-      console.log("Unsubscribing from auth state changes");
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string) => {
-    console.log("Attempting login for:", email);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      console.error("Login error:", error.message);
-      throw error;
-    }
-    if (!data.session?.user) {
-      console.warn("No user in login session");
-      return null;
-    }
+    if (error) throw error;
+    if (!data.session?.user) return null;
+
     const user = await fetchUser(data.session.user.id);
-    if (user) {
-      console.log("Login successful, setting currentUser:", user);
-      setCurrentUser(user);
-    }
+    if (user) setCurrentUser(user);
+    return user;
+  };
+
+  const signup = async (email: string, password: string, name?: string) => {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+    if (!data.user) return null;
+
+    // Insert into users table with extra fields
+    const { error: insertError } = await supabase.from("users").insert([
+      {
+        id: data.user.id,
+        email,
+        username: name || email.split("@")[0],
+        role: "user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    if (insertError) console.error("Error inserting into users table:", insertError.message);
+
+    const user = await fetchUser(data.user.id);
+    if (user) setCurrentUser(user);
     return user;
   };
 
   const logout = async () => {
-    console.log("Logging out");
     await supabase.auth.signOut();
     setCurrentUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, loading, login, logout }}>
+    <AuthContext.Provider value={{ currentUser, loading, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

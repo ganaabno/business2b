@@ -83,7 +83,7 @@ export function useTours({ userRole, tours: externalTours, setTours: setExternal
         id: tour.id,
         title: tour.title,
         seats: tour.seats ?? 0,
-        departureDate: tour.departuredate || "",
+        departure_date: tour.departuredate || "",
         status: tour.status,
         show_in_provider: tour.show_in_provider,
         description: tour.description || "",
@@ -186,7 +186,7 @@ export function useTours({ userRole, tours: externalTours, setTours: setExternal
     const matchesTitle = tour.title.toLowerCase().includes(titleFilter.toLowerCase());
     const matchesStatus = statusFilter === "all" || tour.status === statusFilter;
     const matchesView = viewFilter === "all" || (viewFilter === "hidden" && !tour.show_in_provider);
-    const tourDate = tour.departureDate ? new Date(tour.departureDate) : null;
+    const tourDate = tour.departure_date ? new Date(tour.departure_date) : null;
     const startDate = dateFilterStart ? new Date(dateFilterStart) : null;
     const endDate = dateFilterEnd ? new Date(dateFilterEnd) : null;
 
@@ -205,7 +205,7 @@ export function useTours({ userRole, tours: externalTours, setTours: setExternal
     setTours(updatedTours);
 
     try {
-      const dbField = field === "departureDate" ? "departuredate" : field;
+      const dbField = field === "departure_date" ? "departuredate" : field;
       const updateData: Partial<Tour> = { [dbField]: value, updated_at: new Date().toISOString() };
       console.log(`Updating tour ${tourId}, field: ${dbField}, value:`, value);
       const { error } = await supabase

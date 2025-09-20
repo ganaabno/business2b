@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, MapPin, Users, Calendar, CheckCircle, Search, Eye } from 'lucide-react';
+import { FileText, MapPin, Users, Calendar, CheckCircle, Search, Eye, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { supabase } from '../supabaseClient';
@@ -19,6 +19,81 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   const [loading, setLoading] = useState(false);
   const [hasShowInProviderTours, setHasShowInProviderTours] = useState<boolean | null>(null);
   const [hasShowInProviderOrders, setHasShowInProviderOrders] = useState<boolean | null>(null);
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ordersPerPage] = useState(10);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  useEffect(() => {
+    // Reset to first page when filters change
+    setCurrentPage(1);
+  }, [selectedDate, searchTerm]);
+
+  // CSV Export function
+  const exportOrdersToCSV = async () => {
+    if (filteredOrders.length === 0) {
+      toast.warn('No orders to export!');
+      return;
+    }
+
+    setExportLoading(true);
+    try {
+      // Create CSV content
+      const headers = [
+        'Order ID', 'Tour', 'Departure Date', 'Passengers', 'Status', 
+        'Total Amount', 'Created By', 'Edited At', 'Payment Method',
+        'Phone', 'First Name', 'Last Name', 'Email', 'Age', 'Gender',
+        'Commission', 'Hotel', 'Room Number'
+      ];
+
+      const csvRows = filteredOrders.map(order => [
+        order.id,
+        order.travel_choice || 'N/A',
+        order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set',
+        order.passengers?.length || 0,
+        order.status,
+        `$${order.total_amount?.toFixed(2) || '0.00'}`,
+        order.createdBy || order.created_by || 'N/A',
+        order.edited_at ? new Date(order.edited_at).toLocaleDateString('en-US') : 'N/A',
+        order.payment_method || 'N/A',
+        order.phone || 'N/A',
+        order.first_name || 'N/A',
+        order.last_name || 'N/A',
+        order.email || 'N/A',
+        order.age || 'N/A',
+        order.gender || 'N/A',
+        order.commission ? `$${order.commission.toFixed(2)}` : 'N/A',
+        order.hotel || 'N/A',
+        order.room_number || 'N/A'
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.map(field => 
+          `"${String(field).replace(/"/g, '""')}"`
+        ).join(','))
+      ].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `provider-orders-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${filteredOrders.length} orders to CSV!`);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export orders!');
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   useEffect(() => {
     // Check if show_in_provider column exists in tours table
@@ -310,6 +385,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             title,
             name,
             departureDate,
+            departure_date,
             created_by,
             creator_name:users!created_by(email),
             description,
@@ -335,7 +411,8 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               id: String(data.id),
               title: data.title || "Untitled Tour",
               name: data.name || "Unknown Tour",
-              departureDate: data.departureDate || "1970-01-01",
+              departureDate: data.departureDate || data.departure_date || "1970-01-01",
+              departure_date: data.departure_date || data.departureDate || "1970-01-01",
               created_by: data.created_by || "system",
               description: data.description || "",
               hotels: data.hotels || [],
@@ -368,6 +445,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                     title,
                     name,
                     departureDate,
+                    departure_date,
                     created_by,
                     creator_name:users!created_by(email),
                     description,
@@ -500,11 +578,18 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     );
   });
 
+  // Pagination calculations - NOW AFTER filteredOrders
+  const indexOfLastOrder = currentPage * ordersPerPage;
+  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
+  const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
+  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+  const paginatedOrders = currentOrders;
+
   const filteredTours = tours.filter((tour) => !hasShowInProviderTours || tour.show_in_provider);
 
   const statusOptions: OrderStatus[] = [
     'pending',
-    'confirmed',
+    'Confirmed',
     'Cancelled',
     'Information given',
     'Need to give information',
@@ -543,6 +628,23 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
 
   const handleViewOrder = (order: Order) => {
     setSelectedOrder(order);
+  };
+
+  // Pagination handlers
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
   };
 
   return (
@@ -605,7 +707,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               {selectedOrder ? 'Order Details' : 'All Orders'}
             </h3>
             {!selectedOrder && (
-              <div className="flex gap-4">
+              <div className="flex gap-4 items-center">
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   value={selectedDate}
@@ -628,6 +730,27 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                   />
                   <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
                 </div>
+                <button
+                  onClick={exportOrdersToCSV}
+                  disabled={exportLoading || filteredOrders.length === 0}
+                  className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    exportLoading || filteredOrders.length === 0
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {exportLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 mr-2" />
+                      Download CSV ({filteredOrders.length})
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>
@@ -763,101 +886,173 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              {filteredOrders.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">
-                    {searchTerm || selectedDate
-                      ? 'No orders match your search or date filter.'
-                      : 'No orders available yet.'}
-                  </p>
-                </div>
-              ) : (
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tour
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Departure
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Passengers
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created By
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Edited At
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Payment Method
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredOrders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">#{order.id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div className="flex items-center">
-                            <MapPin className="w-4 h-4 mr-1 text-gray-400" />
-                            {order.travel_choice || 'N/A'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div className="flex items-center">
-                            <Calendar className="w-4 h-4 mr-1 text-gray-400" />
-                            {formatDate(order.departureDate)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <Users className="w-3 h-3 mr-1" />
-                            {order.passengers?.length || 0}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                              }`}
+            <div>
+              <div className="overflow-x-auto">
+                {filteredOrders.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">
+                      {searchTerm || selectedDate
+                        ? 'No orders match your search or date filter.'
+                        : 'No orders available yet.'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Order ID
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Tour
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Departure
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Passengers
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Total
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Created By
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Edited At
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Payment Method
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {paginatedOrders.map((order) => (
+                          <tr key={order.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">#{order.id}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <div className="flex items-center">
+                                <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                                {order.travel_choice || 'N/A'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <div className="flex items-center">
+                                <Calendar className="w-4 h-4 mr-1 text-gray-400" />
+                                {formatDate(order.departureDate)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <Users className="w-3 h-3 mr-1" />
+                                {order.passengers?.length || 0}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'Confirmed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                  }`}
+                              >
+                                {order.status === 'Confirmed' ? (
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                ) : (
+                                  <FileText className="w-3 h-3 mr-1" />
+                                )}
+                                {order.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              ${order.total_amount?.toFixed(2) || '0.00'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {order.createdBy || order.created_by || 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {order.edited_at ? formatDate(order.edited_at) : 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {order.payment_method || 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-6 px-4 py-3 bg-gray-50 border-t border-gray-200 sm:px-6">
+                        <div className="flex justify-between flex-1 sm:hidden">
+                          <button
+                            onClick={handlePreviousPage}
+                            disabled={currentPage === 1}
+                            className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {order.status === 'confirmed' ? (
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                            ) : (
-                              <FileText className="w-3 h-3 mr-1" />
-                            )}
-                            {order.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          ${order.total_amount?.toFixed(2) || '0.00'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {order.createdBy || order.created_by || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {order.edited_at ? formatDate(order.edited_at) : 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {order.payment_method || 'N/A'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+                            Previous
+                          </button>
+                          <button
+                            onClick={handleNextPage}
+                            disabled={currentPage === totalPages}
+                            className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Next
+                            <ChevronRight className="w-5 h-5 ml-1" aria-hidden="true" />
+                          </button>
+                        </div>
+                        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm text-gray-700">
+                              Showing <span className="font-medium">{indexOfFirstOrder + 1}</span> to{' '}
+                              <span className="font-medium">{Math.min(indexOfLastOrder, filteredOrders.length)}</span> of{' '}
+                              <span className="font-medium">{filteredOrders.length}</span> results
+                            </p>
+                          </div>
+                          <div>
+                            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                              <button
+                                onClick={handlePreviousPage}
+                                disabled={currentPage === 1}
+                                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <span className="sr-only">Previous</span>
+                                <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                              </button>
+                              
+                              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNumber) => (
+                                <button
+                                  key={pageNumber}
+                                  onClick={() => handlePageChange(pageNumber)}
+                                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                    currentPage === pageNumber
+                                      ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                                      : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {pageNumber}
+                                </button>
+                              ))}
+                              
+                              <button
+                                onClick={handleNextPage}
+                                disabled={currentPage === totalPages}
+                                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <span className="sr-only">Next</span>
+                                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                              </button>
+                            </nav>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -913,7 +1108,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                           <span className="text-sm text-gray-600">Departure</span>
                         </div>
                         <span className="text-sm font-semibold text-gray-900">
-                          {formatDate(tour.departureDate)}
+                          {formatDate(tour.departure_date || tour.departure_date)}
                         </span>
                       </div>
                       <div className="grid grid-cols-2 gap-3">

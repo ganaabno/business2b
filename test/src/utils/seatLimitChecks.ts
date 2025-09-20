@@ -7,8 +7,23 @@ export interface SeatCheckResult {
   seats: number;
 }
 
-export async function checkSeatLimit(tourId: string, departureDate: string): Promise<SeatCheckResult> {
+// ✅ ROLE-AWARE SEAT CHECK - Managers get unlimited power!
+export async function checkSeatLimit(
+  tourId: string, 
+  departureDate: string,
+  userRole?: string
+): Promise<SeatCheckResult> {
   try {
+    // 👑 MANAGER BYPASS - Immediate return for managers
+    if (userRole === "manager" || userRole === "superadmin") {
+      console.log("👑 MANAGER MODE: Bypassing seat limit check!");
+      return {
+        isValid: true,
+        message: "Unlimited seats available (Manager mode)",
+        seats: Infinity, // 👑 Unlimited power!
+      };
+    }
+
     // Fetch total seats for the tour
     const { data: tourData, error: tourError } = await supabase
       .from("tours")

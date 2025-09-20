@@ -20,7 +20,7 @@ export default function Header({ currentUser, onLogout, isUserRole }: HeaderProp
           />
           <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
             <h1 className="text-base sm:text-lg font-medium text-white tracking-wide leading-tight font-sans">
-              Welcome, {currentUser.username || currentUser.email}
+              Welcome, {currentUser.last_name ||currentUser.email}
             </h1>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-900 mt-1.5 sm:mt-0 shadow-sm">
               {isUserRole ? "User" : "Admin"}

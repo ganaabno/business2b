@@ -1,4 +1,4 @@
-export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
+export type Role = "user" | "provider" | "admin" | "superadmin" | "manager" | "pending";
 
 export interface User {
   userId: string;
@@ -69,7 +69,7 @@ export interface Tour {
   tour_number: number | null;
   name: string;
   dates: string[];
-  departureDate: string; // Maps to departuredate in database
+  departure_date: string; // Maps to departuredate in database
   seats: number;
   available_seats?: number;
   hotels: string[];
@@ -84,9 +84,9 @@ export interface Tour {
 }
 
 export interface Order {
-  id: string; // bigserial in DB
-  user_id: string; // uuid in DB
-  tour_id: string; // uuid in DB
+  id: string; // ✅ Keep as string for bigserial compatibility
+  user_id: string; // ✅ Use underscore for DB consistency
+  tour_id: string;
   phone: string | null;
   last_name: string | null;
   first_name: string | null;
@@ -98,24 +98,24 @@ export interface Order {
   passport_expire: string | null;
   passport_copy: string | null;
   commission: number | null;
-  created_by: string | null; // uuid in DB
-  edited_by: string | null; // uuid in DB
-  edited_at: string | null; // timestamptz in DB
+  created_by: string | null;
+  edited_by: string | null;
+  edited_at: string | null;
   travel_choice: string;
   status: OrderStatus;
   hotel: string | null;
   room_number: string | null;
   payment_method: string | null;
-  created_at: string; // timestamptz in DB
-  updated_at: string; // timestamptz in DB
-  departureDate: string; // text in DB
+  created_at: string;
+  updated_at: string;
+  departureDate: string; // ✅ Keep camelCase for React
   createdBy: string | null;
-  total_price: number; // numeric in DB
-  total_amount: number; // bigint in DB
-  paid_amount: number; // bigint in DB
-  balance: number; // smallint in DB
+  total_price: number;
+  total_amount: number;
+  paid_amount: number;
+  balance: number;
   show_in_provider: boolean;
-  passengers: Passenger[];
+  passengers: Passenger[]; // ✅ This is populated after creation
 }
 
 export type OrderStatus =
@@ -160,17 +160,17 @@ export interface Passenger {
   order_id: string; // bigint in DB
   user_id: string | null; // uuid in DB, nullable
   tour_title: string;
-  departure_date: string;
+  departure_date: string | null;
   name: string;
   room_allocation: string;
   serial_no: string;
   last_name: string;
   first_name: string;
   date_of_birth: string;
-  age: number;
-  gender: string;
+  age: number | null;
+  gender: string | null;
   passport_number: string;
-  passport_expiry: string;
+  passport_expiry: string | null;
   nationality: string;
   roomType: string; // Matches "roomType" in DB
   hotel: string;
@@ -178,7 +178,7 @@ export interface Passenger {
   price: number;
   email: string;
   phone: string;
-  passport_upload: string;
+  passport_upload: string | null;
   allergy: string;
   emergency_phone: string;
   created_at: string; // timestamptz in DB
@@ -320,3 +320,8 @@ export interface ErrorType {
   field: string;
   message: string;
 }
+
+type TourOption = {
+  id: string;
+  title: string;
+};

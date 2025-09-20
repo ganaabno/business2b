@@ -30,7 +30,7 @@ interface AnalyticsData {
   ordersByProvider: { providerId: string; providerName: string; count: number }[];
 }
 
-export default function AnalyticsDashboard({ currentUser, tours, orders, passengers }: AnalyticsDashboardProps) {
+export default function AnalyticsDashboard({tours, orders, passengers }: AnalyticsDashboardProps) {
   const { showNotification } = useNotifications();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData>({
@@ -48,61 +48,128 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
       const endOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59);
 
       // Debug: Log input data
-      console.log("Tours prop:", tours);
-      console.log("Passengers prop:", passengers);
-      console.log("Orders prop:", orders);
+      console.log("🚀 Tours prop:", tours);
+      console.log("🚀 Orders prop:", orders);
+      console.log("🚀 Passengers prop:", passengers);
 
-      // Fetch users for passenger registration data
+      // Fetch users for passenger registration data - make sure we get valid IDs
       const { data: users, error: usersError } = await supabase
         .from("users")
-        .select("id, username, email, first_name, last_name");
+        .select("id, username, email, first_name, last_name")
+        .not("id", "is", null); // Only get users with valid IDs
       if (usersError) throw new Error(usersError.message);
+      
+      console.log("👥 Fetched users:", users);
+      console.log("👥 Users with valid IDs:", users.filter(u => u.id));
 
-      // Fetch passengers for the selected month
-      const { data: passengersData, error: passengersError } = await supabase
-        .from("passengers")
-        .select("*")
-        .gte("created_at", startOfMonth.toISOString())
-        .lte("created_at", endOfMonth.toISOString());
-      if (passengersError) throw new Error(passengersError.message);
+      // Filter passengers for the selected month from the prop OR fetch fresh
+      let monthPassengers = passengers.filter((p) => {
+        if (!p.created_at) return false;
+        const passengerDate = new Date(p.created_at);
+        return passengerDate >= startOfMonth && passengerDate <= endOfMonth;
+      });
+
+      // If no passengers from prop, fetch fresh data
+      if (monthPassengers.length === 0) {
+        const { data: freshPassengers, error: passengersError } = await supabase
+          .from("passengers")
+          .select("*, user_id, created_at, tour_title")
+          .gte("created_at", startOfMonth.toISOString())
+          .lte("created_at", endOfMonth.toISOString());
+        if (passengersError) throw new Error(passengersError.message);
+        monthPassengers = freshPassengers || [];
+      }
 
       // Fetch orders for the selected month
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*, tour: tours(title)")
+        .select("*, tour: tours(title), created_by, show_in_provider, created_at")
         .gte("created_at", startOfMonth.toISOString())
         .lte("created_at", endOfMonth.toISOString());
       if (ordersError) throw new Error(ordersError.message);
 
       // Debug: Log fetched data
-      console.log("Fetched users:", users);
-      console.log("Fetched passengers:", passengersData);
-      console.log("Fetched orders:", ordersData);
+      console.log("✈️ Month passengers:", monthPassengers);
+      console.log("📦 Month orders:", ordersData);
+      console.log("🔍 Passenger user_ids:", monthPassengers.map(p => ({ id: p.user_id, created_at: p.created_at })));
 
-      // Process passengers by user
-      const passengersByUser = users.map((user) => ({
-        userId: user.id,
-        username: user.username || `${user.first_name} ${user.last_name}` || user.email,
-        count: passengersData.filter((p) => p.user_id === user.id).length,
-      })).filter((item) => item.count > 0);
+      // Process passengers by user - FIXED VERSION
+      const passengersByUser = users
+        .filter(user => user.id) // Only users with valid IDs
+        .map((user) => {
+          const userId = String(user.id); // Ensure string comparison
+          const count = monthPassengers.filter((p) => {
+            const passengerUserId = String(p.user_id);
+            return passengerUserId === userId;
+          }).length;
 
-      // Process tours by popularity with case-insensitive matching
-      const toursByPopularity = tours.map((tour) => ({
-        tourTitle: tour.title,
-        count: passengersData.filter((p) =>
-          p.tour_title?.toLowerCase() === tour.title.toLowerCase()
-        ).length,
-      })).filter((item) => item.count > 0).sort((a, b) => b.count - a.count);
+          const displayName = user.username || 
+            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : 
+             user.email || `User ${userId.slice(-6)}`);
 
-      // Debug: Log toursByPopularity
-      console.log("Tours by popularity:", toursByPopularity);
+          console.log(`🔗 Matching ${displayName} (ID: ${userId}): ${count} passengers`);
 
-      // Process orders by provider
-      const ordersByProvider = users.map((user) => ({
-        providerId: user.id,
-        providerName: user.username || `${user.first_name} ${user.last_name}` || user.email,
-        count: ordersData.filter((o) => o.created_by === user.id && o.show_in_provider).length,
-      })).filter((item) => item.count > 0);
+          return {
+            userId,
+            username: displayName,
+            count,
+          };
+        })
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count); // Sort by count descending
+
+      // Process tours by popularity - FIXED VERSION
+      const toursByPopularity = tours
+        .filter(tour => tour.title) // Only tours with titles
+        .map((tour) => {
+          const tourTitle = tour.title.toLowerCase().trim();
+          const count = monthPassengers.filter((p) => {
+            return p.tour_title && 
+                   p.tour_title.toLowerCase().trim() === tourTitle;
+          }).length;
+
+          console.log(`🗺️ Tour "${tour.title}" has ${count} passengers`);
+
+          return {
+            tourTitle: tour.title,
+            count,
+          };
+        })
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count);
+
+      // Process orders by provider - FIXED VERSION
+      const monthOrders = ordersData.filter(order => 
+        order.created_by && 
+        order.show_in_provider !== false // Include orders where show_in_provider is true or null
+      );
+
+      const ordersByProvider = users
+        .filter(user => user.id) // Only users with valid IDs
+        .map((user) => {
+          const userId = String(user.id);
+          const count = monthOrders.filter((o) => 
+            String(o.created_by) === userId
+          ).length;
+
+          const displayName = user.username || 
+            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : 
+             user.email || `Provider ${userId.slice(-6)}`);
+
+          console.log(`📋 Provider ${displayName} (ID: ${userId}): ${count} orders`);
+
+          return {
+            providerId: userId,
+            providerName: displayName,
+            count,
+          };
+        })
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count);
+
+      console.log("📊 Final passengersByUser:", passengersByUser);
+      console.log("📊 Final toursByPopularity:", toursByPopularity);
+      console.log("📊 Final ordersByProvider:", ordersByProvider);
 
       setAnalyticsData({
         passengersByUser,
@@ -110,7 +177,14 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
         ordersByProvider,
       });
     } catch (error) {
+      console.error("💥 Analytics fetch error:", error);
       showNotification("error", `Failed to fetch analytics data: ${error instanceof Error ? error.message : "Unknown error"}`);
+      // Set empty data on error to prevent crashes
+      setAnalyticsData({
+        passengersByUser: [],
+        toursByPopularity: [],
+        ordersByProvider: [],
+      });
     } finally {
       setLoading(false);
     }
@@ -147,6 +221,8 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
           "rgba(239, 68, 68, 0.6)",
           "rgba(168, 85, 247, 0.6)",
           "rgba(59, 130, 246, 0.6)",
+          "rgba(16, 185, 129, 0.6)",
+          "rgba(245, 158, 11, 0.6)",
         ],
         borderColor: [
           "rgba(34, 197, 94, 1)",
@@ -154,6 +230,8 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
           "rgba(239, 68, 68, 1)",
           "rgba(168, 85, 247, 1)",
           "rgba(59, 130, 246, 1)",
+          "rgba(16, 185, 129, 1)",
+          "rgba(245, 158, 11, 1)",
         ],
         borderWidth: 1,
       },
@@ -213,6 +291,8 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
             size: 12,
             family: "'Inter', sans-serif",
           },
+          maxRotation: 45,
+          minRotation: 0,
         },
         grid: {
           display: false,
@@ -232,6 +312,7 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
             size: 12,
             family: "'Inter', sans-serif",
           },
+          padding: 20,
         },
       },
       tooltip: {
@@ -260,26 +341,26 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
 
         <div className="mb-6 flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-900">
-            Data for {format(currentMonth, "MMMM yyyy")}
+            📊 Data for {format(currentMonth, "MMMM yyyy")}
           </h2>
           <div className="flex space-x-2">
             <button
               onClick={handlePreviousMonth}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200"
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
             >
-              Previous Month
+              ← Previous
             </button>
             <button
               onClick={handleNextMonth}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200"
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
             >
-              Next Month
+              Next →
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex items-center justify-center h-64 bg-white rounded-2xl p-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
             <span className="text-gray-900">Loading analytics data...</span>
           </div>
@@ -287,10 +368,21 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Passengers by User */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Passengers Registered by User</h3>
-              <div className="h-80">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                👥 Passengers Registered by User
+                <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {analyticsData.passengersByUser.reduce((sum, item) => sum + item.count, 0)} total
+                </span>
+              </h3>
+              <div className="h-80 relative">
                 {analyticsData.passengersByUser.length === 0 ? (
-                  <p className="text-gray-500 text-center">No passenger data for this month.</p>
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <span className="text-2xl">👥</span>
+                    </div>
+                    <p className="text-center">No passenger registrations for this month.</p>
+                    <p className="text-sm mt-1">Try a different month or check your data.</p>
+                  </div>
                 ) : (
                   <Bar data={passengersByUserChartData} options={chartOptions} />
                 )}
@@ -299,10 +391,21 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
 
             {/* Tours by Popularity */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Tours</h3>
-              <div className="h-80">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                🗺️ Most Popular Tours
+                <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {analyticsData.toursByPopularity.reduce((sum, item) => sum + item.count, 0)} total
+                </span>
+              </h3>
+              <div className="h-80 relative">
                 {analyticsData.toursByPopularity.length === 0 ? (
-                  <p className="text-gray-500 text-center">No tour data for this month. Ensure passengers are assigned to tours.</p>
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <span className="text-2xl">🗺️</span>
+                    </div>
+                    <p className="text-center">No tour data for this month.</p>
+                    <p className="text-sm mt-1">Ensure passengers are assigned to tours.</p>
+                  </div>
                 ) : (
                   <Pie data={toursByPopularityChartData} options={pieChartOptions} />
                 )}
@@ -311,10 +414,21 @@ export default function AnalyticsDashboard({ currentUser, tours, orders, passeng
 
             {/* Orders by Provider */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Orders Received by Provider</h3>
-              <div className="h-80">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                📋 Orders Received by Provider
+                <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {analyticsData.ordersByProvider.reduce((sum, item) => sum + item.count, 0)} total
+                </span>
+              </h3>
+              <div className="h-80 relative">
                 {analyticsData.ordersByProvider.length === 0 ? (
-                  <p className="text-gray-500 text-center">No provider order data for this month.</p>
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <span className="text-2xl">📋</span>
+                    </div>
+                    <p className="text-center">No provider order data for this month.</p>
+                    <p className="text-sm mt-1">Check your order visibility settings.</p>
+                  </div>
                 ) : (
                   <Bar data={ordersByProviderChartData} options={chartOptions} />
                 )}

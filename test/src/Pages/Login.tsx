@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
-import { Eye, EyeOff, Mail, Lock, Plane } from "lucide-react";
-import Logo from "../assets/last logo.png"; 
+import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import Logo from "../assets/last logo.png";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,7 +18,7 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-    
+
     try {
       const user = await login(email, password);
       if (!user) {
@@ -27,14 +27,19 @@ export default function Login() {
       }
       // Redirect based on user role
       const homePath = user.role === "admin" || user.role === "superadmin" ? "/admin" :
-                       user.role === "provider" ? "/provider" :
-                       user.role === "manager" ? "/manager" : "/user";
+        user.role === "provider" ? "/provider" :
+          user.role === "manager" ? "/manager" : "/user";
       navigate(homePath, { replace: true });
     } catch (err: any) {
       setError(err.message || "An error occurred during login");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Navigate to signup page
+  const handleSignupClick = () => {
+    navigate('/signup');
   };
 
   return (
@@ -90,6 +95,7 @@ export default function Login() {
                   onChange={e => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -111,11 +117,13 @@ export default function Login() {
                   onChange={e => setPassword(e.target.value)}
                   className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
                   required
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={isLoading}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
@@ -142,11 +150,15 @@ export default function Login() {
           {/* Additional options */}
           <div className="mt-6 space-y-4">
             <div className="text-center">
-              <button className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
+              <button 
+                onClick={() => navigate('/change-password')}
+                disabled={isLoading}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors disabled:opacity-50"
+              >
                 Forgot your password?
               </button>
             </div>
-            
+
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-300"></div>
@@ -156,8 +168,13 @@ export default function Login() {
               </div>
             </div>
 
+            {/* FIXED: Simple button instead of Routes */}
             <div className="text-center">
-              <button className="text-sm text-gray-600 hover:text-gray-800 transition-colors">
+              <button 
+                onClick={handleSignupClick}
+                disabled={isLoading}
+                className="text-sm text-blue-700 hover:text-blue-900 font-semibold transition-colors disabled:opacity-50"
+              >
                 Create an account
               </button>
             </div>

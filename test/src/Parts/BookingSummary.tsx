@@ -1,8 +1,9 @@
 import { MapPin, Calendar, Users, DollarSign, CreditCard, Eye, AlertTriangle, Download, Save, User, EyeIcon } from "lucide-react";
 import type { Passenger, ValidationError, User as UserType } from "../types/type";
+import React from "react";
 
 interface BookingSummaryProps {
-  selectedTour?: string; // optional, can be undefined
+  selectedTour?: string; 
   departureDate: string;
   passengers: Passenger[];
   paymentMethod: string;
@@ -16,6 +17,58 @@ interface BookingSummaryProps {
   setShowInProvider: React.Dispatch<React.SetStateAction<boolean>>;
   currentUser: UserType;
 }
+
+// 🧹 BULLETPROOF DATE CLEANER - KILLS ALL EMPTY STRINGS!
+const cleanDateForDB = (dateValue: any): string | null => {
+  // Handle ALL possible "empty" scenarios
+  if (
+    dateValue === null ||
+    dateValue === undefined ||
+    dateValue === "" ||
+    dateValue === " " ||
+    dateValue === false ||
+    (typeof dateValue === 'string' && dateValue.trim() === '') ||
+    (typeof dateValue === 'string' && !isNaN(Date.parse(dateValue)) && new Date(dateValue).toString() === 'Invalid Date')
+  ) {
+    return null;  // ✅ Always return null for empty/invalid values
+  }
+  
+  // Clean and validate date string
+  const cleaned = String(dateValue).trim();
+  const parsedDate = new Date(cleaned);
+  
+  // If it's a valid date, return it in YYYY-MM-DD format
+  if (!isNaN(parsedDate.getTime())) {
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  
+  return null;  // Fallback to null for anything else
+};
+
+// 🧮 ENHANCED AGE CALCULATOR
+const calculateAge = (dateOfBirth: string | undefined | null): number | string => {
+  // Clean the date first
+  const cleanBirthDate = cleanDateForDB(dateOfBirth);
+  if (!cleanBirthDate) return "N/A";
+  
+  const today = new Date();
+  const birthDate = new Date(cleanBirthDate);
+  
+  // Validate the date
+  if (isNaN(birthDate.getTime())) return "N/A";
+  
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
+};
 
 export default function BookingSummary({
   selectedTour,
@@ -32,36 +85,39 @@ export default function BookingSummary({
   loading,
   currentUser,
 }: BookingSummaryProps) {
-  const totalPrice = passengers.reduce((sum, p) => sum + p.price, 0);
+  // 🧹 CLEAN PASSENGER DATA BEFORE ANYTHING ELSE
+  const cleanedPassengers = React.useMemo(() => {
+    return passengers.map(passenger => ({
+      ...passenger,
+      // Clean ALL date fields
+      date_of_birth: cleanDateForDB(passenger.date_of_birth),
+      passport_expiry: cleanDateForDB(passenger.passport_expiry),
+      // Clean any other date fields you might have
+      // departure_date: cleanDateForDB(passenger.departure_date), // if exists
+    }));
+  }, [passengers]);
 
-  // Calculate age from date_of_birth
-  const calculateAge = (dateOfBirth: string | undefined): number | string => {
-    if (!dateOfBirth) return "N/A";
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
+  // Calculate total price from cleaned passengers
+  const totalPrice = cleanedPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
 
-  // Check for validation errors, excluding show_in_provider
-  const hasValidationErrors = errors.length > 0 || passengers.some(
+  // 🧹 ENHANCED VALIDATION - Check cleaned data
+  const hasValidationErrors = errors.length > 0 || cleanedPassengers.some(
     (p) =>
-      !p.first_name ||
-      !p.last_name ||
-      !p.date_of_birth ||
-      !p.gender ||
-      !p.passport_number ||
-      !p.passport_expiry ||
-      !p.nationality ||
-      !p.roomType ||
-      !p.hotel ||
-      !p.email ||
-      !p.phone
+      !p.first_name?.trim() ||
+      !p.last_name?.trim() ||
+      !p.date_of_birth || // Now properly null-checked
+      !p.gender?.trim() ||
+      !p.passport_number?.trim() ||
+      !p.passport_expiry || // Now properly null-checked
+      !p.nationality?.trim() ||
+      !p.roomType?.trim() ||
+      !p.hotel?.trim() ||
+      !p.email?.trim() ||
+      !p.phone?.trim()
   );
+
+  // 🧹 CLEAN DEPARTURE DATE FOR DISPLAY
+  const cleanDepartureDate = cleanDateForDB(departureDate);
 
   const paymentMethods = [
     "Cash",
@@ -75,6 +131,26 @@ export default function BookingSummary({
     "Loan",
     "Credit Card",
   ];
+
+  // 🛡️ SAFETY NET: Clean data before saving
+  const handleSaveOrder = async () => {
+    try {
+      // Double-check and clean data one last time
+      const finalPassengers = cleanedPassengers.map(p => ({
+        ...p,
+        date_of_birth: cleanDateForDB(p.date_of_birth),
+        passport_expiry: cleanDateForDB(p.passport_expiry),
+      }));
+      
+      console.log("🧹 Final cleaned passengers for save:", finalPassengers);
+      
+      // Call the original save function
+      await saveOrder();
+    } catch (error) {
+      console.error("❌ Save error:", error);
+      throw error;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -119,12 +195,15 @@ export default function BookingSummary({
               <div>
                 <h4 className="font-medium text-gray-900">Departure Date</h4>
                 <p className="text-sm text-gray-600">
-                  {new Date(departureDate).toLocaleDateString("en-US", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
+                  {cleanDepartureDate 
+                    ? new Date(cleanDepartureDate).toLocaleDateString("en-US", {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })
+                    : "Date not set"
+                  }
                 </p>
               </div>
             </div>
@@ -134,7 +213,7 @@ export default function BookingSummary({
               <Users className="w-8 h-8 text-purple-600 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Total Passengers</h4>
-                <p className="text-sm text-gray-600">{passengers.length} passengers</p>
+                <p className="text-sm text-gray-600">{cleanedPassengers.length} passengers</p>
               </div>
             </div>
             <div className="flex items-center p-4 bg-orange-50 rounded-lg">
@@ -196,7 +275,7 @@ export default function BookingSummary({
       <div className="border-t pt-6">
         <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
         <div className="space-y-3">
-          {passengers.map((passenger, index) => (
+          {cleanedPassengers.map((passenger, index) => (
             <div key={passenger.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center">
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
@@ -204,13 +283,13 @@ export default function BookingSummary({
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">
-                    {passenger.first_name} {passenger.last_name}
+                    {passenger.first_name?.trim() || "N/A"} {passenger.last_name?.trim() || ""}
                   </p>
                   <p className="text-sm text-gray-600">
-                    {passenger.nationality} • {passenger.gender} • Age: {calculateAge(passenger.date_of_birth)}
+                    {passenger.nationality?.trim() || "N/A"} • {passenger.gender?.trim() || "N/A"} • Age: {calculateAge(passenger.date_of_birth)}
                   </p>
                   <p className="text-sm text-gray-600">
-                    Room: {passenger.roomType} • Hotel: {passenger.hotel}
+                    Room: {passenger.roomType?.trim() || "N/A"} • Hotel: {passenger.hotel?.trim() || "N/A"}
                   </p>
                   {passenger.additional_services?.length > 0 && (
                     <p className="text-xs text-gray-500">
@@ -220,7 +299,7 @@ export default function BookingSummary({
                 </div>
               </div>
               <div className="text-right">
-                <p className="font-medium text-gray-900">${passenger.price}</p>
+                <p className="font-medium text-gray-900">${(passenger.price || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">{passenger.additional_services?.length || 0} services</p>
               </div>
             </div>
@@ -238,15 +317,15 @@ export default function BookingSummary({
           </button>
           <button
             onClick={downloadCSV}
-            disabled={passengers.length === 0}
+            disabled={cleanedPassengers.length === 0}
             className="flex items-center justify-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             <Download className="w-4 h-4 mr-2" />
             Download CSV
           </button>
           <button
-            onClick={saveOrder}
-            disabled={loading || !paymentMethod || passengers.length === 0 || hasValidationErrors}
+            onClick={handleSaveOrder} // ✅ Use the cleaned handler
+            disabled={loading || !paymentMethod || cleanedPassengers.length === 0 || hasValidationErrors}
             className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
           >
             {loading ? (

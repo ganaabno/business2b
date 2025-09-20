@@ -48,7 +48,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
     const newTour: Omit<Tour, "id" | "created_at" | "updated_at" | "created_by" | "creator_name" | "tour_number"> = {
       title: newTourTitle.trim(),
       name: newTourName.trim(),
-      departureDate: newTourDepartureDate,
+      departure_date: newTourDepartureDate,
       description: "",
       hotels: [],
       dates: [],
@@ -81,7 +81,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
         ...newTour,
         created_by,
         tour_number: null,
-        departuredate: newTour.departureDate,
+        departuredate: newTour.departure_date,
       };
 
       delete insertData.departureDate;
@@ -307,13 +307,13 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                     <td className="px-4 py-3 border-r border-gray-200">
                       <input
                         type="date"
-                        value={tour.departureDate}
-                        onChange={(e) => handleTourChange(tour.id, "departureDate", e.target.value)}
+                        value={tour.departure_date}
+                        onChange={(e) => handleTourChange(tour.id, "departure_date", e.target.value)}
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                       />
-                      {tour.departureDate && (
+                      {tour.departure_date && (
                         <div className="text-xs text-gray-500 mt-1">
-                          {formatDisplayDate(tour.departureDate)}
+                          {formatDisplayDate(tour.departure_date)}
                         </div>
                       )}
                     </td>

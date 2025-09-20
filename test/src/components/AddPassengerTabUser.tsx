@@ -326,26 +326,24 @@ export default function AddPassengerTabUser({
                   className="bg-gray-50 rounded-lg border border-gray-200 p-4"
                 >
                   <PassengerFormUser
-                    currentUser={currentUser}
                     passengers={passengers}
                     setPassengers={setPassengers}
                     selectedTourData={selectedTourData}
-                    errors={errors.filter((e) => e.field.startsWith(`passenger_${passenger.id}`))}
-                    updatePassenger={updatePassenger}
-                    removePassenger={removePassenger}
+                    errors={errors}
+                    updatePassenger={(index, field, value) => updatePassenger(passengers[index].id, field, value)}
+                    removePassenger={(index) => removePassenger(passengers[index].id)}
                     downloadTemplate={() => downloadTemplate(wrappedShowNotification)}
                     handleUploadCSV={handleCSVUpload}
                     addPassenger={addPassenger}
                     isGroup={false}
-                    setIsGroup={() => {}}
+                    setIsGroup={() => { }}
                     groupName=""
-                    setGroupName={() => {}}
+                    setGroupName={() => { }}
                     setActiveStep={setActiveStep}
                     showNotification={showNotification}
                     expandedPassengerId={expandedPassengerId}
                     setExpandedPassengerId={setExpandedPassengerId}
                     newPassengerRef={newPassengerRef}
-                    validateBooking={validateBooking}
                   />
                 </div>
               ))
