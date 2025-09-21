@@ -8,7 +8,7 @@ interface ActiveTabProps {
   showNotification: (type: "success" | "error", message: string) => void;
 }
 
-export default function ActiveTab({ passengers, setPassengers, currentUser, showNotification }: ActiveTabProps) {
+export default function ActiveTab({ passengers }: ActiveTabProps) {
   const activePassengers = useMemo(() => {
     return passengers.filter((p) => !p.is_blacklisted && p.status === "active");
   }, [passengers]);

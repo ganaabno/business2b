@@ -126,7 +126,6 @@ const createNewPassenger = (
 
 export default function AddPassengerTab({
   tours,
-  orders,
   setOrders,
   selectedTour,
   setSelectedTour,

@@ -1,4 +1,3 @@
-// src/api/auth.ts
 import { supabase } from "../supabaseClient";
 import type { User, Role } from "../types/type";
 
@@ -50,7 +49,7 @@ export async function loginUser(
       password: "",
       phone: String(userData.phone ?? ""),
       blacklist: Boolean(userData.blacklist ?? false),
-      access: String(userData.access ?? "active"),
+      access: (userData.access === "suspended" ? "suspended" : "active"),
       company: String(userData.company ?? ""),
       birth_date: String(userData.birth_date ?? ""),
       id_card_number: String(userData.id_card_number ?? ""),
@@ -62,8 +61,8 @@ export async function loginUser(
       membership_points: Number(userData.membership_points ?? 0),
       registered_by: String(userData.registered_by ?? ""),
       createdBy: String(userData.createdBy ?? ""),
-      createdAt: new Date(userData.createdAt ?? Date.now()),
-      updatedAt: new Date(userData.updatedAt ?? Date.now()),
+      createdAt: "",
+      updatedAt: "",
       travel_history: Array.isArray(userData.travel_history)
         ? userData.travel_history
         : [],

@@ -30,7 +30,6 @@ export default function TourSelection({
   setDepartureDate,
   errors,
   setActiveStep,
-  userRole,
   showAvailableSeats = true,
 }: TourSelectionProps) {
   const mergedTours = useMemo(() => {

@@ -4,11 +4,9 @@ import { supabase } from '../supabaseClient';
 import { 
   Users, 
   Mail, 
-  Shield, 
   Calendar, 
   CheckCircle, 
   XCircle,
-  Clock,
   Bell,
   ChevronLeft,
   ChevronRight,
@@ -310,7 +308,6 @@ export default function AuthRequest({
     };
   };
 
-  const currentRequest = pendingUsers[currentIndex];
 
   if (loading) {
     return (
@@ -395,7 +392,7 @@ export default function AuthRequest({
                     width: `${pendingUsers.length * 100}%`
                   }}
                 >
-                  {pendingUsers.map((request, index) => (
+                  {pendingUsers.map((request) => (
                     <div key={request.id} className="w-full flex-shrink-0 p-6">
                       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/30 h-full flex flex-col">
                         <div className="flex items-start space-x-4 mb-4 flex-1">

@@ -15,7 +15,6 @@ export default function PassengerTable({
   updatePassenger,
   removePassenger,
   showNotification,
-  currentUserId,
 }: PassengerTableProps) {
   const [editingPassengerId, setEditingPassengerId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Passenger>>({});
@@ -178,7 +177,7 @@ export default function PassengerTable({
                       {passenger.tour_title}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDisplayDate(passenger.departure_date)}
+                      {formatDisplayDate("")}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span

@@ -1,13 +1,10 @@
 {
   "compilerOptions": {
-    "module": "ESNext", 
-    "moduleResolution": "node",
-    "baseUrl": "src",
-    "outDir": "dist",
-    "sourceMap": true,
-    "noImplicitAny": true,
-    "esModuleInterop": true, 
-    "allowSyntheticDefaultImports": true 
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"]
+  "include": ["vite.config.ts"]
 }

@@ -60,6 +60,7 @@ async function fetchUser(uid: string): Promise<User | null> {
       createdBy: String(data.createdBy ?? ""),
       createdAt: String(data.createdAt ?? new Date().toISOString()),
       updatedAt: String(data.updatedAt ?? new Date().toISOString()),
+      status: "approved",
     };
   } catch {
     return null;

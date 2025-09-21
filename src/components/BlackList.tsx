@@ -11,7 +11,6 @@ interface BlackListTabProps {
 export default function BlackListTab({
   passengers,
   setPassengers,
-  currentUser,
   showNotification
 }: BlackListTabProps) {
   const [searchTerm, setSearchTerm] = useState("");

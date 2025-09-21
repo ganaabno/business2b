@@ -13,6 +13,7 @@ export interface User {
   blacklist: boolean;
   company: string;
   access: "active" | "suspended"; // Match DB schema
+  status: "pending" | "declined" | "approved";
   birth_date: string;
   id_card_number: string;
   travel_history: any[];
@@ -320,8 +321,3 @@ export interface ErrorType {
   field: string;
   message: string;
 }
-
-type TourOption = {
-  id: string;
-  title: string;
-};

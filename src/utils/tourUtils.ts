@@ -1,6 +1,7 @@
 import type { Tour, Passenger, User as UserType } from "../types/type";
 
-export const generatePassengerId = (): string => `passenger_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+export const generatePassengerId = (): string =>
+  `passenger_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
 export const createNewPassenger = (
   currentUser: UserType,
@@ -14,23 +15,27 @@ export const createNewPassenger = (
 
   const defaultRoomType = (() => {
     if (existingPassengers.length === 0) return "";
-    if (lastPassenger?.roomType === "Double" && existingPassengers.length % 2 === 1) {
+    if (
+      lastPassenger?.roomType === "Double" &&
+      existingPassengers.length % 2 === 1
+    ) {
       return "Double";
     }
     return "";
   })();
 
-  const inheritedDetails = isGroup && lastPassenger
-    ? {
-        nationality: lastPassenger.nationality,
-        hotel: lastPassenger.hotel,
-        emergency_phone: lastPassenger.emergency_phone,
-      }
-    : {
-        nationality: "Mongolia",
-        hotel: "",
-        emergency_phone: "",
-      };
+  const inheritedDetails =
+    isGroup && lastPassenger
+      ? {
+          nationality: lastPassenger.nationality,
+          hotel: lastPassenger.hotel,
+          emergency_phone: lastPassenger.emergency_phone,
+        }
+      : {
+          nationality: "Mongolia",
+          hotel: "",
+          emergency_phone: "",
+        };
 
   return {
     id: generatePassengerId(),
@@ -59,6 +64,10 @@ export const createNewPassenger = (
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     status: "active",
+    tour_title: selectedTourData?.title || "",
+    departure_date: selectedTourData?.departure_date || "",
+    is_blacklisted: false,
+    blacklisted_date: "",
   };
 };
 
@@ -66,7 +75,11 @@ export function formatDisplayDate(s: string | undefined): string {
   if (!s) return "";
   const d = new Date(s);
   return !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    ? d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
     : s;
 }
 
@@ -76,11 +89,15 @@ export const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
   let age = today.getFullYear() - dob.getFullYear();
   const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate()))
+    age--;
   return age;
 };
 
-export const calculateServicePrice = (services: string[], tourData: Tour): number => {
+export const calculateServicePrice = (
+  services: string[],
+  tourData: Tour
+): number => {
   return services.reduce((sum, serviceName) => {
     const service = tourData.services.find((s) => s.name === serviceName);
     return sum + (service ? service.price : 0);
@@ -91,7 +108,9 @@ export const getPassportExpiryColor = (expiryDate: string): string => {
   if (!expiryDate) return "border-gray-300";
   const expiry = new Date(expiryDate);
   const today = new Date();
-  const monthsRemaining = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());
+  const monthsRemaining =
+    (expiry.getFullYear() - today.getFullYear()) * 12 +
+    (expiry.getMonth() - today.getMonth());
   if (monthsRemaining <= 0) return "border-red-500 bg-red-50";
   if (monthsRemaining <= 1) return "border-red-400 bg-red-50";
   if (monthsRemaining <= 3) return "border-orange-400 bg-orange-50";
