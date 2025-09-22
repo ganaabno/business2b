@@ -1,14 +1,17 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import type { Tour, Passenger, User as UserType, ValidationError, Order, OrderStatus } from "../types/type";
 import Notifications from "../Parts/Notification";
 import ProgressSteps from "../Parts/ProgressSteps";
 import ErrorSummary from "../Parts/ErrorSummary";
 import TourSelection from "../Parts/TourSelection";
-import PassengerForm from "../Parts/PassengerForm";
 import BookingSummary from "../Parts/BookingSummary";
-import { downloadTemplate } from "../utils/csvUtils";
+import { BookingActions } from "../addPassengerComponents/BookingActions";
+import { PassengerFormFields } from "../addPassengerComponents/PassengerFormFields";
+import { downloadTemplate } from "../addPassengerComponents/downloadTemplate";
 import { checkSeatLimit } from "../utils/seatLimitChecks";
+import { assignRoomAllocation } from "../addPassengerComponents/roomAllocationLogic";
+import { downloadTemplate as originalDownloadTemplate } from "../utils/csvUtils"; // Keep original for backward compatibility
 
 interface AddPassengerTabProps {
   tours: Tour[];
@@ -31,43 +34,32 @@ const cleanDateForDB = (dateValue: string | undefined | null): string | null => 
   return dateValue.trim();
 };
 
-// 🕒 TIMESTAMP CLEANER - ensures valid ISO string or null
 const cleanTimestampForDB = (timestamp: string | undefined | null): string | null => {
   if (!timestamp || timestamp.trim() === "") return null;
   return timestamp.trim();
 };
 
 const cleanValueForDB = (field: string, value: any): any => {
-  // Clean date fields
   if (['date_of_birth', 'passport_expiry', 'departure_date', 'blacklisted_date'].includes(field)) {
     return cleanDateForDB(value);
   }
-
-  // Clean timestamp fields
   if (['created_at', 'updated_at'].includes(field)) {
     return cleanTimestampForDB(value);
   }
-
-  // Clean departureDate for orders
   if (field === 'departureDate') {
     return cleanDateForDB(value);
   }
-
-  // Clean passport_expire for orders
   if (field === 'passport_expire') {
     return cleanDateForDB(value);
   }
-
   return value;
 };
 
-// ✅ FIXED: Single UUID generator with fallback
 const generatePassengerId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback for older browsers
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0;
     const v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -77,7 +69,8 @@ const generatePassengerId = () => {
 const createNewPassenger = (
   currentUser: UserType,
   existingPassengers: Passenger[],
-  selectedTourData?: Tour
+  selectedTourData?: Tour,
+  hotels: string[] = []
 ): Passenger => {
   const serialNo = (existingPassengers.length + 1).toString();
   const lastPassenger = existingPassengers[existingPassengers.length - 1];
@@ -89,6 +82,8 @@ const createNewPassenger = (
     }
     return "";
   })();
+
+  const defaultHotel = hotels.length > 0 ? hotels[0] : "";
 
   return {
     id: generatePassengerId(),
@@ -106,9 +101,9 @@ const createNewPassenger = (
     gender: "",
     passport_number: "",
     passport_expiry: null,
-    nationality: "Mongolia",
+    nationality: "Mongolia", // Default nationality
     roomType: defaultRoomType,
-    hotel: "",
+    hotel: defaultHotel,
     additional_services: [],
     price: selectedTourData?.base_price || 0,
     email: "",
@@ -144,69 +139,116 @@ export default function AddPassengerTab({
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [expandedPassengerId, setExpandedPassengerId] = useState<string | null>(null);
   const [fieldLoading, setFieldLoading] = useState<Record<string, boolean>>({});
-  
+  const [canAdd, setCanAdd] = useState(true);
+
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
+  const [availableHotels, setAvailableHotels] = useState<string[]>([]);
 
   const MAX_PASSENGERS = 20;
-  
-  // 💪 POWER USERS: Admin, Manager, Superadmin - UNLIMITED ACCESS!
-  const isPowerUser = currentUser.role === "admin" || 
-                     currentUser.role === "manager" || 
-                     currentUser.role === "superadmin";
+  const ROOM_TYPES = ["Single", "King", "Double", "Twin", "Family"];
+  const NATIONALITIES = [
+    "Mongolia", "USA", "Canada", "UK", "Australia", "Germany", "France",
+    "Japan", "China", "South Korea", "India", "Russia", "Brazil", "South Africa"
+  ];
+
+  const isPowerUser = currentUser.role === "admin" ||
+    currentUser.role === "manager" ||
+    currentUser.role === "superadmin";
 
   const filteredTours = isPowerUser ? tours : tours.map(({ available_seats, ...rest }) => rest);
   const selectedTourData = tours.find((t) => t.title === selectedTour);
 
-  // ✅ Use bookingPassengers.length instead of global passengers
+  // ✅ MOVED UP: Define wrappedShowNotification BEFORE it's used
+  const wrappedShowNotification = useCallback((type: "success" | "error", message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+    showNotification(type, message);
+  }, [showNotification]);
+
+  // ✅ Extract hotels from selected tour - FIXED
+  // ✅ Extract hotels from selected tour - FIXED with proper type guards
+  useEffect(() => {
+    if (selectedTourData && selectedTourData.hotels !== undefined) {
+      // ✅ Type assertion to handle the hotels property
+      const hotels = selectedTourData.hotels as string | string[] | undefined;
+
+      if (Array.isArray(hotels)) {
+        setAvailableHotels(hotels.filter(hotel => hotel && hotel.trim()));
+      } else if (typeof hotels === 'string') {
+        if (hotels.trim()) {
+          setAvailableHotels(hotels.split(',').map((h: string) => h.trim()).filter(Boolean));
+        } else {
+          setAvailableHotels([]);
+        }
+      } else {
+        setAvailableHotels([]);
+      }
+    } else {
+      setAvailableHotels([]);
+    }
+  }, [selectedTourData]);
+
+  // ✅ Update canAdd state when booking conditions change
+  useEffect(() => {
+    if (bookingPassengers.length >= MAX_PASSENGERS || !selectedTour || !departureDate || !selectedTourData) {
+      setCanAdd(false);
+      return;
+    }
+
+    if (isPowerUser) {
+      setCanAdd(true);
+      return;
+    }
+
+    setCanAdd(true); // Optimistic for regular users
+  }, [bookingPassengers.length, selectedTour, departureDate, selectedTourData, isPowerUser]);
+
   const remainingSeats = isPowerUser
     ? undefined
     : selectedTourData?.available_seats !== undefined
       ? Math.max(0, selectedTourData.available_seats - bookingPassengers.length)
       : undefined;
 
-  // 💪 POWER USERS GET TOTAL DOMINATION
-  const canAddPassenger = async () => {
+  const canAddPassenger = useCallback(async () => {
     if (bookingPassengers.length >= MAX_PASSENGERS) {
       wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
+      setCanAdd(false);
       return false;
     }
     if (!selectedTour || !departureDate) {
       wrappedShowNotification("error", "Please select a tour and departure date");
+      setCanAdd(false);
       return false;
     }
     if (!selectedTourData) {
       wrappedShowNotification("error", "Invalid tour selected");
+      setCanAdd(false);
       return false;
     }
-    
-    // 💪 POWER USERS: Admin, Manager, Superadmin - UNLIMITED POWER!
+
     if (isPowerUser) {
       console.log(`💪 ${currentUser.role.toUpperCase()} MODE: Unlimited booking power activated!`);
+      setCanAdd(true);
       return true;
     }
 
-    // Regular users get role-aware seat checking
     console.log("🔢 Regular user: Checking seat availability...");
     const { isValid, message } = await checkSeatLimit(
-      selectedTourData.id, 
-      departureDate, 
-      currentUser.role // Pass the role to the function
+      selectedTourData.id,
+      departureDate,
+      currentUser.role
     );
-    
+
     if (!isValid) {
       wrappedShowNotification("error", message);
+      setCanAdd(false);
       return false;
     }
-    
-    console.log("✅ Seat check passed for regular user");
-    return true;
-  };
 
-  const wrappedShowNotification = useCallback((type: "success" | "error", message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 5000);
-    showNotification(type, message);
-  }, [showNotification]);
+    console.log("✅ Seat check passed for regular user");
+    setCanAdd(true);
+    return true;
+  }, [bookingPassengers.length, selectedTour, departureDate, selectedTourData, isPowerUser, currentUser.role, wrappedShowNotification]);
 
   const calculateAge = (dateOfBirth: string): number => {
     if (!dateOfBirth || isNaN(new Date(dateOfBirth).getTime())) return 0;
@@ -225,26 +267,25 @@ export default function AddPassengerTab({
     }, 0);
   };
 
-  const getPassportExpiryColor = (expiryDate: string): string => {
-    if (!expiryDate) return "border-gray-300";
-    const expiry = new Date(expiryDate);
-    const today = new Date();
-    const monthsRemaining = (expiry.getFullYear() - today.getFullYear()) * 12 + (expiry.getMonth() - today.getMonth());
-    if (monthsRemaining <= 0) return "border-red-500 bg-red-50";
-    if (monthsRemaining <= 1) return "border-red-400 bg-red-50";
-    if (monthsRemaining <= 3) return "border-orange-400 bg-orange-50";
-    if (monthsRemaining <= 7) return "border-yellow-400 bg-yellow-50";
-    return "border-green-400 bg-green-50";
-  };
-
   // ✅ SINGLE PASSENGER ADD ONLY - Clean and simple
   const addPassenger = useCallback(async () => {
-    const canAdd = await canAddPassenger();
-    if (!canAdd) return;
+    const canAddResult = await canAddPassenger();
+    if (!canAddResult) return;
 
     try {
-      const newPassenger = createNewPassenger(currentUser, bookingPassengers, selectedTourData);
-      setBookingPassengers(prev => [...prev, newPassenger]);
+      const newPassenger = createNewPassenger(currentUser, bookingPassengers, selectedTourData, availableHotels);
+      setBookingPassengers(prev => {
+        const updated = [...prev, newPassenger];
+        // Auto-assign room allocation based on room type logic
+        const withRoomAllocation = updated.map((passenger, idx) => {
+          if (idx === updated.length - 1) { // Only for the new passenger
+            const roomAllocation = assignRoomAllocation(updated, idx, passenger.roomType);
+            return { ...passenger, room_allocation: roomAllocation };
+          }
+          return passenger;
+        });
+        return withRoomAllocation;
+      });
       setExpandedPassengerId(newPassenger.id);
       const passengerCount = bookingPassengers.length + 1;
       wrappedShowNotification("success", `Added passenger ${passengerCount}`);
@@ -252,9 +293,9 @@ export default function AddPassengerTab({
     } catch (error) {
       wrappedShowNotification("error", "Failed to add passenger. Please try again.");
     }
-  }, [bookingPassengers, currentUser, selectedTourData, wrappedShowNotification, canAddPassenger]);
+  }, [bookingPassengers, currentUser, selectedTourData, availableHotels, wrappedShowNotification, canAddPassenger]);
 
-  // ✅ UPDATED: Use bookingPassengers and field-specific loading
+  // ✅ UPDATED: Enhanced updatePassenger with room allocation logic
   const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
     if (index < 0 || index >= bookingPassengers.length) {
       wrappedShowNotification("error", "Invalid passenger index");
@@ -263,7 +304,7 @@ export default function AddPassengerTab({
 
     const passengerId = bookingPassengers[index].id;
     const loadingKey = `${passengerId}-${String(field)}`;
-    
+
     const updatedPassengers = [...bookingPassengers];
     updatedPassengers[index] = { ...updatedPassengers[index], [field]: value };
 
@@ -282,6 +323,21 @@ export default function AddPassengerTab({
       const first = updatedPassengers[index].first_name || "";
       const last = updatedPassengers[index].last_name || "";
       updatedPassengers[index].name = `${first} ${last}`.trim();
+    }
+
+    // ✅ ROOM TYPE LOGIC - Auto-assign room allocation
+    if (field === "roomType" && value) {
+      const roomAllocation = assignRoomAllocation(updatedPassengers, index, value);
+      updatedPassengers[index].room_allocation = roomAllocation;
+
+      // Update subsequent passengers for Family room logic
+      if (value === "Family") {
+        for (let i = index + 1; i < updatedPassengers.length && i < index + 3; i++) {
+          if (updatedPassengers[i]) {
+            updatedPassengers[i].room_allocation = roomAllocation;
+          }
+        }
+      }
     }
 
     // ✅ IMPROVED: Field-specific loading for passport upload
@@ -308,7 +364,6 @@ export default function AddPassengerTab({
     setBookingPassengers(updatedPassengers);
   };
 
-  // ✅ UPDATED: Use bookingPassengers
   const removePassenger = useCallback((index: number) => {
     if (bookingPassengers.length === 1) {
       wrappedShowNotification("error", "At least one passenger is required");
@@ -337,7 +392,6 @@ export default function AddPassengerTab({
     }
   }, [bookingPassengers, expandedPassengerId, wrappedShowNotification]);
 
-  // ✅ UPDATED: Use bookingPassengers
   const clearAllPassengers = useCallback(() => {
     if (bookingPassengers.length === 0) {
       wrappedShowNotification("error", "No passengers to clear");
@@ -351,21 +405,19 @@ export default function AddPassengerTab({
     }
   }, [bookingPassengers.length, wrappedShowNotification]);
 
-  // ✅ UPDATED: Reset uses local state
+  // ✅ UPDATED: Reset without confirmation dialog, goes back to tour selection
   const resetBookingForm = useCallback(() => {
-    if (window.confirm("Are you sure you want to reset the entire booking? All data will be lost.")) {
-      setBookingPassengers([]);
-      setSelectedTour("");
-      setDepartureDate("");
-      setPaymentMethod("");
-      setActiveStep(1);
-      setShowInProvider(false);
-      setExpandedPassengerId(null);
-      wrappedShowNotification("success", "Booking form reset successfully");
-    }
+    setBookingPassengers([]);
+    setSelectedTour("");
+    setDepartureDate("");
+    setPaymentMethod("");
+    setActiveStep(1); // Go back to Tour selection
+    setShowInProvider(false);
+    setExpandedPassengerId(null);
+    wrappedShowNotification("success", "Passenger Registered Completely!"); // Success message
   }, [wrappedShowNotification]);
 
-  // ✅ UPDATED: Use bookingPassengers
+  // ✅ UPDATED: Room type is now optional in validation
   const validatePassenger = (passenger: Passenger, departureDate: string): ValidationError[] => {
     const errors: ValidationError[] = [];
     if (!passenger.first_name.trim()) errors.push({ field: "first_name", message: "First name is required" });
@@ -384,12 +436,11 @@ export default function AddPassengerTab({
       if (expiryDate < minDate)
         errors.push({ field: "passport_expiry", message: "Passport must be valid for at least 6 months from departure date" });
     }
-    if (!passenger.roomType) errors.push({ field: "roomType", message: "Room type is required" });
+    // Room type is now optional
     if (!passenger.hotel) errors.push({ field: "hotel", message: "Hotel selection is required" });
     return errors;
   };
 
-  // ✅ UPDATED: Use bookingPassengers
   const validateBooking = (): boolean => {
     const allErrors: ValidationError[] = [];
     if (!selectedTour) allErrors.push({ field: "tour", message: "Please select a tour" });
@@ -429,33 +480,22 @@ export default function AddPassengerTab({
       return;
     }
 
-    console.log("📊 Tour Data:", tourData);
-    console.log("🪑 Available Seats:", tourData.available_seats);
-
-    // 💪 POWER USERS BYPASS ALL LIMITS - Admin, Manager, Superadmin
     if (isPowerUser) {
       console.log(`💪 ${currentUser.role.toUpperCase()} MODE: SKIPPING ALL SEAT CHECKS - TOTAL DOMINATION!`);
     } else {
-      // Regular users ONLY get seat checking
-      console.log("🔢 Regular user: Checking available seats...");
       if (tourData.available_seats !== undefined && tourData.available_seats < bookingPassengers.length) {
         console.log("❌ Regular user: Not enough seats");
         wrappedShowNotification("error", "Cannot save booking. The tour is fully booked.");
         return;
       }
-      console.log("✅ Regular user: Enough seats available");
     }
 
     setLoading(true);
 
     try {
-      // ✅ Use bookingPassengers for calculations
       const totalPrice = bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
       const commission = totalPrice * 0.05;
 
-      console.log("💰 Total Price:", totalPrice, "Commission:", commission);
-
-      // 🧹 CREATE ORDER DATA - Use first passenger for order details
       const firstPassenger = bookingPassengers[0];
       const orderData = {
         user_id: currentUser.id,
@@ -486,32 +526,22 @@ export default function AddPassengerTab({
         show_in_provider: currentUser.role !== "user" ? showInProvider : false,
       };
 
-      console.log("🧹 ORDER DATA CREATED:", orderData);
-
-      // Insert order
-      console.log("📝 Inserting order...");
       const { data: orderResult, error: orderError } = await supabase
         .from("orders")
         .insert(orderData)
         .select()
         .single();
 
-      if (orderError) {
-        console.error("❌ Order insert failed:", orderError);
-        throw new Error(`Order creation failed: ${orderError.message}`);
-      }
-      if (!orderResult) {
-        console.error("❌ No order result returned");
-        throw new Error("No order data returned");
+      if (orderError || !orderResult) {
+        throw new Error(`Order creation failed: ${orderError?.message || "No order data returned"}`);
       }
 
       const orderId = String(orderResult.id);
-      console.log("✅ Order created! ID:", orderId);
 
-      // ✅ IMPROVED: Sequential file uploads to avoid race conditions
+      // Upload passport files
       const uploadPassengerFiles = async (passengers: Passenger[]): Promise<string[]> => {
         const uploadedPaths: string[] = [];
-        
+
         for (const passenger of passengers) {
           if (passenger.passport_upload && typeof passenger.passport_upload !== 'string' && passenger.passport_upload !== null) {
             try {
@@ -524,9 +554,7 @@ export default function AddPassengerTab({
 
               if (!uploadError && uploadData) {
                 uploadedPaths.push(uploadData.path);
-                console.log(`✅ Passport uploaded for ${passenger.first_name}: ${uploadData.path}`);
               } else {
-                console.warn(`⚠️ Failed to upload passport for ${passenger.first_name}:`, uploadError);
                 uploadedPaths.push("");
               }
             } catch (uploadError) {
@@ -537,26 +565,21 @@ export default function AddPassengerTab({
             uploadedPaths.push(passenger.passport_upload || "");
           }
         }
-        
+
         return uploadedPaths;
       };
 
-      // Upload files first
-      console.log("📁 Uploading passport files...");
       const uploadedPaths = await uploadPassengerFiles(bookingPassengers);
-      console.log("✅ File uploads completed");
 
-      // 🧹 CREATE PASSENGER DATA - LET DB GENERATE UUIDs
       const passengerPromises = bookingPassengers.map(async (passenger, index) => {
         const cleanPassenger: any = {
-          // ✅ NO ID - Let database generate UUID
           order_id: orderId,
           user_id: currentUser.id,
           tour_title: selectedTour,
           departure_date: cleanValueForDB('departure_date', departureDate),
           name: `${passenger.first_name} ${passenger.last_name}`.trim(),
           room_allocation: passenger.room_allocation?.trim() || "",
-          serial_no: (index + 1).toString(),
+          serial_no: passenger.serial_no,
           last_name: passenger.last_name?.trim() || "",
           first_name: passenger.first_name?.trim() || "",
           date_of_birth: cleanValueForDB('date_of_birth', passenger.date_of_birth),
@@ -585,23 +608,16 @@ export default function AddPassengerTab({
       });
 
       const cleanedPassengers = await Promise.all(passengerPromises);
-      console.log("🧹 PASSENGER DATA PREPARED:", cleanedPassengers.length, "passengers");
 
-      // Insert passengers
-      console.log("👥 Inserting passengers...");
       const { error: passengerError } = await supabase
         .from("passengers")
         .insert(cleanedPassengers);
 
       if (passengerError) {
-        console.error("❌ Passenger insert failed:", passengerError);
         throw new Error(`Passenger creation failed: ${passengerError.message}`);
       }
-      console.log("✅ Passengers inserted successfully!");
 
-      // 💪 POWER USERS NEVER UPDATE TOUR SEATS
       if (!isPowerUser && tourData.available_seats !== undefined) {
-        console.log("🔢 Regular user: Updating tour seats...");
         const newSeatCount = Math.max(0, tourData.available_seats - bookingPassengers.length);
         const { error: tourUpdateError } = await supabase
           .from("tours")
@@ -613,14 +629,9 @@ export default function AddPassengerTab({
 
         if (tourUpdateError) {
           console.warn("⚠️ Failed to update tour seats:", tourUpdateError.message);
-        } else {
-          console.log(`✅ Tour seats updated: ${newSeatCount} remaining`);
         }
-      } else if (isPowerUser) {
-        console.log(`💪 ${currentUser.role.toUpperCase()} MODE: Skipping tour seat updates - UNLIMITED POWER!`);
       }
 
-      // Create complete Order object for local state - Add fake IDs for local state
       const newOrderWithPassengers: Order = {
         id: orderId,
         user_id: orderData.user_id,
@@ -655,20 +666,16 @@ export default function AddPassengerTab({
         show_in_provider: orderData.show_in_provider,
         passengers: cleanedPassengers.map((p, index) => ({
           ...p,
-          id: generatePassengerId(), // ✅ Add fake IDs for local state only
+          id: generatePassengerId(),
           passport_upload: uploadedPaths[index] || null,
         })) as Passenger[],
       };
 
-      // Update global orders state
       setOrders(prev => [...prev, newOrderWithPassengers]);
-      
-      console.log("🎉 BOOKING COMPLETED SUCCESSFULLY!");
-      console.log(`💪 ${currentUser.role.toUpperCase()} STATUS:`, isPowerUser ? "UNLIMITED POWER CONFIRMED!" : "Regular booking completed");
-      
+
       wrappedShowNotification("success", `Booking saved successfully! Order ID: ${orderId}`);
-      resetBookingForm(); // ✅ This now only resets local booking state
-      
+      resetBookingForm(); // Now shows success message and goes to tour selection
+
     } catch (error) {
       console.error("💥 CRITICAL SAVE ORDER ERROR:", error);
       wrappedShowNotification(
@@ -680,24 +687,27 @@ export default function AddPassengerTab({
     }
   };
 
-  // ✅ UPDATED: Use bookingPassengers for CSV
+  // ✅ FIXED: Updated CSV download with correct headers and auto serial numbers
   const handleDownloadCSV = () => {
     if (bookingPassengers.length === 0) {
       wrappedShowNotification("error", "No passengers to export");
       return;
     }
 
+    // Fixed headers - removed duplicate Room Allocation and Actions
     const headers = [
-      "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
-      "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
-      "Additional Services", "Price", "Email", "Phone", "Allergy", "Emergency Phone"
+      "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
+      "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type",
+      "Hotel", "Room Allocation", "Additional Services", "Price", "Email",
+      "Phone", "Allergy", "Emergency Phone"
     ];
 
     const rows = bookingPassengers.map((p) =>
       [
-        p.room_allocation, p.serial_no, p.last_name, p.first_name, p.date_of_birth, p.age,
-        p.gender, p.passport_number, p.passport_expiry, p.nationality, p.roomType, p.hotel,
-        p.additional_services.join(","), p.price, p.email, p.phone, p.allergy || "", p.emergency_phone || ""
+        p.serial_no, p.last_name, p.first_name, p.date_of_birth, p.age,
+        p.gender, p.passport_number, p.passport_expiry, p.nationality, p.roomType,
+        p.hotel, p.room_allocation, p.additional_services.join(","),
+        p.price, p.email, p.phone, p.allergy || "", p.emergency_phone || ""
       ].map((v) => `"${v}"`).join(",")
     );
 
@@ -712,7 +722,6 @@ export default function AddPassengerTab({
     wrappedShowNotification("success", "CSV downloaded successfully");
   };
 
-  // 💪 POWER USERS GET UNLIMITED CSV UPLOADS
   const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -727,11 +736,9 @@ export default function AddPassengerTab({
       return;
     }
 
-    // 💪 POWER USERS BYPASS ALL CHECKS
     if (isPowerUser) {
       console.log(`💪 ${currentUser.role.toUpperCase()} MODE: CSV upload - UNLIMITED PASSENGERS ALLOWED!`);
     } else {
-      // Regular users get seat checking
       const canAdd = await canAddPassenger();
       if (!canAdd) return;
     }
@@ -748,33 +755,30 @@ export default function AddPassengerTab({
 
         const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
         const requiredHeaders = [
-          "Room Allocation", "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
-          "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type", "Hotel",
-          "Additional Services", "Price", "Email", "Phone", "Allergy", "Emergency Phone"
+          "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
+          "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type",
+          "Hotel", "Room Allocation", "Additional Services", "Price", "Email",
+          "Phone", "Allergy", "Emergency Phone"
         ];
-        
+
         if (!requiredHeaders.every((h) => headers.includes(h))) {
           wrappedShowNotification("error", "CSV file is missing required headers");
           return;
         }
 
-        // ✅ ADDED: CSV validation
         const validateCsvRow = (row: Record<string, string>): boolean => {
           const requiredFields = ["First Name", "Last Name", "Email", "Phone"];
           for (const field of requiredFields) {
             if (!row[field] || row[field].length > 100 || row[field].length < 1) return false;
           }
-          
-          // Email validation
+
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (!emailRegex.test(row["Email"])) return false;
-          
-          // Phone number length check
+
           if (row["Phone"].replace(/\D/g, '').length < 8) return false;
-          
-          // Name length validation
+
           if (row["First Name"].length > 50 || row["Last Name"].length > 50) return false;
-          
+
           return true;
         };
 
@@ -786,16 +790,13 @@ export default function AddPassengerTab({
               return obj;
             }, {});
           })
-          .filter(validateCsvRow); // ✅ Filter invalid rows
+          .filter(validateCsvRow);
 
         if (data.length === 0) {
           wrappedShowNotification("error", "No valid passenger data found in CSV");
           return;
         }
 
-        console.log(`📊 CSV contains ${data.length} valid passenger rows`);
-
-        // 💪 POWER USERS BYPASS SEAT LIMITS
         if (!isPowerUser && tourData.available_seats !== undefined && data.length + bookingPassengers.length > tourData.available_seats) {
           wrappedShowNotification("error", "Cannot import passengers. The tour is fully booked.");
           return;
@@ -806,14 +807,18 @@ export default function AddPassengerTab({
           return;
         }
 
-        const newPassengers = data.map((row, idx) => {
+        // ✅ FIXED: Convert CSV data to Passenger objects first
+        const csvPassengers: Passenger[] = data.map((row, idx) => {
+          const baseSerial = bookingPassengers.length + idx + 1;
           const passenger: Passenger = {
             id: generatePassengerId(),
             order_id: "",
             user_id: currentUser.id,
             name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
-            room_allocation: row["Room Allocation"] || "",
-            serial_no: (bookingPassengers.length + idx + 1).toString(),
+            tour_title: selectedTour,
+            departure_date: cleanDateForDB(departureDate),
+            room_allocation: row["Room Allocation"] || "", // Will be set later
+            serial_no: baseSerial.toString(),
             last_name: row["Last Name"] || "",
             first_name: row["First Name"] || "",
             date_of_birth: row["Date of Birth"] || "",
@@ -823,12 +828,9 @@ export default function AddPassengerTab({
             passport_expiry: cleanDateForDB(row["Passport Expiry"]),
             nationality: row["Nationality"] || "Mongolia",
             roomType: row["Room Type"] || "",
-            hotel: row["Hotel"] || "",
+            hotel: row["Hotel"] || availableHotels[0] || "",
             additional_services: row["Additional Services"]
-              ? row["Additional Services"]
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean)
+              ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
               : [],
             price: parseFloat(row["Price"]) || 0,
             email: row["Email"] || "",
@@ -839,24 +841,29 @@ export default function AddPassengerTab({
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             status: "active",
-            tour_title: selectedTour,
-            departure_date: cleanDateForDB(departureDate),
             is_blacklisted: false,
             blacklisted_date: null,
           };
-          
-          // Calculate price with services
+
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
           }
-          
+
           return passenger;
+        });
+
+        // ✅ FIXED: Now we have a proper Passenger[] array for assignRoomAllocation
+        const newPassengers = csvPassengers.map((passenger, idx) => {
+          const roomAllocation = assignRoomAllocation([...bookingPassengers, ...csvPassengers.slice(0, idx)],
+            bookingPassengers.length + idx,
+            passenger.roomType
+          );
+          return { ...passenger, room_allocation: roomAllocation };
         });
 
         setBookingPassengers(prev => [...prev, ...newPassengers]);
         setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
         wrappedShowNotification("success", `Successfully imported ${newPassengers.length} passengers`);
-        console.log(`✅ ${newPassengers.length} passengers imported successfully!`);
       } catch (error) {
         console.error("❌ CSV parsing error:", error);
         wrappedShowNotification("error", "Failed to parse CSV file. Please check the format.");
@@ -866,13 +873,11 @@ export default function AddPassengerTab({
     e.target.value = "";
   };
 
-  // ✅ MEMOIZED: Use bookingPassengers
-  const totalPrice = useMemo(() => 
-    bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0), 
+  const totalPrice = useMemo(() =>
+    bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0),
     [bookingPassengers]
   );
 
-  // ✅ CONSOLIDATED: Single navigation handler
   const handleNextStep = useCallback(async () => {
     switch (activeStep) {
       case 1:
@@ -916,9 +921,9 @@ export default function AddPassengerTab({
           {(bookingPassengers.length > 0 || selectedTour || departureDate) && (
             <button
               onClick={resetBookingForm}
-              className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              className="px-4 py-2 text-green-600 border border-green-300 rounded-lg hover:bg-green-50 transition-colors"
             >
-              Reset Form
+              Complete Registration
             </button>
           )}
         </div>
@@ -944,7 +949,6 @@ export default function AddPassengerTab({
 
         {activeStep === 2 && (
           <>
-            {/* 💪 POWER USER HEADER - Clean booking info only */}
             <div className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl shadow-sm border border-slate-200 mb-6">
               <div className="px-6 py-4 border-b border-slate-200">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -994,102 +998,121 @@ export default function AddPassengerTab({
                 </div>
               </div>
               <div className="px-6 py-4 bg-white rounded-b-xl">
-                <div className="flex flex-wrap gap-3 justify-between">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={addPassenger}
-                      disabled={bookingPassengers.length >= MAX_PASSENGERS}
-                      className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Add Passenger
-                    </button>
-                    <button
-                      onClick={clearAllPassengers}
-                      className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Clear All
-                    </button>
-                    <button
-                      onClick={() => newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                      className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                      </svg>
-                      Jump to Bottom
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => downloadTemplate(wrappedShowNotification)}
-                      className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Template
-                    </button>
-                    <label className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95 cursor-pointer">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      Upload CSV
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={handleUploadCSV}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setActiveStep(1)}
-                      className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                      Back
-                    </button>
-                    <button
-                      onClick={handleNextStep}
-                      disabled={bookingPassengers.length === 0}
-                      className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-                    >
-                      Next
-                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                <BookingActions
+                  bookingPassengers={bookingPassengers}
+                  selectedTour={selectedTour}
+                  totalPrice={totalPrice}
+                  addPassenger={addPassenger}
+                  clearAllPassengers={clearAllPassengers}
+                  resetBookingForm={resetBookingForm}
+                  handleDownloadCSV={downloadTemplate}
+                  handleUploadCSV={handleUploadCSV}
+                  newPassengerRef={newPassengerRef}
+                  maxPassengers={MAX_PASSENGERS}
+                  canAddPassenger={canAdd}
+                />
               </div>
             </div>
 
-            {/* ✅ PASSENGER FORM - Uses local bookingPassengers */}
-            <PassengerForm
-              passengers={bookingPassengers}
-              setPassengers={setBookingPassengers}
-              selectedTourData={selectedTourData}
-              errors={errors}
-              updatePassenger={updatePassenger}
-              removePassenger={removePassenger}
-              downloadTemplate={() => downloadTemplate(wrappedShowNotification)}
-              handleUploadCSV={handleUploadCSV}
-              addPassenger={addPassenger}
-              setActiveStep={setActiveStep}
-              showNotification={wrappedShowNotification}
-              expandedPassengerId={expandedPassengerId}
-              setExpandedPassengerId={setExpandedPassengerId}
-              newPassengerRef={newPassengerRef}
-            />
+            {/* ✅ PASSENGER LIST - Much cleaner now! */}
+            <div className="space-y-6">
+              {bookingPassengers.map((passenger, index) => (
+                <div
+                  key={passenger.id}
+                  ref={index === bookingPassengers.length - 1 ? newPassengerRef : null}
+                  className={`border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 ${expandedPassengerId === passenger.id ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:shadow-md'
+                    }`}
+                >
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-full">
+                          <span className="text-sm font-semibold text-blue-800">{passenger.serial_no}</span>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900">
+                            {passenger.first_name} {passenger.last_name}
+                          </h4>
+                          <p className="text-sm text-gray-600">
+                            {passenger.email || 'No email'} • {passenger.nationality || 'Mongolia'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${passenger.roomType === 'Single' || passenger.roomType === 'King'
+                          ? 'bg-green-100 text-green-800'
+                          : passenger.roomType === 'Double' || passenger.roomType === 'Twin'
+                            ? 'bg-blue-100 text-blue-800'
+                            : passenger.roomType === 'Family'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                          {passenger.roomType || 'No room type'}
+                        </span>
+                        <button
+                          onClick={() => setExpandedPassengerId(
+                            expandedPassengerId === passenger.id ? null : passenger.id
+                          )}
+                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <svg className={`w-5 h-5 transform ${expandedPassengerId === passenger.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => removePassenger(index)}
+                          className="p-1 text-red-400 hover:text-red-600 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ✅ Use the new PassengerFormFields component */}
+                  {expandedPassengerId === passenger.id && (
+                    <div className="p-6 bg-white">
+                      <PassengerFormFields
+                        passenger={passenger}
+                        index={index}
+                        selectedTourData={selectedTourData}
+                        errors={errors}
+                        updatePassenger={updatePassenger}
+                        expanded={true}
+                        fieldLoading={fieldLoading}
+                        nationalities={NATIONALITIES}
+                        roomTypes={ROOM_TYPES}
+                        hotels={availableHotels}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 mt-8">
+              <button
+                onClick={() => setActiveStep(1)}
+                className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+              <button
+                onClick={handleNextStep}
+                disabled={bookingPassengers.length === 0}
+                className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
+              >
+                Review Booking
+                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </>
         )}
 
@@ -1112,7 +1135,7 @@ export default function AddPassengerTab({
         )}
       </div>
 
-      {/* 💪 POWER USER MOBILE BOTTOM BAR */}
+      {/* Mobile Bottom Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:hidden z-40">
         <div className="flex justify-between items-center mb-2">
           <div className="text-sm text-gray-600">Step {activeStep} of 3</div>
@@ -1127,7 +1150,7 @@ export default function AddPassengerTab({
           <div className="flex gap-2 mb-2">
             <button
               onClick={addPassenger}
-              disabled={bookingPassengers.length >= MAX_PASSENGERS}
+              disabled={!canAdd || bookingPassengers.length >= MAX_PASSENGERS}
               className="flex-1 inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1177,11 +1200,6 @@ export default function AddPassengerTab({
               className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
             >
               {activeStep === 1 ? "Continue to Passengers" : "Review Booking"}
-              {activeStep === 2 && (
-                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              )}
             </button>
           )}
           {activeStep === 3 && (

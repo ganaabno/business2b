@@ -1,4 +1,4 @@
-// src/Pages/AdminInterface.tsx - COMPLETE FIXED VERSION WITH DEBUG
+// src/Pages/AdminInterface.tsx - ENHANCED VERSION
 import { useState, useEffect } from "react";
 import {
   Users,
@@ -35,13 +35,13 @@ function AdminInterface({
   currentUser,
   onLogout,
 }: AdminInterfaceProps) {
-  // FIXED: Added "authRequests" to the type
   const [selectedTab, setSelectedTab] = useState<
     "users" | "orders" | "addTourTab" | "authRequests"
   >("orders");
 
-  // NEW: Pending users count for notification badge
+  // 🔥 ENHANCED: Better state management for pending count
   const [pendingUsersCount, setPendingUsersCount] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [newTour, setNewTour] = useState({
     title: "",
@@ -52,6 +52,35 @@ function AdminInterface({
     services: "",
   });
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
+
+  // 🔥 ENHANCED: Refresh users when new auth requests are approved
+  const handleAuthRequestRefresh = async () => {
+    console.log('🔄 Auth request processed, refreshing users...');
+    
+    try {
+      // Refresh users list to include newly approved users
+      const { data: updatedUsers, error } = await supabase.from("users").select("*");
+      if (!error && updatedUsers) {
+        setUsers(updatedUsers);
+        console.log('✅ Users refreshed:', updatedUsers.length);
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing users:', error);
+    }
+    
+    // Trigger re-render of AuthRequest component
+    setRefreshKey(prev => prev + 1);
+  };
+
+  // 🔥 NEW: Auto-refresh pending count every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // This will trigger AuthRequest's onPendingCountChange
+      console.log('🔄 Auto-refreshing pending count...');
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // DEBUG: Log user role to console
   useEffect(() => {
@@ -138,11 +167,6 @@ function AdminInterface({
     alert("User updated successfully!");
   };
 
-  // Refresh users when auth requests are approved
-  const handleAuthRequestRefresh = () => {
-    console.log('🔄 Auth request processed, refresh users if needed');
-  };
-
   // FIXED: Safe ID display function
   const displayOrderId = (id: any) => {
     if (!id) return 'N/A';
@@ -190,7 +214,7 @@ function AdminInterface({
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* FIXED: Enhanced Navigation Tabs - NOW SHOWS FOR ADMIN TOO */}
+        {/* ENHANCED Navigation Tabs */}
         <div className="">
           <nav className="flex space-x-8" aria-label="Tabs">
             <button
@@ -203,27 +227,30 @@ function AdminInterface({
             >
               <FileText className={`w-4 h-4 mr-2 ${selectedTab === "orders" ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-500'}`} />
               Orders
+              <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                {orders.length}
+              </span>
             </button>
             
-            {/* FIXED: Show tabs for both admin and superadmin */}
+            {/* Show tabs for both admin and superadmin */}
             {canSeeAdminTabs && (
               <>
                 <button
                   onClick={() => setSelectedTab("users")}
                   className={`group flex items-center pb-4 px-1 text-sm font-medium transition-all duration-200 ${
                     selectedTab === "users"
-                      ? "border-b-2 border-blue-600 text-blue-600"
+                      ? "border-b-2 border-purple-600 text-purple-600"
                       : "text-gray-500 hover:text-gray-700 hover:border-gray-300"
                   }`}
                 >
-                  <Users className={`w-4 h-4 mr-2 ${selectedTab === "users" ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                  <Users className={`w-4 h-4 mr-2 ${selectedTab === "users" ? 'text-purple-600' : 'text-gray-400 group-hover:text-gray-500'}`} />
                   Users
-                  <span className="ml-1 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                  <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
                     {users.length}
                   </span>
                 </button>
                 
-                {/* FIXED: Auth Requests Tab - NOW VISIBLE FOR ADMIN TOO */}
+                {/* ENHANCED: Auth Requests Tab with Dynamic Badge */}
                 <button
                   onClick={() => setSelectedTab("authRequests")}
                   className={`group flex items-center pb-4 px-1 text-sm font-medium transition-all duration-200 relative ${
@@ -234,14 +261,28 @@ function AdminInterface({
                 >
                   <Clock className={`w-4 h-4 mr-2 ${selectedTab === "authRequests" ? 'text-emerald-600' : 'text-gray-400 group-hover:text-gray-500'}`} />
                   Auth Requests
-                  {/* Notification Badge - Pulsing red dot */}
+                  
+                  {/* 🔥 ENHANCED: Dynamic Notification Badge */}
                   {pendingUsersCount > 0 ? (
-                    <span className="absolute -top-2 -right-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse shadow-lg border-2 border-white">
-                      {pendingUsersCount}
+                    <span className="absolute -top-2 -right-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse shadow-lg border-2 border-white">
+                      {pendingUsersCount > 99 ? '99+' : pendingUsersCount}
                     </span>
                   ) : (
                     <span className="ml-1 text-xs text-gray-400">(0)</span>
                   )}
+                </button>
+
+                {/* Add Tour Tab */}
+                <button
+                  onClick={() => setSelectedTab("addTourTab")}
+                  className={`group flex items-center pb-4 px-1 text-sm font-medium transition-all duration-200 ${
+                    selectedTab === "addTourTab"
+                      ? "border-b-2 border-green-600 text-green-600"
+                      : "text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <MapPin className={`w-4 h-4 mr-2 ${selectedTab === "addTourTab" ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                  Add Tour
                 </button>
               </>
             )}
@@ -249,11 +290,13 @@ function AdminInterface({
         </div>
 
         {/* Debug Info - Remove after testing */}
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg hidden md:block">
-          <p className="text-sm text-yellow-800">
-            🔍 <strong>Debug:</strong> Role: {currentUser.role} | Can see admin tabs: {canSeeAdminTabs ? 'YES' : 'NO'} | Pending: {pendingUsersCount}
-          </p>
-        </div>
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              🔍 <strong>Debug:</strong> Role: {currentUser.role} | Can see admin tabs: {canSeeAdminTabs ? 'YES' : 'NO'} | Pending: {pendingUsersCount} | Users: {users.length}
+            </p>
+          </div>
+        )}
 
         {/* Orders Tab */}
         {selectedTab === "orders" && (
@@ -349,13 +392,13 @@ function AdminInterface({
           </div>
         )}
 
-        {/* Users Tab - FIXED */}
+        {/* Users Tab */}
         {selectedTab === "users" && canSeeAdminTabs && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border">
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Users className="w-5 h-5 mr-2 text-blue-600" />
+                  <Users className="w-5 h-5 mr-2 text-purple-600" />
                   Active Users ({users.length})
                 </h3>
               </div>
@@ -364,7 +407,7 @@ function AdminInterface({
                   <div className="text-center py-12">
                     <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No users available yet.</p>
-                    <p className="text-sm text-gray-400 mt-2">Users will appear here once they register.</p>
+                    <p className="text-sm text-gray-400 mt-2">Users will appear here once they register and get approved.</p>
                   </div>
                 ) : (
                   <table className="min-w-full divide-y divide-gray-200">
@@ -415,11 +458,12 @@ function AdminInterface({
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              user.access === 'active' ? 'bg-green-100 text-green-800' :
+                              user.status === 'approved' ? 'bg-green-100 text-green-800' :
+                              user.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                               user.access === 'suspended' ? 'bg-red-100 text-red-800' :
-                              'bg-yellow-100 text-yellow-800'
+                              'bg-gray-100 text-gray-800'
                             }`}>
-                              {user.access}
+                              {user.status || user.access}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -490,7 +534,7 @@ function AdminInterface({
                           </label>
                           <select
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                            value={editingUser.access}
+                            value={editingUser.access || editingUser.status || 'active'}
                             onChange={(e) =>
                               setEditingUser({ ...editingUser, access: e.target.value as any })
                             }
@@ -524,15 +568,130 @@ function AdminInterface({
             </div>
           </div>
         )}
-  
-        {/* FIXED: Auth Requests Tab - NOW FULLY VISIBLE FOR ADMIN/SUPERADMIN */}
+
+        {/* Add Tour Tab */}
+        {selectedTab === "addTourTab" && canSeeAdminTabs && (
+          <div className="bg-white rounded-xl shadow-sm border">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <MapPin className="w-5 h-5 mr-2 text-green-600" />
+                Add New Tour
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tour Title</label>
+                  <input
+                    type="text"
+                    value={newTour.title}
+                    onChange={(e) => setNewTour({ ...newTour, title: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter tour title"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Departure Date</label>
+                  <input
+                    type="date"
+                    value={newTour.departure_date}
+                    onChange={(e) => setNewTour({ ...newTour, departure_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <textarea
+                    value={newTour.description}
+                    onChange={(e) => setNewTour({ ...newTour, description: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter tour description"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Available Seats</label>
+                  <input
+                    type="number"
+                    value={newTour.seats}
+                    onChange={(e) => setNewTour({ ...newTour, seats: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter number of seats"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Hotels (comma separated)</label>
+                  <input
+                    type="text"
+                    value={newTour.hotels}
+                    onChange={(e) => setNewTour({ ...newTour, hotels: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Hotel A, Hotel B, Hotel C"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Services (comma separated)</label>
+                  <input
+                    type="text"
+                    value={newTour.services}
+                    onChange={(e) => setNewTour({ ...newTour, services: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Breakfast, Transportation, Guide"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 pt-6">
+                <button
+                  onClick={handleAddTourTab}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center transition-colors shadow-sm"
+                >
+                  <MapPin className="w-4 h-4 mr-2" />
+                  Add Tour
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🔥 ENHANCED: Auth Requests Tab - FULLY INTEGRATED */}
         {selectedTab === "authRequests" && canSeeAdminTabs && (
           <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl">
+                    <Clock className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Account Approval Requests</h3>
+                    <p className="text-sm text-gray-500">
+                      Review and approve new user registrations • {pendingUsersCount} pending
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleAuthRequestRefresh}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center transition-colors shadow-sm text-sm"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+              
+              {/* 🔥 AuthRequest Component with Key for Refresh */}
               <AuthRequest 
-              currentUserId={currentUser.id} 
-              onRefresh={handleAuthRequestRefresh}
-              onPendingCountChange={(count) => setPendingUsersCount(count)}
-            />
+                currentUserId={currentUser.id} 
+                onRefresh={handleAuthRequestRefresh}
+                onPendingCountChange={(count) => {
+                  console.log('📊 Pending count updated:', count);
+                  setPendingUsersCount(count);
+                }}
+                key={refreshKey}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-// src/Pages/Login.tsx
+// src/components/Login.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
@@ -56,7 +56,7 @@ export default function Login() {
           {/* Logo and header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
-              <img src={Logo} alt="LogoPic" />
+              <img src={Logo} alt="LogoPic" className="w-8 h-8" />
             </div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
               Welcome Back
@@ -168,7 +168,6 @@ export default function Login() {
               </div>
             </div>
 
-            {/* FIXED: Simple button instead of Routes */}
             <div className="text-center">
               <button 
                 onClick={handleSignupClick}

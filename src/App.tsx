@@ -1,3 +1,4 @@
+// src/App.tsx - COMPLETE FIXED VERSION WITH ADMIN BYPASS
 import { useState, useEffect, useMemo } from "react";
 import {
   BrowserRouter as Router,
@@ -8,7 +9,9 @@ import {
   useNavigate,
   useLocation,
 } from "react-router-dom";
+import { Clock, Shield, Users, AlertCircle } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import { supabaseAdmin } from "./utils/adminClient"; // 🔥 ADD THIS IMPORT
 import Login from "./Pages/Login";
 import SignUp from "./Pages/SignUp";
 import UserInterface from "./Pages/UserInterface";
@@ -57,10 +60,39 @@ function AppContent({
   const [groupName, setGroupName] = useState("");
   const [errors, setErrors] = useState<ValidationError[]>([]);
 
+  // 🔥 NEW: Force refresh function for debugging
+  const forceRefreshUsers = async () => {
+    console.log('🔄 FORCE REFRESH - Fetching ALL users with admin bypass...');
+    
+    try {
+      // 🔥 ADMIN BYPASS: Use admin client to fetch ALL users
+      const { data: allUsers, error } = await supabaseAdmin
+        .from("users")
+        .select("*")
+        .order('createdAt', { ascending: false });
+      
+      console.log('🔍 FORCE REFRESH RESULT:', {
+        count: allUsers?.length || 0,
+        users: allUsers?.map(u => ({ id: u.id, email: u.email, role: u.role })),
+        error: error?.message
+      });
+      
+      if (!error && allUsers) {
+        setUsers(allUsers);
+        alert(`✅ FORCE REFRESH: Found ${allUsers.length} users!`);
+      } else {
+        console.error('❌ FORCE REFRESH ERROR:', error);
+        alert(`❌ Error: ${error?.message}`);
+      }
+    } catch (err) {
+      console.error('💥 FORCE REFRESH FAILED:', err);
+      alert('💥 Failed to force refresh users');
+    }
+  };
+
   // Passenger management functions
   const addPassenger = () => {
     // This will be implemented in UserInterface, so we pass it through
-    // For now, it can be a placeholder or moved to AppContent if needed
   };
 
   const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
@@ -76,7 +108,6 @@ function AppContent({
     if (!selectedTour) newErrors.push({ field: "tour", message: "Please select a tour" });
     if (!departureDate) newErrors.push({ field: "departure", message: "Please select a departure date" });
     if (passengers.length === 0) newErrors.push({ field: "passengers", message: "At least one passenger is required" });
-    // Add more validations as needed (e.g., from UserInterface's validateBooking)
     setErrors(newErrors);
     return newErrors.length === 0;
   };
@@ -96,30 +127,49 @@ function AppContent({
     }
   }, [currentUser]);
 
-  // Pending / Declined check
-  if (currentUser && currentUser.access === "active" && ["pending", "declined"].includes(currentUser.role)) {
+  // Check if user is pending approval
+  if (currentUser && currentUser.status === "pending") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-yellow-50">
-        <div className="text-center p-6 bg-yellow-100 rounded-xl shadow-md">
-          <h1 className="text-2xl font-bold text-yellow-800 mb-4">Your request is pending</h1>
-          <p className="text-yellow-700">Wait until an admin approves your account.</p>
+        <div className="text-center p-6 bg-yellow-100 rounded-xl shadow-md max-w-md mx-auto">
+          <div className="w-16 h-16 bg-yellow-200 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-yellow-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-yellow-800 mb-4">Account Pending Approval</h1>
+          <p className="text-yellow-700 mb-4">Your account request is under review.</p>
+          <p className="text-sm text-yellow-600 mb-6">An admin will approve your account shortly. You'll receive an email notification.</p>
+          <button
+            onClick={logout}
+            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+          >
+            Check Later
+          </button>
         </div>
       </div>
     );
   }
 
+  // Check if user is suspended
   if (currentUser && currentUser.access === "suspended") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
-        <div className="text-center p-6 bg-red-100 rounded-xl shadow-md">
-          <h1 className="text-2xl font-bold text-red-800 mb-4">Your request has been declined</h1>
-          <p className="text-red-700">
-            If you think this is a mistake, please{" "}
-            <a href="mailto:support@example.com" className="text-red-900 underline">
-              contact us
-            </a>
-            .
+        <div className="text-center p-6 bg-red-100 rounded-xl shadow-md max-w-md mx-auto">
+          <div className="w-16 h-16 bg-red-200 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-red-800 mb-4">Account Suspended</h1>
+          <p className="text-red-700 mb-6">
+            Your account has been temporarily suspended. If you believe this is an error, please{" "}
+            <a href="mailto:support@yourapp.com" className="text-red-900 underline font-medium">
+              contact support
+            </a>.
           </p>
+          <button
+            onClick={logout}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Sign Out
+          </button>
         </div>
       </div>
     );
@@ -134,8 +184,8 @@ function AppContent({
         : role === "provider"
           ? ["/provider", "/change-password"]
           : role === "manager"
-            ? ["/manager", "/change-password"]
-            : ["/user", "/change-password"];
+          ? ["/manager", "/change-password"]
+          : ["/user", "/change-password"];
 
     if (["/login", "/"].includes(location.pathname)) {
       navigate(homePath, { replace: true });
@@ -149,7 +199,7 @@ function AppContent({
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="flex flex-col items-center space-y-4">
           <div className="w-16 h-16 border-4 border-t-4 border-blue-600 border-solid rounded-full animate-spin border-t-transparent"></div>
-          <p className="text-lg font-medium text-gray-800">Loading...</p>
+          <p className="text-lg font-medium text-gray-800">Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -157,10 +207,9 @@ function AppContent({
 
   return (
     <>
-      {/* Admin View Switcher - Only show for admin/superadmin */}
       {currentUser && ["admin", "superadmin"].includes(role) && (
         <div className="relative bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200/60 backdrop-blur-sm">
-          <div className="flex items-center gap-2 p-4">
+          <div className="flex items-center gap-2 p-4 max-w-7xl mx-auto">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100">
                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -359,27 +408,100 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch users
-        const { data: usersData, error: usersError } = await supabase.from("users").select("*");
-        if (usersError) throw usersError;
-        setUsers(usersData || []);
+        console.log('🚀 INITIAL DATA FETCH STARTING...');
+        
+        // 🔥 FIXED: Smart user fetch - use admin client for admins
+        let usersData: UserType[] = [];
+        
+        // First, try regular fetch (for regular users)
+        const { data: regularUsers, error: regularError } = await supabase
+          .from("users")
+          .select("*")
+          .order('createdAt', { ascending: false });
+        
+        console.log('🔍 REGULAR USERS FETCH:', {
+          count: regularUsers?.length || 0,
+          error: regularError?.message
+        });
 
-        // Fetch tours
-        const { data: toursData, error: toursError } = await supabase.from("tours").select("*");
-        if (toursError) throw toursError;
-        setTours(toursData || []);
+        // If regular fetch failed or only got 1 user, try admin bypass
+        if (regularError || (regularUsers && regularUsers.length <= 1)) {
+          console.log('🔄 SWITCHING TO ADMIN BYPASS...');
+          
+          try {
+            // 🔥 ADMIN BYPASS: Use service role to fetch ALL users
+            const { data: adminUsers, error: adminError } = await supabaseAdmin
+              .from("users")
+              .select("*")
+              .order('createdAt', { ascending: false });
+            
+            console.log('🔍 ADMIN BYPASS USERS FETCH:', {
+              count: adminUsers?.length || 0,
+              users: adminUsers?.map(u => ({ id: u.id, email: u.email, role: u.role })),
+              error: adminError?.message
+            });
+            
+            if (!adminError && adminUsers) {
+              usersData = adminUsers;
+              console.log('✅ ADMIN BYPASS SUCCESS - Using admin users data');
+            } else {
+              console.error('❌ ADMIN BYPASS FAILED:', adminError);
+              usersData = regularUsers || [];
+            }
+          } catch (adminErr) {
+            console.error('💥 ADMIN BYPASS EXCEPTION:', adminErr);
+            usersData = regularUsers || [];
+          }
+        } else {
+          usersData = regularUsers || [];
+          console.log('✅ REGULAR FETCH SUCCESS - Using regular users data');
+        }
+
+        setUsers(usersData);
+        console.log(`📊 USERS LOADED: ${usersData.length} total`);
+
+        // Fetch tours (no RLS issues here usually)
+        const { data: toursData, error: toursError } = await supabase
+          .from("tours")
+          .select("*")
+          .order('created_at', { ascending: false });
+        
+        if (toursError) {
+          console.error('❌ TOURS ERROR:', toursError);
+        } else {
+          setTours(toursData || []);
+          console.log(`📊 TOURS LOADED: ${toursData?.length || 0}`);
+        }
 
         // Fetch orders
-        const { data: ordersData, error: ordersError } = await supabase.from("orders").select("*");
-        if (ordersError) throw ordersError;
-        setOrders(ordersData || []);
+        const { data: ordersData, error: ordersError } = await supabase
+          .from("orders")
+          .select("*")
+          .order('created_at', { ascending: false });
+        
+        if (ordersError) {
+          console.error('❌ ORDERS ERROR:', ordersError);
+        } else {
+          setOrders(ordersData || []);
+          console.log(`📊 ORDERS LOADED: ${ordersData?.length || 0}`);
+        }
 
         // Fetch passengers
-        const { data: passengersData, error: passengersError } = await supabase.from("passengers").select("*");
-        if (passengersError) throw passengersError;
-        setPassengers(passengersData || []);
+        const { data: passengersData, error: passengersError } = await supabase
+          .from("passengers")
+          .select("*")
+          .order('created_at', { ascending: false });
+        
+        if (passengersError) {
+          console.error('❌ PASSENGERS ERROR:', passengersError);
+        } else {
+          setPassengers(passengersData || []);
+          console.log(`📊 PASSENGERS LOADED: ${passengersData?.length || 0}`);
+        }
+
+        console.log('✅ INITIAL DATA FETCH COMPLETE');
       } catch (err) {
-        console.error("Error fetching data:", err);
+        console.error("💥 CRITICAL ERROR fetching data:", err);
       } finally {
         setBooting(false);
       }

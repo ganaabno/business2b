@@ -1,4 +1,5 @@
-export type Role = "user" | "provider" | "admin" | "superadmin" | "manager" | "pending";
+// src/types/type.ts
+export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
 
 export interface User {
   userId: string;
@@ -12,7 +13,7 @@ export interface User {
   password: string;
   blacklist: boolean;
   company: string;
-  access: "active" | "suspended"; // Match DB schema
+  access: "active" | "suspended" | "pending"; // Added "pending"
   status: "pending" | "declined" | "approved";
   birth_date: string;
   id_card_number: string;
@@ -27,6 +28,7 @@ export interface User {
   createdBy: string;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
+  auth_user_id?: string;
 }
 
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
@@ -82,6 +84,19 @@ export interface Tour {
   updated_at: string;
   status?: "active" | "inactive" | "full" | "hidden";
   show_in_provider?: boolean | null;
+}
+
+export interface PendingUser {
+  id: string;
+  email: string;
+  username: string;
+  password: string;
+  role_requested: 'user' | 'manager' | 'provider';
+  status: 'pending' | 'approved' | 'declined';
+  created_at: string;
+  approved_by?: string;
+  approved_at?: string;
+  notes?: string;
 }
 
 export interface Order {

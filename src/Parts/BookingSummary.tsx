@@ -267,11 +267,11 @@ export default function BookingSummary({
               aria-label="Show booking in provider dashboard (optional)"
             />
             <EyeIcon className="w-5 h-5 text-gray-600" />
-            <span className="text-sm text-gray-700">Show in provider dashboard (optional)</span>
+            <span className="text-sm text-gray-700">Show to provider dashboard (optional)</span>
           </label>
         </div>
       )}
-
+  
       <div className="border-t pt-6">
         <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
         <div className="space-y-3">

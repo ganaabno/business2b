@@ -38,7 +38,7 @@ export default function AccountStatus() {
       return;
     }
     
-    if (currentUser.role === 'pending') {
+    if (currentUser.role === "user") {
       checkPendingRequest();
     } else {
       // If user is already approved or has different role, redirect to dashboard

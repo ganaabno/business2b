@@ -7,16 +7,16 @@ interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User | null>;
-  signup: (email: string, password: string, name?: string) => Promise<User | null>;
   logout: () => Promise<void>;
+  hasPendingRequest: (email: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   loading: true,
   login: async () => null,
-  signup: async () => null,
-  logout: async () => {},
+  logout: async () => { },
+  hasPendingRequest: async () => false,
 });
 
 export function useAuth() {
@@ -28,6 +28,7 @@ export function toRole(value: any): Role {
   return ["user", "provider", "admin", "superadmin", "manager"].includes(v) ? v : "user";
 }
 
+// In your AuthProvider.tsx, update the fetchUser function:
 async function fetchUser(uid: string): Promise<User | null> {
   try {
     const { data, error } = await supabase.from("users").select("*").eq("id", uid).maybeSingle();
@@ -47,6 +48,8 @@ async function fetchUser(uid: string): Promise<User | null> {
       blacklist: Boolean(data.blacklist ?? false),
       company: String(data.company ?? ""),
       access: String(data.access ?? "active") as "active" | "suspended",
+      // 🔥 FIXED: Add status field
+      status: String(data.status ?? "approved") as "pending" | "approved" | "declined",
       birth_date: String(data.birth_date ?? ""),
       id_card_number: String(data.id_card_number ?? ""),
       travel_history: Array.isArray(data.travel_history) ? data.travel_history : [],
@@ -60,7 +63,7 @@ async function fetchUser(uid: string): Promise<User | null> {
       createdBy: String(data.createdBy ?? ""),
       createdAt: String(data.createdAt ?? new Date().toISOString()),
       updatedAt: String(data.updatedAt ?? new Date().toISOString()),
-      status: "approved",
+      auth_user_id: String(data.auth_user_id ?? ""),
     };
   } catch {
     return null;
@@ -111,6 +114,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  const hasPendingRequest = async (email: string): Promise<boolean> => {
+    try {
+      const { data } = await supabase
+        .from("pending_users")
+        .select("id")
+        .eq("email", email)
+        .single();
+      return !!data;
+    } catch {
+      return false;
+    }
+  };
+
   const login = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -121,36 +137,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return user;
   };
 
-  const signup = async (email: string, password: string, name?: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-    if (!data.user) return null;
-
-    // Insert into users table with extra fields
-    const { error: insertError } = await supabase.from("users").insert([
-      {
-        id: data.user.id,
-        email,
-        username: name || email.split("@")[0],
-        role: "user",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ]);
-    if (insertError) console.error("Error inserting into users table:", insertError.message);
-
-    const user = await fetchUser(data.user.id);
-    if (user) setCurrentUser(user);
-    return user;
-  };
-
   const logout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{
+      currentUser,
+      loading,
+      login,
+      logout,
+      hasPendingRequest
+    }}>
       {children}
     </AuthContext.Provider>
   );

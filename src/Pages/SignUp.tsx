@@ -1,265 +1,319 @@
-// src/Pages/SignUp.tsx
+// src/components/Signup.tsx - TYPESCRIPT SAFE VERSION
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthProvider";
 import { supabase } from "../supabaseClient";
-import { Eye, EyeOff, Mail, User, Shield } from "lucide-react";
-import Logo from "../assets/last logo.png";
+import { supabaseAdmin } from "../utils/adminClient";  // 🔥 ADD THIS IMPORT
+import { 
+  Eye, 
+  EyeOff, 
+  Mail, 
+  User, 
+  Shield, 
+  Lock, 
+  UserCheck, 
+  AlertCircle,
+  Clock,
+  CheckCircle 
+} from "lucide-react";
 
 export default function Signup() {
+  const { hasPendingRequest } = useAuth();
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [roleRequested, setRoleRequested] = useState<"user" | "manager" | "provider">("user");
-  const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "pending">("idle");
   const [message, setMessage] = useState("");
-  const [showPassword, setShowPassword] = useState(false); // For future use if needed
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus("pending");
+    setStatus("loading");
     setMessage("");
 
-    try {
-      // Check if user already exists
-      const { data: existing } = await supabase
-        .from("pending_users")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
+    // Basic validation
+    if (!email || !username || !password) {
+      setStatus("error");
+      setMessage("Please fill in all fields");
+      return;
+    }
 
-      if (existing) {
+    if (password.length < 6) {
+      setStatus("error");
+      setMessage("Password must be at least 6 characters");
+      return;
+    }
+
+    // 🔥 FIXED: TypeScript-safe pending request check
+    let hasPending = false;
+    try {
+      const { data, error } = await supabase
+        .from("pending_users")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();  // 🔥 Use maybeSingle() instead of single()
+
+      // Handle 406 (no rows) or actual errors
+      if (error) {
+        if (error.message.includes('406') || error.message.includes('PGRST116')) {
+          // 406 = no rows found = no pending request = GOOD!
+          console.log('✅ No pending request found - proceeding with signup');
+          hasPending = false;
+        } else {
+          // Real error
+          console.error('❌ Error checking pending:', error);
+          setStatus("error");
+          setMessage("Error checking account status. Please try again.");
+          return;
+        }
+      } else {
+        // Data exists = pending request
+        hasPending = !!data;
+      }
+    } catch (error: any) {
+      console.error('❌ Unexpected error checking pending:', error);
+      // Assume no pending on unexpected error (fail open)
+      hasPending = false;
+    }
+
+    if (hasPending) {
+      setStatus("pending");
+      setMessage("You already have a pending account request. Please wait for admin approval.");
+      return;
+    }
+
+    try {
+      // 🔥 FIXED: TypeScript-safe auth user check
+      let userExists = false;
+      try {
+        if (supabaseAdmin) {
+          const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+          userExists = users.some((user: any) => user.email === email);
+        } else {
+          console.log('⚠️ No admin client available - skipping auth check');
+        }
+      } catch (adminError: any) {
+        // 403 = no admin access, or other admin API error
+        console.log('⚠️ Admin API error (expected for non-admin):', adminError.message);
+        userExists = false;  // Assume doesn't exist (safe for public signup)
+      }
+      
+      if (userExists) {
         setStatus("error");
-        setMessage("Your request is already pending. Please wait for approval.");
+        setMessage("An account with this email already exists. Please log in instead.");
         return;
       }
 
-      // Insert request into pending_users
+      // Create pending request
       const { error } = await supabase.from("pending_users").insert({
         email,
         username,
+        password, // Plain password - will be hashed on approval
         role_requested: roleRequested,
-        status: "pending",
-        created_at: new Date(),
+        created_at: new Date().toISOString(),
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Signup error:", error);
+        throw new Error("Failed to create account request");
+      }
 
       setStatus("success");
-      setMessage("Your request is pending approval. Please wait for admin approval.");
+      setMessage("Account request sent! An admin will review it shortly.");
+      
+      // Clear form
       setEmail("");
       setUsername("");
-      setRoleRequested("user");
-      setTimeout(() => navigate("/login"), 2000); // Redirect to login after 2 seconds
-    } catch (err: any) {
-      console.error(err);
+      setPassword("");
+      
+      // Redirect to login after 3 seconds
+      setTimeout(() => navigate("/login"), 3000);
+      
+    } catch (error: any) {
+      console.error("Signup failed:", error);
       setStatus("error");
-      setMessage(err.message || "An error occurred during signup.");
+      setMessage(error.message || "Something went wrong");
     }
   };
 
-  // Success state - styled to match your design
-  // src/Pages/SignUp.tsx - Updated Success State
-  // Success state - styled to match your design
+  // Keep your existing render methods (pending, success, form) as-is...
+  if (status === "pending") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-yellow-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Pending</h2>
+          <p className="text-gray-600 mb-6">{message}</p>
+          <p className="text-sm text-gray-500 mb-6">
+            An admin will review your request soon.
+          </p>
+          <button
+            onClick={() => navigate("/login")}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === "success") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-        {/* Background decoration */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse delay-1000"></div>
-        </div>
-
-        <div className="relative w-full max-w-md">
-          <div className="bg-white/80 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 transition-all duration-300">
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl mb-4 shadow-lg">
-                <Shield className="h-8 w-8 text-white" />
-              </div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                Request Sent
-              </h1>
-              <p className="text-gray-600 mt-2">Your account request has been submitted successfully</p>
-            </div>
-
-            <div className="text-center space-y-6">
-              <div className="bg-green-50 border border-green-200 text-green-700 px-6 py-4 rounded-xl">
-                <div className="flex items-center justify-center">
-                  <svg className="w-6 h-6 mr-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="font-medium">{message}</span>
-                </div>
-              </div>
-
-              <div className="text-sm text-gray-600 space-y-1">
-                <p>✅ An admin will review your request shortly</p>
-                <p>✅ You'll receive an email notification when approved</p>
-                <p className="text-gray-500">Please login to check your account status later</p>
-              </div>
-
-              <button
-                onClick={() => navigate("/login")}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:from-blue-700 hover:to-purple-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
-              >
-                Go to Login
-              </button>
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Sent!</h2>
+          <p className="text-gray-600 mb-6">{message}</p>
+          <p className="text-sm text-gray-500 mb-6">
+            You'll receive an email when your account is approved.
+          </p>
+          <button
+            onClick={() => navigate("/login")}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go to Login
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse delay-1000"></div>
-      </div>
-
-      <div className="relative w-full max-w-md">
-        {/* Main signup card */}
-        <div className="bg-white/80 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 transition-all duration-300 hover:shadow-3xl">
-          {/* Logo and header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
-              <img src={Logo} alt="LogoPic" className="h-8 w-8" />
-            </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-              Request Access
-            </h1>
-            <p className="text-gray-600 mt-2">Create your account - pending admin approval</p>
-          </div>
-
-          {/* Error message */}
-          {status === "error" && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 animate-shake">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                {message}
-              </div>
-            </div>
-          )}
-
-          {/* Signup form */}
-          <form onSubmit={handleSignup} className="space-y-6">
-            {/* Username field */}
-            <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium text-gray-700">
-                Username
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  id="username"
-                  type="text"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
-                  required
-                  disabled={status === "pending"}
-                />
-              </div>
-            </div>
-
-            {/* Email field */}
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-gray-700">
-                Email Address
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
-                  required
-                  disabled={status === "pending"}
-                />
-              </div>
-            </div>
-
-            {/* Role selection */}
-            <div className="space-y-2">
-              <label htmlFor="role" className="text-sm font-medium text-gray-700">
-                Account Type
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Shield className="h-5 w-5 text-gray-400" />
-                </div>
-                <select
-                  id="role"
-                  value={roleRequested}
-                  onChange={(e) => setRoleRequested(e.target.value as "user" | "manager" | "provider")}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm appearance-none"
-                  disabled={status === "pending"}
-                  style={{
-                    backgroundImage: 'url("data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%236b7280\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e")',
-                    backgroundPosition: 'right 0.5rem center',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: '1.5em 1.5em',
-                    paddingRight: '2.5rem'
-                  }}
-                >
-                  <option value="user">User (Regular Access)</option>
-                  <option value="manager">Manager (Team Management)</option>
-                  <option value="provider">Provider (Tour Creation)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={status === "pending"}
-              className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:from-emerald-700 hover:to-green-700 focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
-            >
-              {status === "pending" ? (
-                <div className="flex items-center justify-center">
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                  Submitting Request...
-                </div>
-              ) : (
-                "Submit Access Request"
-              )}
-            </button>
-          </form>
-
-          {/* Back to login */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => navigate("/login")}
-              disabled={status === "pending"}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors disabled:opacity-50"
-            >
-              Already have an account? Sign in
-            </button>
-          </div>
-
-          {/* Info about approval process */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs text-blue-700 text-center">
-              <span className="font-medium">Note:</span> Your request will be reviewed by an administrator.
-              You'll receive an email once your account is approved.
-            </p>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Join Us</h1>
+          <p className="text-gray-600">Create an account request</p>
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-8 text-sm text-gray-500">
-          <p>Secure registration powered by advanced encryption</p>
+        {status === "error" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+            <span>{message}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                required
+                disabled={status === "loading"}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Your username"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                required
+                disabled={status === "loading"}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Choose a password"
+                className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                required
+                minLength={6}
+                disabled={status === "loading"}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                disabled={status === "loading"}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Account Type</label>
+            <div className="space-y-2">
+              {[
+                { value: "user", label: "Customer", desc: "Standard account" },
+                { value: "manager", label: "Manager", desc: "Administrative access" },
+                { value: "provider", label: "Provider", desc: "Service provider" },
+              ].map((role) => (
+                <label key={role.value} className="flex items-center p-3 border border-gray-200 rounded-lg hover:border-blue-300 cursor-pointer transition-colors disabled:opacity-50">
+                  <input
+                    type="radio"
+                    value={role.value}
+                    checked={roleRequested === role.value}
+                    onChange={() => setRoleRequested(role.value as any)}
+                    className="mr-3 text-blue-600"
+                    disabled={status === "loading"}
+                  />
+                  <div>
+                    <div className="font-medium text-gray-900">{role.label}</div>
+                    <div className="text-sm text-gray-500">{role.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Your requested role will be reviewed by an administrator
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            disabled={status === "loading"}
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {status === "loading" ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Creating Request...
+              </span>
+            ) : (
+              "Request Account"
+            )}
+          </button>
+        </form>
+
+        <div className="text-center mt-6">
+          <button
+            onClick={() => navigate("/login")}
+            className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+            disabled={status === "loading"}
+          >
+            Already have an account? Sign in
+          </button>
         </div>
       </div>
     </div>

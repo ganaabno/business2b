@@ -88,37 +88,53 @@ const COUNTRY_OPTIONS = [
 ];
 
 // Helper function to validate field and return error message
+// Helper function to validate field and return error message
 const validateField = (field: keyof Passenger, value: any, passenger: Passenger): string | null => {
+  // Handle non-string values first
+  if (value === null || value === undefined) {
+    value = "";
+  }
+  
+  // Convert numbers to strings for validation
+  if (typeof value === 'number') {
+    value = value.toString();
+  }
+  
+  // Now safely trim strings
+  if (typeof value === 'string') {
+    value = value.trim();
+  }
+
   switch (field) {
     case "first_name":
-      return !value || value.trim() === "" ? "First name is required" : null;
+      return value === "" ? "First name is required" : null;
     case "last_name":
-      return !value || value.trim() === "" ? "Last name is required" : null;
+      return value === "" ? "Last name is required" : null;
     case "order_id":
-      return !value || value.trim() === "" ? "Order ID is required" : null;
+      return value === "" ? "Order ID is required" : null;
     case "date_of_birth":
-      if (!value) return "Date of birth is required";
-      const dob = new Date(value);
+      if (!passenger.date_of_birth) return "Date of birth is required";
+      const dob = new Date(passenger.date_of_birth);
       const today = new Date();
       if (dob >= today) return "Date of birth must be in the past";
       if (isNaN(dob.getTime())) return "Invalid date format";
       return null;
     case "gender":
-      return !value || value === "" ? "Gender is required" : null;
+      return !passenger.gender || passenger.gender === "" ? "Gender is required" : null;
     case "passport_number":
-      return !value || value.trim() === "" ? "Passport number is required" : null;
+      return !passenger.passport_number || passenger.passport_number === "" ? "Passport number is required" : null;
     case "passport_expiry":
-      if (!value) return "Passport expiry is required";
-      const expiry = new Date(value);
+      if (!passenger.passport_expiry) return "Passport expiry is required";
+      const expiry = new Date(passenger.passport_expiry);
       if (expiry <= new Date()) return "Passport expiry must be in the future";
       if (isNaN(expiry.getTime())) return "Invalid date format";
       return null;
     case "nationality":
-      return !value || value === "" ? "Nationality is required" : null;
+      return !passenger.nationality || passenger.nationality === "" ? "Nationality is required" : null;
     case "hotel":
-      return !value || value.trim() === "" ? "Hotel is required" : null;
+      return !passenger.hotel || passenger.hotel === "" ? "Hotel is required" : null;
     case "status":
-      return !value || value === "" ? "Status is required" : null;
+      return !passenger.status || passenger.status === "pending" ? "Status is required" : null;
     default:
       return null;
   }
