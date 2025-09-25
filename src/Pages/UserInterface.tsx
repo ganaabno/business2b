@@ -9,7 +9,6 @@ import TourSelectionUser from "../Pages/userInterface/TourSlelectionUser"; // Fi
 import AddPassengerTabUser from "../components/AddPassengerTabUser";
 import { checkSeatLimit } from "../utils/seatLimitChecks";
 
-// Format date for display
 function formatDisplayDate(s: string | undefined): string {
   if (!s) return "";
   const d = new Date(s);
@@ -18,7 +17,6 @@ function formatDisplayDate(s: string | undefined): string {
     : s;
 }
 
-// Type for Supabase passenger data with nested orders and tours
 interface SupabasePassenger {
   id: string;
   order_id: string;
@@ -123,6 +121,7 @@ const createNewPassenger = (
     status: "pending",
     is_blacklisted: false,
     blacklisted_date: new Date().toISOString(),
+    notes: "",
   };
 };
 
@@ -360,6 +359,7 @@ export default function UserInterface({
                     status: p.status,
                     is_blacklisted: p.is_blacklisted ?? false,
                     blacklisted_date: (p as any).blacklisted_date ?? null,
+                    notes: (p as any).notes ?? null,
                   }))
                   .filter((p) => !existingIds.has(p.id) || p.order_id !== ""), // Add only new or updated unsubmitted
               ];
@@ -1057,6 +1057,7 @@ export default function UserInterface({
             status: "pending",
             is_blacklisted: false,
             blacklisted_date: new Date().toISOString(),
+            notes: "",
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(passenger.additional_services, tourData);
@@ -1181,47 +1182,83 @@ export default function UserInterface({
         )}
 
         {sortedPassengers.length > 0 && (
-          <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Bookings</h3>
-            <div className="space-y-4">
-              {paginatedPassengers.map((passenger) => (
-                <div key={passenger.id} className="border-b border-gray-200 py-2">
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Tour:</span> {passenger.tour_title}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Departure:</span> {formatDisplayDate(passenger.departure_date)}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Name:</span> {passenger.name}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Status:</span> {passenger.status}
-                  </p>
-                </div>
-              ))}
+          <div className="mt-8 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-8 py-6 border-b border-gray-100">
+              <h3 className="text-xl font-bold text-gray-900">Your Bookings</h3>
+              <p className="text-sm text-gray-600 mt-1">Manage and view your travel reservations</p>
             </div>
-            {totalPages > 1 && (
-              <div className="flex justify-between mt-4">
-                <button
-                  onClick={handlePreviousPage}
-                  disabled={currentPage === 1}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-600">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={handleNextPage}
-                  disabled={currentPage === totalPages}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
+
+            {/* Bookings List */}
+            <div className="p-8">
+              <div className="space-y-6">
+                {paginatedPassengers.map((passenger) => (
+                  <div
+                    key={passenger.id}
+                    className="group bg-gray-50 hover:bg-gray-100 rounded-lg p-6 transition-all duration-200 border border-gray-200 hover:border-gray-300 hover:shadow-md"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Tour</p>
+                        <p className="text-sm font-semibold text-gray-900">{passenger.tour_title}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Departure</p>
+                        <p className="text-sm text-gray-700">{formatDisplayDate(passenger.departure_date)}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Passenger</p>
+                        <p className="text-sm text-gray-700">{passenger.name}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</p>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${passenger.status === 'approved'
+                            ? 'bg-green-100 text-green-800'
+                            : passenger.status === 'pending'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                          {passenger.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
+                  <button
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                    className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Previous
+                  </button>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+                      Page <span className="font-semibold">{currentPage}</span> of <span className="font-semibold">{totalPages}</span>
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
+                  >
+                    Next
+                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

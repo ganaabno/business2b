@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { supabase } from "../supabaseClient"; // Import supabase client
 import type { Passenger } from "../types/type";
 
 interface BlackListTabProps {
@@ -11,7 +12,8 @@ interface BlackListTabProps {
 export default function BlackListTab({
   passengers,
   setPassengers,
-  showNotification
+  showNotification,
+  currentUser,
 }: BlackListTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<keyof Passenger | null>(null);
@@ -27,7 +29,8 @@ export default function BlackListTab({
         (p) =>
           `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchLower) ||
           p.order_id?.toLowerCase().includes(searchLower) ||
-          p.tour_title?.toLowerCase().includes(searchLower)
+          p.tour_title?.toLowerCase().includes(searchLower) ||
+          p.notes?.toLowerCase().includes(searchLower)
       );
     }
 
@@ -38,7 +41,7 @@ export default function BlackListTab({
         let bValue = b[sortField];
 
         // Handle name sorting specially
-        if (sortField === 'first_name') {
+        if (sortField === "first_name") {
           aValue = `${a.first_name} ${a.last_name}`;
           bValue = `${b.first_name} ${b.last_name}`;
         }
@@ -66,17 +69,37 @@ export default function BlackListTab({
   };
 
   const handleRemoveFromBlacklist = async (passengerId: string) => {
+    const previousPassengers = [...passengers]; // Store previous state for rollback
     try {
-      setPassengers(prev =>
-        prev.map(p =>
-          p.id === passengerId
-            ? { ...p, is_blacklisted: false }
-            : p
+      // Optimistically update local state
+      setPassengers((prev) =>
+        prev.map((p) =>
+          p.id === passengerId ? { ...p, is_blacklisted: false } : p
         )
       );
+
+      // Update the is_blacklisted field in Supabase
+      const { error } = await supabase
+        .from("passengers")
+        .update({
+          is_blacklisted: false,
+          updated_at: new Date().toISOString(),
+          ...(currentUser.id && { edited_by: currentUser.id }),
+        })
+        .eq("id", passengerId);
+
+      if (error) {
+        console.error("Error removing passenger from blacklist:", error);
+        showNotification("error", `Failed to remove passenger from blacklist: ${error.message}`);
+        setPassengers(previousPassengers); // Rollback on error
+        return;
+      }
+
       showNotification("success", "Passenger removed from blacklist");
     } catch (error) {
-      showNotification("error", "Failed to remove passenger from blacklist");
+      console.error("Unexpected error removing passenger from blacklist:", error);
+      showNotification("error", "An unexpected error occurred while removing passenger from blacklist.");
+      setPassengers(previousPassengers); // Rollback on error
     }
   };
 
@@ -118,7 +141,7 @@ export default function BlackListTab({
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Blacklisted Passengers</h3>
             <p className="text-sm text-gray-500 mt-1">
-              {filteredAndSortedPassengers.length} of {passengers.filter(p => p.is_blacklisted).length} blacklisted passengers
+              {filteredAndSortedPassengers.length} of {passengers.filter((p) => p.is_blacklisted).length} blacklisted passengers
             </p>
           </div>
 
@@ -130,7 +153,7 @@ export default function BlackListTab({
             </div>
             <input
               type="text"
-              placeholder="Search passengers..."
+              placeholder="Search passengers or notes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -146,29 +169,38 @@ export default function BlackListTab({
             <tr>
               <th
                 className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                onClick={() => handleSort('first_name')}
+                onClick={() => handleSort("first_name")}
               >
                 <div className="flex items-center space-x-1">
                   <span>Name</span>
-                  {getSortIcon('first_name')}
+                  {getSortIcon("first_name")}
                 </div>
               </th>
               <th
                 className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                onClick={() => handleSort('order_id')}
+                onClick={() => handleSort("order_id")}
               >
                 <div className="flex items-center space-x-1">
                   <span>Order ID</span>
-                  {getSortIcon('order_id')}
+                  {getSortIcon("order_id")}
                 </div>
               </th>
               <th
                 className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                onClick={() => handleSort('tour_title')}
+                onClick={() => handleSort("tour_title")}
               >
                 <div className="flex items-center space-x-1">
                   <span>Tour</span>
-                  {getSortIcon('tour_title')}
+                  {getSortIcon("tour_title")}
+                </div>
+              </th>
+              <th
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                onClick={() => handleSort("notes")}
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Notes</span>
+                  {getSortIcon("notes")}
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -187,7 +219,7 @@ export default function BlackListTab({
                     <div className="flex-shrink-0 h-8 w-8">
                       <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
                         <span className="text-sm font-medium text-red-600">
-                          {passenger.first_name?.charAt(0) || '?'}
+                          {passenger.first_name?.charAt(0) || "?"}
                         </span>
                       </div>
                     </div>
@@ -220,6 +252,11 @@ export default function BlackListTab({
                       <span className="text-gray-400">Unknown Tour</span>
                     )}
                   </div>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    {passenger.notes || "None"}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {formatDate(passenger.blacklisted_date)}
@@ -274,7 +311,8 @@ export default function BlackListTab({
         <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <span>
-              Showing {filteredAndSortedPassengers.length} passenger{filteredAndSortedPassengers.length !== 1 ? 's' : ''}
+              Showing {filteredAndSortedPassengers.length} passenger
+              {filteredAndSortedPassengers.length !== 1 ? "s" : ""}
             </span>
             {searchTerm && (
               <button

@@ -88,7 +88,6 @@ const COUNTRY_OPTIONS = [
 ];
 
 // Helper function to validate field and return error message
-// Helper function to validate field and return error message
 const validateField = (field: keyof Passenger, value: any, passenger: Passenger): string | null => {
   // Handle non-string values first
   if (value === null || value === undefined) {
@@ -135,6 +134,8 @@ const validateField = (field: keyof Passenger, value: any, passenger: Passenger)
       return !passenger.hotel || passenger.hotel === "" ? "Hotel is required" : null;
     case "status":
       return !passenger.status || passenger.status === "pending" ? "Status is required" : null;
+    case "notes":
+      return value.length > 1000 ? "Notes cannot exceed 1000 characters" : null;
     default:
       return null;
   }
@@ -198,7 +199,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
         const fields: (keyof Passenger)[] = [
           "first_name", "last_name", "order_id", "date_of_birth",
           "gender", "passport_number", "passport_expiry",
-          "nationality", "hotel", "status"
+          "nationality", "hotel", "status", "notes"
         ];
 
         fields.forEach((field) => {
@@ -274,6 +275,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
           hotel: p.hotel || "",
           age: p.date_of_birth ? calculateAge(p.date_of_birth) : (p.age || 0),
           gender: p.gender || "",
+          notes: p.notes || ""
         })) as Passenger[];
         setPassengers(enrichedPassengers);
         console.log("Enriched passengers:", enrichedPassengers);
@@ -427,6 +429,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             status,
             is_blacklisted,
             user_id,
+            notes,
             ...rest
           } = passenger;
 
@@ -444,6 +447,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             allergy: allergy || "",
             status: status || "active",
             is_blacklisted: is_blacklisted || false,
+            notes: notes || "",
             updated_at: new Date().toISOString(),
             ...(currentUser.id && { edited_by: currentUser.id }),
           };
@@ -722,7 +726,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
-                  <span>Name *</span>
+                  <span>Name</span>
                 </div>
               </th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-[192px] z-10 bg-gray-50 min-w-[128px] shadow-lg border-r border-gray-200">
@@ -730,20 +734,21 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                   </svg>
-                  <span>Order ID *</span>
+                  <span>Order ID</span>
                 </div>
               </th>
               <th className="px-16 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tour</th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Departure</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">DOB *</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">DOB</th>
               <th className="px-12 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Age</th>
-              <th className="px-14 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Gender *</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Passport *</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Expiry *</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nationality *</th>
-              <th className="px-14 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Hotel *</th>
+              <th className="px-14 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Gender</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Passport</th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Passport Expiry</th>
+              <th className="px-12 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nationality</th>
+              <th className="px-14 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Hotel</th>
               <th className="px-8 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Allergies</th>
-              <th className="px-18 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status *</th>
+              <th className="px-28 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Notes</th>
+              <th className="px-18 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Blacklist</th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
@@ -1006,6 +1011,29 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     ) : (
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                         {passenger.allergy || "None"}
+                      </span>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    {isEditMode ? (
+                      <div className="space-y-1">
+                        <textarea
+                          value={passenger.notes || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "notes", e.target.value)}
+                          placeholder="Add notes about passenger (e.g., travel issues)"
+                          className={getInputClass("notes", passenger, isEditMode)}
+                          rows={2}
+                        />
+                        {hasFieldError(passenger.id, "notes") && (
+                          <p className="text-xs text-red-600 mt-1">
+                            {getErrorMessage(passenger.id, "notes")}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        {passenger.notes || "None"}
                       </span>
                     )}
                   </td>

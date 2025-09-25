@@ -143,7 +143,7 @@ export type OrderStatus =
   | "Concluded a contract"
   | "Postponed the travel"
   | "Interested in other travel"
-  | "Cancelled"
+  | "cancelled"
   | "Cancelled after confirmed"
   | "Cancelled after ordered a seat"
   | "Cancelled after take a information"
@@ -158,7 +158,8 @@ export type OrderStatus =
   | "Swapped seat with another company"
   | "Gave seat to another company"
   | "Cancelled and bought travel from another country"
-  | "Completed"; 
+  | "Completed"
+  | "confirmed"
 
 export type PaymentMethod =
   | "Cash"
@@ -202,6 +203,7 @@ export interface Passenger {
   status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
   is_blacklisted: boolean;
   blacklisted_date: string | null;
+  notes: string | null;
 }
 
 export interface PassengerRequest {

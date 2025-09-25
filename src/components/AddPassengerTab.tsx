@@ -129,6 +129,7 @@ const createNewPassenger = (
     status: "active",
     is_blacklisted: false,
     blacklisted_date: null,
+    notes: "",
   };
 };
 
@@ -874,6 +875,7 @@ export default function AddPassengerTab({
             status: "active",
             is_blacklisted: false,
             blacklisted_date: null,
+            notes: "",
           };
 
           if (tourData && passenger.additional_services.length > 0) {

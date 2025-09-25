@@ -8,6 +8,7 @@ import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
 import { useNotifications } from "../hooks/useNotifications";
+import ToursTab from "../components/ToursTab";
 
 interface ManagerInterfaceProps {
   tours: Tour[];
@@ -28,15 +29,15 @@ export default function ManagerInterface({
   setPassengers,
   currentUser,
 }: ManagerInterfaceProps) {
+  // Use lowercase "tours" for consistency
   const [activeTab, setActiveTab] = useState<
-    "orders" | "passengers" | "addTour" | "addPassenger" | "passengerRequests" | "blacklist"
+    "orders" | "passengers" | "addTour" | "addPassenger" | "passengerRequests" | "blacklist" | "tours"
   >("orders");
 
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const { showNotification } = useNotifications();
-  
-  // ✅ LOCAL STATE FOR ADD PASSENGER TAB
+
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isGroup, setIsGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -61,6 +62,7 @@ export default function ManagerInterface({
                 "addTour",
                 "addPassenger",
                 "blacklist",
+                "tours", // Added "tours" to the navigation
               ].map((tab) => (
                 <button
                   key={tab}
@@ -78,6 +80,7 @@ export default function ManagerInterface({
                         | "addTour"
                         | "addPassenger"
                         | "blacklist"
+                        | "tours"
                     )
                   }
                 >
@@ -86,22 +89,26 @@ export default function ManagerInterface({
                       {tab === "addPassenger"
                         ? "Add Passenger"
                         : tab === "passengerRequests"
-                        ? "Passenger Requests"
-                        : tab === "addTour"
-                        ? "Add Tour"
-                        : tab === "blacklist"
-                        ? "Blacklist"
-                        : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                          ? "Passenger Requests"
+                          : tab === "addTour"
+                            ? "Add Tour"
+                            : tab === "blacklist"
+                              ? "Blacklist"
+                              : tab === "tours"
+                                ? "Tours"
+                                : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </span>
                     {tab !== "addTour" && tab !== "addPassenger" && (
                       <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-semibold ml-2">
                         {tab === "orders"
                           ? orders.length
                           : tab === "passengers"
-                          ? initialPassengers.length
-                          : tab === "blacklist"
-                          ? initialPassengers.filter((p) => p.is_blacklisted).length
-                          : 0}
+                            ? initialPassengers.length
+                            : tab === "blacklist"
+                              ? initialPassengers.filter((p) => p.is_blacklisted).length
+                              : tab === "tours"
+                                ? tours.length // Added count for tours
+                                : 0}
                       </span>
                     )}
                   </div>
@@ -121,7 +128,9 @@ export default function ManagerInterface({
           />
         )}
         {activeTab === "passengerRequests" && <PassengerRequests showNotification={showNotification} />}
-        {activeTab === "addTour" && <AddTourTab tours={tours} setTours={setTours} currentUser={currentUser} showNotification={showNotification} />}
+        {activeTab === "addTour" && (
+          <AddTourTab tours={tours} setTours={setTours} currentUser={currentUser} showNotification={showNotification} />
+        )}
         {activeTab === "addPassenger" && (
           <AddPassengerTab
             tours={tours}
@@ -144,6 +153,7 @@ export default function ManagerInterface({
             showNotification={showNotification}
           />
         )}
+        {activeTab === "tours" && <ToursTab tours={tours} setTours={setTours} />}
       </div>
     </div>
   );
