@@ -68,6 +68,7 @@ export const createNewPassenger = (
     departure_date: selectedTourData?.departure_date || "",
     is_blacklisted: false,
     blacklisted_date: "",
+    notes: "",
   };
 };
 

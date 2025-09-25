@@ -85,6 +85,7 @@ export const usePassengers = (
       status: "pending",
       is_blacklisted: false,
       blacklisted_date: "",
+      notes: "",
     };
 
     setPassengers(prev => [...prev, newPassenger]);
