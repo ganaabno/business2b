@@ -4,8 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: '/', // 👈 very important for SPA routing
+  base: '/', 
   build: {
-    outDir: 'dist', // 👈 make sure output is dist
+    outDir: 'dist', 
   },
 })
