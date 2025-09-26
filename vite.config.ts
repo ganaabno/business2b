@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: '/test/',
   build: {
-    outDir: 'dist', // 👈 make sure output is dist
+    outDir: 'dist',
   },
 })
