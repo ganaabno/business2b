@@ -10,7 +10,7 @@ interface BookingActionsProps {
   resetBookingForm: () => void;
   handleDownloadCSV: () => void;
   handleUploadCSV: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  newPassengerRef: React.RefObject<HTMLDivElement | null>; // ✅ FIXED: Allow null
+  newPassengerRef: React.RefObject<HTMLDivElement | null>; 
   maxPassengers: number;
   canAddPassenger: boolean;
 }
