@@ -9,7 +9,7 @@ interface BookingSummaryProps {
   paymentMethod: string;
   setPaymentMethod: (value: string) => void;
   errors: ValidationError[];
-  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>; // Add this
+  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>; 
   downloadCSV?: () => void;
   saveOrder: () => Promise<void>;
   setActiveStep: (value: number) => void;

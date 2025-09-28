@@ -1112,7 +1112,7 @@ export default function UserInterface({
               setDepartureDate={setDepartureDate}
               errors={validationErrors}
               setActiveStep={setActiveStep}
-              userRole={currentUser.role}
+              userRole={currentUser.role?? "user"}
               showAvailableSeats={currentUser.role === "admin" || currentUser.role === "superadmin"}
             />
           </div>
@@ -1149,6 +1149,7 @@ export default function UserInterface({
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               errors={validationErrors}
+              setErrors={setValidationErrors}
               saveOrder={saveOrder}
               setActiveStep={setActiveStep}
               loading={loading}
