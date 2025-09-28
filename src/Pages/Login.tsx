@@ -25,7 +25,6 @@ export default function Login() {
         setError("Invalid email or password");
         return;
       }
-      // Redirect based on user role
       const homePath = user.role === "admin" || user.role === "superadmin" ? "/admin" :
         user.role === "provider" ? "/provider" :
           user.role === "manager" ? "/manager" : "/user";
@@ -37,7 +36,6 @@ export default function Login() {
     }
   };
 
-  // Navigate to signup page
   const handleSignupClick = () => {
     navigate('/signup');
   };

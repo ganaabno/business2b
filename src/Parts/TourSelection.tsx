@@ -6,7 +6,7 @@ interface TourSelectionProps {
   tours: Tour[];
   selectedTour: string;
   setSelectedTour: React.Dispatch<React.SetStateAction<string>>;
-  departureDate: string;
+  departure_date: string;
   setDepartureDate: React.Dispatch<React.SetStateAction<string>>;
   errors: ValidationError[];
   setActiveStep: (value: number) => void;
@@ -26,7 +26,7 @@ export default function TourSelection({
   tours,
   selectedTour,
   setSelectedTour,
-  departureDate,
+  departure_date,
   setDepartureDate,
   errors,
   setActiveStep,
@@ -71,7 +71,7 @@ export default function TourSelection({
   useEffect(() => {
     console.log("TourSelection rendered with props:", {
       selectedTour,
-      departureDate,
+      departure_date,
       tours: tours.map(t => ({
         id: t.id,
         title: t.title,
@@ -84,7 +84,7 @@ export default function TourSelection({
       seats: tour.seats,
       available_seats: tour.available_seats,
     })));
-  }, [tours, selectedTour, departureDate, mergedTours]);
+  }, [tours, selectedTour, departure_date, mergedTours]);
 
   const selectedTourData = useMemo(() => {
     const tour = mergedTours.find((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase());
@@ -163,7 +163,7 @@ export default function TourSelection({
                 className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                   hasDepartureError ? "border-red-300" : "border-gray-300"
                 }`}
-                value={departureDate}
+                value={departure_date}
                 onChange={(e) => {
                   console.log("Departure date selected:", e.target.value);
                   setDepartureDate(e.target.value);
@@ -257,7 +257,7 @@ export default function TourSelection({
       <div className="flex justify-end">
         <button
           onClick={() => setActiveStep(2)}
-          disabled={!selectedTour || !departureDate || mergedTours.length === 0}
+          disabled={!selectedTour || !departure_date || mergedTours.length === 0}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >
           Continue to Passengers

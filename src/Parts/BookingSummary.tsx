@@ -3,12 +3,13 @@ import type { Passenger, ValidationError, User as UserType } from "../types/type
 import React from "react";
 
 interface BookingSummaryProps {
-  selectedTour?: string; 
+  selectedTour?: string;
   departureDate: string;
   passengers: Passenger[];
   paymentMethod: string;
   setPaymentMethod: (value: string) => void;
   errors: ValidationError[];
+  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>; // Add this
   downloadCSV?: () => void;
   saveOrder: () => Promise<void>;
   setActiveStep: (value: number) => void;

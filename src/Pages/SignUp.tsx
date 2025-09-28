@@ -102,7 +102,6 @@ export default function Signup() {
         username,
         password,
         created_at: new Date().toISOString(),
-        role_requested: "user", // Default role
       });
 
       if (error) {

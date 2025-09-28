@@ -209,7 +209,7 @@ function AppContent({
     <>
       {currentUser && ["admin", "superadmin"].includes(role) && (
         <div className="relative bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200/60 backdrop-blur-sm">
-          <div className="flex items-center gap-2 p-4 max-w-7xl mx-auto">
+          <div className="flex items-center gap-2 p-4 mx-auto">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100">
                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

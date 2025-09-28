@@ -21,6 +21,7 @@ interface AddPassengerTabProps {
   departureDate: string;
   setDepartureDate: React.Dispatch<React.SetStateAction<string>>;
   errors: ValidationError[];
+  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>;
   showNotification: (type: "success" | "error", message: string) => void;
   currentUser: UserType;
 }
@@ -57,10 +58,7 @@ const cleanValueForDB = (field: string, value: any): any => {
   if (field === 'departureDate') {
     return cleanDateForDB(value);
   }
-  if (field === 'passport_expire') {
-    return cleanDateForDB(value);
-  }
-  return value ? String(value).trim() : '';
+  return typeof value === 'string' ? value.trim() : value;
 };
 
 const cleanTimestampForDB = (timestamp: string | undefined | null): string | null => {
@@ -141,6 +139,7 @@ export default function AddPassengerTab({
   departureDate,
   setDepartureDate,
   errors,
+  setErrors,
   showNotification,
   currentUser,
 }: AddPassengerTabProps) {
@@ -155,6 +154,7 @@ export default function AddPassengerTab({
   const [canAdd, setCanAdd] = useState(true);
   const [showPassengerPrompt, setShowPassengerPrompt] = useState(false);
   const [passengerCountInput, setPassengerCountInput] = useState<string>("");
+  const [lastValidationErrors, setLastValidationErrors] = useState<ValidationError[]>([]);
 
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
   const [availableHotels, setAvailableHotels] = useState<string[]>([]);
@@ -237,7 +237,7 @@ export default function AddPassengerTab({
     }
 
     if (isPowerUser) {
-      console.log(`💪 ${currentUser.role.toUpperCase()} MODE: Unlimited booking power activated!`);
+      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: Unlimited booking power activated!`);
       setCanAdd(true);
       return true;
     }
@@ -334,6 +334,51 @@ export default function AddPassengerTab({
     setPassengerCountInput("");
   }, [passengerCountInput, addMultiplePassengers, wrappedShowNotification]);
 
+  const validatePassenger = useCallback((passenger: Passenger, departureDate: string): ValidationError[] => {
+    const errors: ValidationError[] = [];
+    console.log(`Validating passenger ${passenger.serial_no}:`, passenger);
+
+    if (!passenger.first_name?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_first_name`, message: `Passenger ${passenger.serial_no}: First name is required` });
+    }
+    if (!passenger.last_name?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_last_name`, message: `Passenger ${passenger.serial_no}: Last name is required` });
+    }
+    if (!passenger.email?.trim() || !/\S+@\S+\.\S+/.test(passenger.email)) {
+      errors.push({ field: `passenger_${passenger.serial_no}_email`, message: `Passenger ${passenger.serial_no}: Valid email is required` });
+    }
+    if (!passenger.phone?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_phone`, message: `Passenger ${passenger.serial_no}: Phone number is required` });
+    }
+    if (!passenger.nationality?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_nationality`, message: `Passenger ${passenger.serial_no}: Nationality is required` });
+    }
+    if (!passenger.gender?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_gender`, message: `Passenger ${passenger.serial_no}: Gender is required` });
+    }
+    if (!passenger.passport_number?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_passport_number`, message: `Passenger ${passenger.serial_no}: Passport number is required` });
+    }
+    if (!passenger.passport_expiry) {
+      errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport expiry date is required` });
+    } else {
+      const expiryDate = new Date(passenger.passport_expiry);
+      const minDate = new Date(departureDate);
+      minDate.setMonth(minDate.getMonth() + 6);
+      if (isNaN(expiryDate.getTime()) || expiryDate < minDate) {
+        errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport must be valid for at least 6 months from departure date` });
+      }
+    }
+    if (!passenger.roomType?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_roomType`, message: `Passenger ${passenger.serial_no}: Room type is required` });
+    }
+    if (!passenger.hotel?.trim()) {
+      errors.push({ field: `passenger_${passenger.serial_no}_hotel`, message: `Passenger ${passenger.serial_no}: Hotel selection is required` });
+    }
+
+    return errors;
+  }, []);
+
   const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
     if (index < 0 || index >= bookingPassengers.length) {
       wrappedShowNotification("error", "Invalid passenger index");
@@ -353,7 +398,7 @@ export default function AddPassengerTab({
     if (field === "additional_services") {
       const tour = tours.find((t) => t.title === selectedTour);
       if (tour) {
-        updatedPassengers[index].price = (updatedPassengers[index].price || 0) + calculateServicePrice(value as string[], tour);
+        updatedPassengers[index].price = tour.base_price + calculateServicePrice(value as string[], tour);
       }
     }
 
@@ -448,45 +493,22 @@ export default function AddPassengerTab({
     setActiveStep(1);
     setShowInProvider(false);
     setExpandedPassengerId(null);
+    setErrors([]); // Clear errors on reset
     wrappedShowNotification("success", "Passenger Registered Completely!");
-  }, [wrappedShowNotification]);
+  }, [wrappedShowNotification, setErrors]);
 
-  const validatePassenger = (passenger: Passenger, departureDate: string): ValidationError[] => {
-    const errors: ValidationError[] = [];
-    console.log(`Validating passenger ${passenger.serial_no}:`, passenger);
-
-    if (!passenger.first_name?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_first_name`, message: `Passenger ${passenger.serial_no}: First name is required` });
-    if (!passenger.last_name?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_last_name`, message: `Passenger ${passenger.serial_no}: Last name is required` });
-    if (!passenger.email?.trim() || !/\S+@\S+\.\S+/.test(passenger.email))
-      errors.push({ field: `passenger_${passenger.serial_no}_email`, message: `Passenger ${passenger.serial_no}: Valid email is required` });
-    if (!passenger.phone?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_phone`, message: `Passenger ${passenger.serial_no}: Phone number is required` });
-    if (!passenger.nationality?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_nationality`, message: `Passenger ${passenger.serial_no}: Nationality is required` });
-    if (!passenger.gender?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_gender`, message: `Passenger ${passenger.serial_no}: Gender is required` });
-    if (!passenger.passport_number?.trim()) errors.push({ field: `passenger_${passenger.serial_no}_passport_number`, message: `Passenger ${passenger.serial_no}: Passport number is required` });
-    if (!passenger.passport_expiry) {
-      errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport expiry date is required` });
-    } else {
-      const expiryDate = new Date(passenger.passport_expiry);
-      const minDate = new Date(departureDate);
-      minDate.setMonth(minDate.getMonth() + 6);
-      if (isNaN(expiryDate.getTime()) || expiryDate < minDate)
-        errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport must be valid for at least 6 months from departure date` });
-    }
-    // Room type and hotel are optional
-    if (passenger.roomType && !passenger.roomType.trim()) errors.push({ field: `passenger_${passenger.serial_no}_roomType`, message: `Passenger ${passenger.serial_no}: Invalid room type` });
-    if (passenger.hotel && !passenger.hotel.trim()) errors.push({ field: `passenger_${passenger.serial_no}_hotel`, message: `Passenger ${passenger.serial_no}: Invalid hotel selection` });
-
-    return errors;
-  };
-
-  const validateBooking = (): boolean => {
+  const validateBooking = useCallback((activeStep: number): boolean => {
     const allErrors: ValidationError[] = [];
+
     if (!selectedTour?.trim()) allErrors.push({ field: "tour", message: "Please select a tour" });
     if (!departureDate?.trim()) allErrors.push({ field: "departure", message: "Please select a departure date" });
     if (bookingPassengers.length === 0) allErrors.push({ field: "passengers", message: "At least one passenger is required" });
-    if (!paymentMethod?.trim()) allErrors.push({ field: "payment", message: "Please select a payment method" });
-    if (isPowerUser && !showInProvider) {
-      allErrors.push({ field: "show_in_provider", message: "Provider visibility is required for power users" });
+
+    if (activeStep === 3) {
+      if (!paymentMethod?.trim()) allErrors.push({ field: "payment", message: "Please select a payment method" });
+      if (isPowerUser && !showInProvider) {
+        allErrors.push({ field: "show_in_provider", message: "Provider visibility is required for power users" });
+      }
     }
 
     bookingPassengers.forEach((passenger) => {
@@ -494,16 +516,23 @@ export default function AddPassengerTab({
       allErrors.push(...passengerErrors);
     });
 
-    console.log("Validation errors:", allErrors);
+    // Only log and update errors if they’ve changed
+    const errorsChanged = JSON.stringify(allErrors) !== JSON.stringify(lastValidationErrors);
+    if (errorsChanged) {
+      console.log("Validation errors for step", activeStep, ":", allErrors);
+      setErrors(allErrors);
+      setLastValidationErrors(allErrors);
+    }
+
     return allErrors.length === 0;
-  };
+  }, [selectedTour, departureDate, bookingPassengers, paymentMethod, showInProvider, isPowerUser, lastValidationErrors, setErrors, validatePassenger]);
 
   const saveOrder = async () => {
     console.log("🚀 SAVE ORDER STARTED!");
     console.log("💪 POWER USER MODE:", isPowerUser, "Role:", currentUser.role);
     console.log("📊 Tour:", selectedTour, "Passengers:", bookingPassengers.length);
 
-    if (!validateBooking()) {
+    if (!validateBooking(3)) {
       console.log("❌ Validation failed");
       wrappedShowNotification("error", "Please fix the validation errors before proceeding");
       return;
@@ -517,7 +546,7 @@ export default function AddPassengerTab({
     }
 
     if (isPowerUser) {
-      console.log(`💪 ${currentUser.role.toUpperCase()} MODE: SKIPPING ALL SEAT CHECKS - TOTAL DOMINATION!`);
+      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: SKIPPING ALL SEAT CHECKS - TOTAL DOMINATION!`);
     } else {
       if (tourData.available_seats !== undefined && tourData.available_seats < bookingPassengers.length) {
         console.log("❌ Regular user: Not enough seats");
@@ -543,7 +572,7 @@ export default function AddPassengerTab({
         age: firstPassenger?.age || null,
         gender: firstPassenger?.gender?.trim() || null,
         passport_number: firstPassenger?.passport_number?.trim() || null,
-        passport_expire: firstPassenger?.passport_expiry ? cleanValueForDB('passport_expire', firstPassenger.passport_expiry) : null,
+        passport_expire: firstPassenger?.passport_expiry ? cleanValueForDB('passport_expiry', firstPassenger.passport_expiry) : null,
         passport_copy: firstPassenger?.passport_upload || null,
         commission,
         created_by: currentUser.id,
@@ -710,7 +739,6 @@ export default function AddPassengerTab({
 
       wrappedShowNotification("success", `Booking saved successfully! Order ID: ${orderId}`);
       resetBookingForm();
-
     } catch (error) {
       console.error("💥 CRITICAL SAVE ORDER ERROR:", error);
       wrappedShowNotification(
@@ -770,7 +798,7 @@ export default function AddPassengerTab({
     }
 
     if (isPowerUser) {
-      console.log(`💪 ${currentUser.role.toUpperCase()} MODE: CSV upload - UNLIMITED PASSENGERS ALLOWED!`);
+      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: CSV upload - UNLIMITED PASSENGERS ALLOWED!`);
     } else {
       const canAdd = await canAddPassenger();
       if (!canAdd) return;
@@ -842,6 +870,10 @@ export default function AddPassengerTab({
 
         const csvPassengers: Passenger[] = data.map((row, idx) => {
           const baseSerial = bookingPassengers.length + idx + 1;
+          const services = row["Additional Services"]
+            ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
+            : [];
+          const servicePrice = calculateServicePrice(services, tourData);
           const passenger: Passenger = {
             id: generatePassengerId(),
             order_id: "",
@@ -861,10 +893,8 @@ export default function AddPassengerTab({
             nationality: row["Nationality"] || "Mongolia",
             roomType: row["Room Type"] || "",
             hotel: row["Hotel"] || availableHotels[0] || "",
-            additional_services: row["Additional Services"]
-              ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
-              : [],
-            price: parseFloat(row["Price"]) || 0,
+            additional_services: services,
+            price: tourData.base_price + servicePrice,
             email: row["Email"] || "",
             phone: row["Phone"] || "",
             passport_upload: "",
@@ -877,10 +907,6 @@ export default function AddPassengerTab({
             blacklisted_date: null,
             notes: "",
           };
-
-          if (tourData && passenger.additional_services.length > 0) {
-            passenger.price = calculateServicePrice(passenger.additional_services, tourData);
-          }
 
           return passenger;
         });
@@ -924,23 +950,28 @@ export default function AddPassengerTab({
           wrappedShowNotification("error", "Add at least one passenger");
           return;
         }
-        if (validateBooking()) {
+        if (validateBooking(activeStep)) {
+          setErrors((prev) => prev.filter((e) => e.field !== "payment" && e.field !== "show_in_provider"));
           setActiveStep(3);
         } else {
           wrappedShowNotification("error", "Please fix all validation errors before proceeding");
         }
         break;
       case 3:
-        await saveOrder();
+        if (!loading && validateBooking(activeStep)) {
+          await saveOrder();
+        } else if (!loading) {
+          wrappedShowNotification("error", "Please fix all validation errors before confirming");
+        }
         break;
     }
-  }, [activeStep, selectedTour, departureDate, bookingPassengers.length, validateBooking, wrappedShowNotification, saveOrder]);
+  }, [activeStep, selectedTour, departureDate, bookingPassengers.length, validateBooking, loading, saveOrder, wrappedShowNotification, setErrors]);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Notifications notification={notification} setNotification={setNotification} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold text-gray-900">Travel Booking</h1>
@@ -961,7 +992,7 @@ export default function AddPassengerTab({
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <ProgressSteps activeStep={activeStep} />
         <ErrorSummary errors={errors} />
 
@@ -1009,11 +1040,11 @@ export default function AddPassengerTab({
             tours={filteredTours}
             selectedTour={selectedTour}
             setSelectedTour={setSelectedTour}
-            departureDate={departureDate}
+            departure_date={departureDate}
             setDepartureDate={setDepartureDate}
             errors={errors}
             setActiveStep={setActiveStep}
-            userRole={currentUser.role}
+            userRole={currentUser.role || "user"}
             showAvailableSeats={true}
           />
         )}
@@ -1050,7 +1081,7 @@ export default function AddPassengerTab({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                            💪 {currentUser.role.toUpperCase()} MODE: Unlimited seats
+                            💪 {currentUser.role?.toUpperCase()} MODE: Unlimited seats
                           </span>
                         ) : (
                           remainingSeats !== undefined && (
@@ -1076,8 +1107,9 @@ export default function AddPassengerTab({
                   addPassenger={handleAddPassenger}
                   clearAllPassengers={clearAllPassengers}
                   resetBookingForm={resetBookingForm}
-                  handleDownloadCSV={downloadTemplate}
+                  handleDownloadTemplate={downloadTemplate}
                   handleUploadCSV={handleUploadCSV}
+                  handleDownloadCSV={handleDownloadCSV}
                   newPassengerRef={newPassengerRef}
                   maxPassengers={MAX_PASSENGERS}
                   canAddPassenger={canAdd}
@@ -1090,8 +1122,7 @@ export default function AddPassengerTab({
                 <div
                   key={passenger.id}
                   ref={index === bookingPassengers.length - 1 ? newPassengerRef : null}
-                  className={`border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 ${expandedPassengerId === passenger.id ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:shadow-md'
-                    }`}
+                  className={`border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 ${expandedPassengerId === passenger.id ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:shadow-md'}`}
                 >
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
                     <div className="flex items-center justify-between">
@@ -1193,6 +1224,7 @@ export default function AddPassengerTab({
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
             errors={errors}
+            setErrors={setErrors}
             downloadCSV={handleDownloadCSV}
             saveOrder={saveOrder}
             setActiveStep={setActiveStep}
@@ -1273,7 +1305,7 @@ export default function AddPassengerTab({
           {activeStep === 3 && (
             <button
               onClick={handleNextStep}
-              disabled={loading || !validateBooking()}
+              disabled={loading || !validateBooking(3)} // Pass activeStep as 3
               className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
             >
               {loading ? "Saving..." : "Confirm Booking"}

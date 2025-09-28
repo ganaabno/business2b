@@ -9,8 +9,9 @@ interface BookingActionsProps {
   clearAllPassengers: () => void;
   resetBookingForm: () => void;
   handleDownloadCSV: () => void;
+  handleDownloadTemplate: () => void; // ✅ add this line
   handleUploadCSV: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  newPassengerRef: React.RefObject<HTMLDivElement | null>; 
+  newPassengerRef: React.RefObject<HTMLDivElement | null>;
   maxPassengers: number;
   canAddPassenger: boolean;
 }

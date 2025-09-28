@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../supabaseClient"; // Ensure supabaseAdmin is imported correctly
 import { supabaseAdmin } from "../utils/adminClient";
 import type { User } from "../types/type";
 import { Trash2, AlertTriangle, Loader2, UserCheck, Mail } from "lucide-react";
@@ -23,7 +23,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
     console.log("👤 Current user:", {
       id: currentUser.id,
       email: currentUser.email,
-      role: currentUser.role
+      role: currentUser.role,
     });
     
     users.forEach((user, index) => {
@@ -32,35 +32,49 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
         email: user.email,
         role: user.role,
         username: user.username,
-        rawKeys: Object.keys(user)
+        rawKeys: Object.keys(user),
       });
     });
     console.log("💥 NUCLEAR DEBUG - RoleChanger RENDER END");
   }, [users, currentUser]);
 
+  useEffect(() => {
+    console.log("🔄 Users state updated:", users.map(u => ({ id: u.id, email: u.email, role: u.role })));
+  }, [users]);
+
   const handleChangeRole = async (userId: string, newRole: string) => {
     setLoading((prev) => ({ ...prev, [userId]: true }));
     
     try {
-      const { data, error } = await supabase
+      console.log(`🚀 Attempting to update role for user ${userId} to ${newRole}`);
+      
+      const { data, error } = await supabaseAdmin // Use supabaseAdmin to bypass RLS
         .from("users")
         .update({ role: newRole })
         .eq("id", userId)
         .select();
       
       if (error) {
-        alert("Failed to update role: " + error.message);
+        console.error("❌ Supabase admin error updating role:", error);
+        alert(`Failed to update role: ${error.message} (Code: ${error.code})`);
         return;
       }
 
+      console.log("✅ Supabase admin response:", data);
+      
       if (data && data.length > 0) {
         setUsers((prev) =>
-          prev.map((u) => u.id === userId ? { ...u, ...data[0] } : u)
+          prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
         );
+        console.log(`✅ Updated user ${userId} role to ${newRole} in state`);
+      } else {
+        console.warn("⚠️ No data returned from Supabase admin update");
+        alert("Role update completed, but no user data returned.");
       }
       
-    } catch (err) {
-      alert("Unexpected error updating role.");
+    } catch (err: any) {
+      console.error("❌ Unexpected error updating role:", err);
+      alert(`Unexpected error updating role: ${err.message || "Unknown error"}`);
     } finally {
       setLoading((prev) => ({ ...prev, [userId]: false }));
     }
@@ -92,7 +106,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   if (!currentUserExists && currentUser.id) {
     displayUsers.push({
       ...currentUser,
-      username: currentUser.username || 'You'
+      username: currentUser.username || 'You',
     });
   }
 
@@ -188,7 +202,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                     email: user.email,
                     displayName,
                     role: user.role,
-                    isCurrentUser
+                    isCurrentUser,
                   });
 
                   return (
