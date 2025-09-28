@@ -172,7 +172,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                 Status
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                Show in Provider
+                Show to Provider
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                 Seats

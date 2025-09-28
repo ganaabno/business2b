@@ -17,7 +17,6 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   const [deleting, setDeleting] = useState<Record<string, boolean>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-  // 🔥 NUCLEAR DEBUG: Log every single render
   useEffect(() => {
     console.log("💥 NUCLEAR DEBUG - RoleChanger RENDER START");
     console.log("📊 Users array:", JSON.stringify(users, null, 2));
@@ -87,10 +86,8 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
     }
   };
 
-  // 🔥 NUCLEAR FILTER: Absolutely no filtering, show everything with id
   const displayUsers = users.filter(user => user && user.id);
 
-  // 🔥 FORCE ADD CURRENT USER
   const currentUserExists = displayUsers.find(u => u.id === currentUser.id);
   if (!currentUserExists && currentUser.id) {
     displayUsers.push({

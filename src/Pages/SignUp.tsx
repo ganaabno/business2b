@@ -1,17 +1,14 @@
-// src/components/Signup.tsx - TYPESCRIPT SAFE VERSION
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
 import { supabase } from "../supabaseClient";
-import { supabaseAdmin } from "../utils/adminClient";  // 🔥 ADD THIS IMPORT
+import { supabaseAdmin } from "../utils/adminClient";  
 import { 
   Eye, 
   EyeOff, 
   Mail, 
   User, 
-  Shield, 
   Lock, 
-  UserCheck, 
   AlertCircle,
   Clock,
   CheckCircle 
@@ -22,7 +19,6 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [roleRequested, setRoleRequested] = useState<"user" | "manager" | "provider">("user");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "pending">("idle");
   const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -46,35 +42,30 @@ export default function Signup() {
       return;
     }
 
-    // 🔥 FIXED: TypeScript-safe pending request check
+    // Check for pending request
     let hasPending = false;
     try {
       const { data, error } = await supabase
         .from("pending_users")
         .select("id")
         .eq("email", email)
-        .maybeSingle();  // 🔥 Use maybeSingle() instead of single()
+        .maybeSingle();
 
-      // Handle 406 (no rows) or actual errors
       if (error) {
         if (error.message.includes('406') || error.message.includes('PGRST116')) {
-          // 406 = no rows found = no pending request = GOOD!
           console.log('✅ No pending request found - proceeding with signup');
           hasPending = false;
         } else {
-          // Real error
           console.error('❌ Error checking pending:', error);
           setStatus("error");
           setMessage("Error checking account status. Please try again.");
           return;
         }
       } else {
-        // Data exists = pending request
         hasPending = !!data;
       }
     } catch (error: any) {
       console.error('❌ Unexpected error checking pending:', error);
-      // Assume no pending on unexpected error (fail open)
       hasPending = false;
     }
 
@@ -85,7 +76,7 @@ export default function Signup() {
     }
 
     try {
-      // 🔥 FIXED: TypeScript-safe auth user check
+      // Check if user already exists
       let userExists = false;
       try {
         if (supabaseAdmin) {
@@ -95,9 +86,8 @@ export default function Signup() {
           console.log('⚠️ No admin client available - skipping auth check');
         }
       } catch (adminError: any) {
-        // 403 = no admin access, or other admin API error
         console.log('⚠️ Admin API error (expected for non-admin):', adminError.message);
-        userExists = false;  // Assume doesn't exist (safe for public signup)
+        userExists = false;
       }
       
       if (userExists) {
@@ -106,13 +96,13 @@ export default function Signup() {
         return;
       }
 
-      // Create pending request
+      // Create pending request with default role
       const { error } = await supabase.from("pending_users").insert({
         email,
         username,
-        password, // Plain password - will be hashed on approval
-        role_requested: roleRequested,
+        password,
         created_at: new Date().toISOString(),
+        role_requested: "user", // Default role
       });
 
       if (error) {
@@ -138,7 +128,6 @@ export default function Signup() {
     }
   };
 
-  // Keep your existing render methods (pending, success, form) as-is...
   if (status === "pending") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -191,6 +180,7 @@ export default function Signup() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Join Us</h1>
           <p className="text-gray-600">Create an account request</p>
+          <p>We will send you an email after approval!</p>
         </div>
 
         {status === "error" && (
@@ -256,35 +246,6 @@ export default function Signup() {
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Account Type</label>
-            <div className="space-y-2">
-              {[
-                { value: "user", label: "Customer", desc: "Standard account" },
-                { value: "manager", label: "Manager", desc: "Administrative access" },
-                { value: "provider", label: "Provider", desc: "Service provider" },
-              ].map((role) => (
-                <label key={role.value} className="flex items-center p-3 border border-gray-200 rounded-lg hover:border-blue-300 cursor-pointer transition-colors disabled:opacity-50">
-                  <input
-                    type="radio"
-                    value={role.value}
-                    checked={roleRequested === role.value}
-                    onChange={() => setRoleRequested(role.value as any)}
-                    className="mr-3 text-blue-600"
-                    disabled={status === "loading"}
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">{role.label}</div>
-                    <div className="text-sm text-gray-500">{role.desc}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Your requested role will be reviewed by an administrator
-            </p>
           </div>
 
           <button
