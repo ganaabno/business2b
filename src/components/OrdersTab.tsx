@@ -508,8 +508,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
                 Order ID
               </th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-28 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Tour</th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-56 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Passenger</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-24 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Tour</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-68 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Passenger</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Departure</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total Price</th>
               <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Hotel</th>
@@ -533,7 +533,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-2 whitespace-nowrap sticky left-28 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
+                <td className="px-4 py-2 whitespace-nowrap sticky left-24 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <input
                     type="text"
                     value={order.tour || ""}
@@ -543,7 +543,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     placeholder="Tour title..."
                   />
                 </td>
-                <td className="px-4 py-2 whitespace-nowrap sticky left-56 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
+                <td className="px-4 py-2 whitespace-nowrap sticky left-68 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-gray-900">
                       {order.first_name || 'N/A'} {order.last_name || 'N/A'}

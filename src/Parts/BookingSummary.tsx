@@ -19,9 +19,7 @@ interface BookingSummaryProps {
   currentUser: UserType;
 }
 
-// 🧹 BULLETPROOF DATE CLEANER - KILLS ALL EMPTY STRINGS!
 const cleanDateForDB = (dateValue: any): string | null => {
-  // Handle ALL possible "empty" scenarios
   if (
     dateValue === null ||
     dateValue === undefined ||

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "react-toastify/dist/ReactToastify.css";
 import type { User as UserType, Tour, Order, Passenger, ValidationError } from "../types/type";
 import OrdersTab from "../components/OrdersTab";
@@ -7,8 +7,9 @@ import AddTourTab from "../components/AddTourTab";
 import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
+import PassengersInLead from "../components/PassengersInLead";
 import { useNotifications } from "../hooks/useNotifications";
-import ToursTab from "../components/ToursTab";
+import { supabase } from "../supabaseClient";
 
 interface ManagerInterfaceProps {
   tours: Tour[];
@@ -29,14 +30,55 @@ export default function ManagerInterface({
   setPassengers,
   currentUser,
 }: ManagerInterfaceProps) {
-  // Use lowercase "tours" for consistency
   const [activeTab, setActiveTab] = useState<
-    "orders" | "passengers" | "addTour" | "addPassenger" | "passengerRequests" | "blacklist" | "tours"
+    "orders" | "passengers" | "addTour" | "addPassenger" | "passengerRequests" | "blacklist" | "pendingLeads"
   >("orders");
 
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const { showNotification } = useNotifications();
+  const [pendingLeadsCount, setPendingLeadsCount] = useState(0);
+
+  // Fetch pending leads count for badge
+  useEffect(() => {
+    const fetchPendingLeadsCount = async () => {
+      try {
+        const { count, error } = await supabase
+          .from("passengers_in_lead")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "pending");
+
+        if (error) {
+          console.error("Error fetching pending leads count:", error);
+          showNotification("error", `Failed to fetch pending leads count: ${error.message}`);
+          return;
+        }
+
+        setPendingLeadsCount(count || 0);
+      } catch (error) {
+        console.error("Unexpected error fetching pending leads count:", error);
+        showNotification("error", "An unexpected error occurred while fetching pending leads count.");
+      }
+    };
+
+    fetchPendingLeadsCount();
+
+    // Subscribe to real-time updates for pending leads count
+    const subscription = supabase
+      .channel("passengers_in_lead_count_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "passengers_in_lead", filter: "status=eq.pending" },
+        () => {
+          fetchPendingLeadsCount(); // Refresh count on any change
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [showNotification]);
 
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isGroup, setIsGroup] = useState(false);
@@ -62,24 +104,25 @@ export default function ManagerInterface({
                 "addTour",
                 "addPassenger",
                 "blacklist",
-                "tours", // Added "tours" to the navigation
+                "pendingLeads",
               ].map((tab) => (
                 <button
                   key={tab}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${activeTab === tab
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${
+                    activeTab === tab
                       ? "border-blue-500 text-blue-600"
                       : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
+                  }`}
                   onClick={() =>
                     setActiveTab(
                       tab as
-                      | "orders"
-                      | "passengers"
-                      | "passengerRequests"
-                      | "addTour"
-                      | "addPassenger"
-                      | "blacklist"
-                      | "tours"
+                        | "orders"
+                        | "passengers"
+                        | "passengerRequests"
+                        | "addTour"
+                        | "addPassenger"
+                        | "blacklist"
+                        | "pendingLeads"
                     )
                   }
                 >
@@ -93,8 +136,8 @@ export default function ManagerInterface({
                             ? "Add Tour"
                             : tab === "blacklist"
                               ? "Blacklist"
-                              : tab === "tours"
-                                ? "Tours"
+                              : tab === "pendingLeads"
+                                ? "Pending Leads"
                                 : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </span>
                     {tab !== "addTour" && tab !== "addPassenger" && (
@@ -105,8 +148,8 @@ export default function ManagerInterface({
                             ? initialPassengers.length
                             : tab === "blacklist"
                               ? initialPassengers.filter((p) => p.is_blacklisted).length
-                              : tab === "tours"
-                                ? tours.length // Added count for tours
+                              : tab === "pendingLeads"
+                                ? pendingLeadsCount
                                 : 0}
                       </span>
                     )}
@@ -140,7 +183,6 @@ export default function ManagerInterface({
             departureDate={departureDate}
             setDepartureDate={setDepartureDate}
             errors={errors}
-            showNotification={showNotification}
             currentUser={currentUser}
             setErrors={setErrors}
           />
@@ -153,7 +195,9 @@ export default function ManagerInterface({
             showNotification={showNotification}
           />
         )}
-        {activeTab === "tours" && <ToursTab tours={tours} setTours={setTours} />}
+        {activeTab === "pendingLeads" && (
+          <PassengersInLead currentUser={currentUser} showNotification={showNotification} />
+        )}
       </div>
     </div>
   );

@@ -12,8 +12,10 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { format, subMonths, addMonths } from "date-fns";
+import { format, subMonths, addMonths, subWeeks, addWeeks, subDays, addDays, startOfWeek, endOfWeek, startOfDay, endOfDay, differenceInDays } from "date-fns";
 import { useNotifications } from "../hooks/useNotifications";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
 
@@ -30,9 +32,12 @@ interface AnalyticsData {
   ordersByProvider: { providerId: string; providerName: string; count: number }[];
 }
 
-export default function AnalyticsDashboard({tours, orders, passengers }: AnalyticsDashboardProps) {
+export default function AnalyticsDashboard({ tours, orders, passengers }: AnalyticsDashboardProps) {
   const { showNotification } = useNotifications();
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "threeMonths" | "custom">("month");
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData>({
     passengersByUser: [],
     toursByPopularity: [],
@@ -40,136 +45,128 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
   });
   const [loading, setLoading] = useState(false);
 
-  // Fetch analytics data for the selected month
-  const fetchAnalyticsData = async (month: Date) => {
+  // Determine date range based on view mode
+  const getDateRange = () => {
+    let start: Date, end: Date;
+    switch (viewMode) {
+      case "month":
+        start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        break;
+      case "week":
+        start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
+        end = endOfWeek(currentDate, { weekStartsOn: 1 });
+        break;
+      case "day":
+        start = startOfDay(currentDate);
+        end = endOfDay(currentDate);
+        break;
+      case "threeMonths":
+        start = subMonths(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1), 2);
+        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        break;
+      case "custom":
+        if (!startDate || !endDate) {
+          start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+          end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        } else {
+          start = startOfDay(startDate);
+          end = endOfDay(endDate);
+        }
+        break;
+      default:
+        start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+    }
+    return { start, end };
+  };
+
+  // Fetch analytics data for the selected date range
+  const fetchAnalyticsData = async (start: Date, end: Date) => {
     setLoading(true);
     try {
-      const startOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
-      const endOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59);
-
       // Debug: Log input data
       console.log("🚀 Tours prop:", tours);
       console.log("🚀 Orders prop:", orders);
       console.log("🚀 Passengers prop:", passengers);
 
-      // Fetch users for passenger registration data - make sure we get valid IDs
+      // Fetch users
       const { data: users, error: usersError } = await supabase
         .from("users")
         .select("id, username, email, first_name, last_name")
-        .not("id", "is", null); // Only get users with valid IDs
+        .not("id", "is", null);
       if (usersError) throw new Error(usersError.message);
-      
-      console.log("👥 Fetched users:", users);
-      console.log("👥 Users with valid IDs:", users.filter(u => u.id));
 
-      // Filter passengers for the selected month from the prop OR fetch fresh
-      let monthPassengers = passengers.filter((p) => {
+      // Filter passengers for the selected date range
+      let filteredPassengers = passengers.filter((p) => {
         if (!p.created_at) return false;
         const passengerDate = new Date(p.created_at);
-        return passengerDate >= startOfMonth && passengerDate <= endOfMonth;
+        return passengerDate >= start && passengerDate <= end;
       });
 
-      // If no passengers from prop, fetch fresh data
-      if (monthPassengers.length === 0) {
+      // Fetch fresh passengers if none found in props
+      if (filteredPassengers.length === 0) {
         const { data: freshPassengers, error: passengersError } = await supabase
           .from("passengers")
           .select("*, user_id, created_at, tour_title")
-          .gte("created_at", startOfMonth.toISOString())
-          .lte("created_at", endOfMonth.toISOString());
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString());
         if (passengersError) throw new Error(passengersError.message);
-        monthPassengers = freshPassengers || [];
+        filteredPassengers = freshPassengers || [];
       }
 
-      // Fetch orders for the selected month
+      // Fetch orders for the selected date range
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select("*, tour: tours(title), created_by, show_in_provider, created_at")
-        .gte("created_at", startOfMonth.toISOString())
-        .lte("created_at", endOfMonth.toISOString());
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
       if (ordersError) throw new Error(ordersError.message);
 
-      // Debug: Log fetched data
-      console.log("✈️ Month passengers:", monthPassengers);
-      console.log("📦 Month orders:", ordersData);
-      console.log("🔍 Passenger user_ids:", monthPassengers.map(p => ({ id: p.user_id, created_at: p.created_at })));
-
-      // Process passengers by user - FIXED VERSION
+      // Process passengers by user
       const passengersByUser = users
-        .filter(user => user.id) // Only users with valid IDs
+        .filter(user => user.id)
         .map((user) => {
-          const userId = String(user.id); // Ensure string comparison
-          const count = monthPassengers.filter((p) => {
-            const passengerUserId = String(p.user_id);
-            return passengerUserId === userId;
-          }).length;
-
-          const displayName = user.username || 
-            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : 
-             user.email || `User ${userId.slice(-6)}`);
-
-          console.log(`🔗 Matching ${displayName} (ID: ${userId}): ${count} passengers`);
-
-          return {
-            userId,
-            username: displayName,
-            count,
-          };
-        })
-        .filter((item) => item.count > 0)
-        .sort((a, b) => b.count - a.count); // Sort by count descending
-
-      // Process tours by popularity - FIXED VERSION
-      const toursByPopularity = tours
-        .filter(tour => tour.title) // Only tours with titles
-        .map((tour) => {
-          const tourTitle = tour.title.toLowerCase().trim();
-          const count = monthPassengers.filter((p) => {
-            return p.tour_title && 
-                   p.tour_title.toLowerCase().trim() === tourTitle;
-          }).length;
-
-          console.log(`🗺️ Tour "${tour.title}" has ${count} passengers`);
-
-          return {
-            tourTitle: tour.title,
-            count,
-          };
+          const userId = String(user.id);
+          const count = filteredPassengers.filter((p) => String(p.user_id) === userId).length;
+          const displayName = user.username ||
+            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` :
+              user.email || `User ${userId.slice(-6)}`);
+          return { userId, username: displayName, count };
         })
         .filter((item) => item.count > 0)
         .sort((a, b) => b.count - a.count);
 
-      // Process orders by provider - FIXED VERSION
-      const monthOrders = ordersData.filter(order => 
-        order.created_by && 
-        order.show_in_provider !== false // Include orders where show_in_provider is true or null
+      // Process tours by popularity
+      const toursByPopularity = tours
+        .filter(tour => tour.title)
+        .map((tour) => {
+          const tourTitle = tour.title.toLowerCase().trim();
+          const count = filteredPassengers.filter((p) =>
+            p.tour_title && p.tour_title.toLowerCase().trim() === tourTitle
+          ).length;
+          return { tourTitle: tour.title, count };
+        })
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count);
+
+      // Process orders by provider
+      const monthOrders = ordersData.filter(order =>
+        order.created_by && order.show_in_provider !== false
       );
 
       const ordersByProvider = users
-        .filter(user => user.id) // Only users with valid IDs
+        .filter(user => user.id)
         .map((user) => {
           const userId = String(user.id);
-          const count = monthOrders.filter((o) => 
-            String(o.created_by) === userId
-          ).length;
-
-          const displayName = user.username || 
-            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : 
-             user.email || `Provider ${userId.slice(-6)}`);
-
-          console.log(`📋 Provider ${displayName} (ID: ${userId}): ${count} orders`);
-
-          return {
-            providerId: userId,
-            providerName: displayName,
-            count,
-          };
+          const count = monthOrders.filter((o) => String(o.created_by) === userId).length;
+          const displayName = user.username ||
+            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` :
+              user.email || `Provider ${userId.slice(-6)}`);
+          return { providerId: userId, providerName: displayName, count };
         })
         .filter((item) => item.count > 0)
         .sort((a, b) => b.count - a.count);
-
-      console.log("📊 Final passengersByUser:", passengersByUser);
-      console.log("📊 Final toursByPopularity:", toursByPopularity);
-      console.log("📊 Final ordersByProvider:", ordersByProvider);
 
       setAnalyticsData({
         passengersByUser,
@@ -179,7 +176,6 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     } catch (error) {
       console.error("💥 Analytics fetch error:", error);
       showNotification("error", `Failed to fetch analytics data: ${error instanceof Error ? error.message : "Unknown error"}`);
-      // Set empty data on error to prevent crashes
       setAnalyticsData({
         passengersByUser: [],
         toursByPopularity: [],
@@ -191,10 +187,52 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
   };
 
   useEffect(() => {
-    fetchAnalyticsData(currentMonth);
-  }, [currentMonth]);
+    const { start, end } = getDateRange();
+    fetchAnalyticsData(start, end);
+  }, [currentDate, viewMode, startDate, endDate]);
 
-  // Chart data for passengers by user
+  // Navigation handlers
+  const handlePrevious = () => {
+    switch (viewMode) {
+      case "month":
+        setCurrentDate(subMonths(currentDate, 1));
+        break;
+      case "week":
+        setCurrentDate(subWeeks(currentDate, 1));
+        break;
+      case "day":
+        setCurrentDate(subDays(currentDate, 1));
+        break;
+      case "threeMonths":
+        setCurrentDate(subMonths(currentDate, 3));
+        break;
+      case "custom":
+        // No navigation for custom range
+        break;
+    }
+  };
+
+  const handleNext = () => {
+    switch (viewMode) {
+      case "month":
+        setCurrentDate(addMonths(currentDate, 1));
+        break;
+      case "week":
+        setCurrentDate(addWeeks(currentDate, 1));
+        break;
+      case "day":
+        setCurrentDate(addDays(currentDate, 1));
+        break;
+      case "threeMonths":
+        setCurrentDate(addMonths(currentDate, 3));
+        break;
+      case "custom":
+        // No navigation for custom range
+        break;
+    }
+  };
+
+  // Chart data (unchanged)
   const passengersByUserChartData = useMemo(() => ({
     labels: analyticsData.passengersByUser.map((item) => item.username),
     datasets: [
@@ -208,7 +246,6 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     ],
   }), [analyticsData.passengersByUser]);
 
-  // Chart data for tours by popularity
   const toursByPopularityChartData = useMemo(() => ({
     labels: analyticsData.toursByPopularity.map((item) => item.tourTitle),
     datasets: [
@@ -238,7 +275,6 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     ],
   }), [analyticsData.toursByPopularity]);
 
-  // Chart data for orders by provider
   const ordersByProviderChartData = useMemo(() => ({
     labels: analyticsData.ordersByProvider.map((item) => item.providerName),
     datasets: [
@@ -258,12 +294,7 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     plugins: {
       legend: {
         position: "top" as const,
-        labels: {
-          font: {
-            size: 12,
-            family: "'Inter', sans-serif",
-          },
-        },
+        labels: { font: { size: 12, family: "'Inter', sans-serif" } },
       },
       tooltip: {
         backgroundColor: "rgba(0, 0, 0, 0.8)",
@@ -274,29 +305,16 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     scales: {
       y: {
         beginAtZero: true,
-        ticks: {
-          precision: 0,
-          font: {
-            size: 12,
-            family: "'Inter', sans-serif",
-          },
-        },
-        grid: {
-          color: "rgba(0, 0, 0, 0.05)",
-        },
+        ticks: { precision: 0, font: { size: 12, family: "'Inter', sans-serif" } },
+        grid: { color: "rgba(0, 0, 0, 0.05)" },
       },
       x: {
         ticks: {
-          font: {
-            size: 12,
-            family: "'Inter', sans-serif",
-          },
+          font: { size: 12, family: "'Inter', sans-serif" },
           maxRotation: 45,
           minRotation: 0,
         },
-        grid: {
-          display: false,
-        },
+        grid: { display: false },
       },
     },
   };
@@ -307,13 +325,7 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     plugins: {
       legend: {
         position: "right" as const,
-        labels: {
-          font: {
-            size: 12,
-            family: "'Inter', sans-serif",
-          },
-          padding: 20,
-        },
+        labels: { font: { size: 12, family: "'Inter', sans-serif" }, padding: 20 },
       },
       tooltip: {
         backgroundColor: "rgba(0, 0, 0, 0.8)",
@@ -323,12 +335,21 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
     },
   };
 
-  const handlePreviousMonth = () => {
-    setCurrentMonth(subMonths(currentMonth, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentMonth(addMonths(currentMonth, 1));
+  // Format display text for the selected date range
+  const formatDateRange = () => {
+    const { start, end } = getDateRange();
+    if (viewMode === "month") {
+      return format(currentDate, "MMMM yyyy");
+    } else if (viewMode === "week") {
+      return `${format(start, "MMM d, yyyy")} - ${format(end, "MMM d, yyyy")}`;
+    } else if (viewMode === "day") {
+      return format(currentDate, "MMMM d, yyyy");
+    } else if (viewMode === "threeMonths") {
+      return `${format(start, "MMM yyyy")} - ${format(end, "MMM yyyy")}`;
+    } else if (viewMode === "custom" && startDate && endDate) {
+      return `${format(startDate, "MMM d, yyyy")} - ${format(endDate, "MMM d, yyyy")}`;
+    }
+    return format(currentDate, "MMMM yyyy");
   };
 
   return (
@@ -339,23 +360,73 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
           <p className="mt-2 text-gray-600">Insights on passenger registrations, tour popularity, and provider orders</p>
         </div>
 
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h2 className="text-xl font-semibold text-gray-900">
-            📊 Data for {format(currentMonth, "MMMM yyyy")}
+            📊 Data for {formatDateRange()}
           </h2>
-          <div className="flex space-x-2">
-            <button
-              onClick={handlePreviousMonth}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
-            >
-              ← Previous
-            </button>
-            <button
-              onClick={handleNextMonth}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
-            >
-              Next →
-            </button>
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <div className="flex space-x-2">
+              <select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as "month" | "week" | "day" | "threeMonths" | "custom")}
+                className="px-4 py-2 bg-gray-100 text-gray-900 rounded-md font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="month">Monthly</option>
+                <option value="week">Weekly</option>
+                <option value="day">Daily</option>
+                <option value="threeMonths">3 Months</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              {viewMode !== "custom" && (
+                <>
+                  <button
+                    onClick={handlePrevious}
+                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
+                  >
+                    ← Previous
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-semibold text-sm transition-all duration-200 flex items-center"
+                  >
+                    Next →
+                  </button>
+                </>
+              )}
+            </div>
+            {viewMode === "custom" && (
+              <div className="flex gap-2">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Start Date:</label>
+                  <DatePicker
+                    selected={startDate}
+                    onChange={(date: Date | null) => setStartDate(date)} 
+                    selectsStart
+                    startDate={startDate}
+                    endDate={endDate}
+                    maxDate={endDate || new Date()}
+                    className="px-4 py-2 bg-gray-100 text-gray-900 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    dateFormat="MMM d, yyyy"
+                    placeholderText="Select start date"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">End Date:</label>
+                  <DatePicker
+                    selected={endDate}
+                    onChange={(date: Date | null) => setEndDate(date)} 
+                    selectsEnd
+                    startDate={startDate}
+                    endDate={endDate}
+                    minDate={startDate? startDate : undefined}
+                    maxDate={new Date()}
+                    className="px-4 py-2 bg-gray-100 text-gray-900 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    dateFormat="MMM d, yyyy"
+                    placeholderText="Select end date"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -380,8 +451,8 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl">👥</span>
                     </div>
-                    <p className="text-center">No passenger registrations for this month.</p>
-                    <p className="text-sm mt-1">Try a different month or check your data.</p>
+                    <p className="text-center">No passenger registrations for this period.</p>
+                    <p className="text-sm mt-1">Try a different period or check your data.</p>
                   </div>
                 ) : (
                   <Bar data={passengersByUserChartData} options={chartOptions} />
@@ -403,7 +474,7 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl">🗺️</span>
                     </div>
-                    <p className="text-center">No tour data for this month.</p>
+                    <p className="text-center">No tour data for this period.</p>
                     <p className="text-sm mt-1">Ensure passengers are assigned to tours.</p>
                   </div>
                 ) : (
@@ -426,7 +497,7 @@ export default function AnalyticsDashboard({tours, orders, passengers }: Analyti
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl">📋</span>
                     </div>
-                    <p className="text-center">No provider order data for this month.</p>
+                    <p className="text-center">No provider order data for this period.</p>
                     <p className="text-sm mt-1">Check your order visibility settings.</p>
                   </div>
                 ) : (

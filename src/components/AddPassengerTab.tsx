@@ -1,16 +1,16 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
-import { supabase } from "../supabaseClient";
-import type { Tour, Passenger, User as UserType, ValidationError, Order, OrderStatus } from "../types/type";
-import Notifications from "../Parts/Notification";
-import ProgressSteps from "../Parts/ProgressSteps";
-import ErrorSummary from "../Parts/ErrorSummary";
+import React from "react";
+import { useBooking } from "../hooks/useBooking";
 import TourSelection from "../Parts/TourSelection";
 import BookingSummary from "../Parts/BookingSummary";
 import { BookingActions } from "../addPassengerComponents/BookingActions";
-import { PassengerFormFields } from "../addPassengerComponents/PassengerFormFields";
 import { downloadTemplate } from "../addPassengerComponents/downloadTemplate";
-import { checkSeatLimit } from "../utils/seatLimitChecks";
-import { assignRoomAllocation } from "../addPassengerComponents/roomAllocationLogic";
+import Notification from "../Parts/Notification";
+import ProgressSteps from "../Parts/ProgressSteps";
+import ErrorSummary from "../Parts/ErrorSummary";
+import { PassengerList } from "./PassengerList";
+import { MobileFooter } from "./MobileFooter";
+import LeadPassengerForm from "../components/LeadPassengerForm";
+import type { Tour, ValidationError, LeadPassenger, Order, User as UserType } from "../types/type";
 
 interface AddPassengerTabProps {
   tours: Tour[];
@@ -22,955 +22,60 @@ interface AddPassengerTabProps {
   setDepartureDate: React.Dispatch<React.SetStateAction<string>>;
   errors: ValidationError[];
   setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>;
-  showNotification: (type: "success" | "error", message: string) => void;
   currentUser: UserType;
 }
 
-const cleanDateForDB = (dateValue: any): string | null => {
-  if (
-    dateValue === null ||
-    dateValue === undefined ||
-    dateValue === "" ||
-    dateValue === " " ||
-    (typeof dateValue === 'string' && dateValue.trim() === '') ||
-    (typeof dateValue === 'string' && !isNaN(Date.parse(dateValue)) && new Date(dateValue).toString() === 'Invalid Date')
-  ) {
-    return null;
-  }
-  const cleaned = String(dateValue).trim();
-  const parsedDate = new Date(cleaned);
-  if (!isNaN(parsedDate.getTime())) {
-    const year = parsedDate.getFullYear();
-    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-    const day = String(parsedDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  return null;
-};
-
-const cleanValueForDB = (field: string, value: any): any => {
-  if (['date_of_birth', 'passport_expiry', 'departure_date', 'blacklisted_date'].includes(field)) {
-    return cleanDateForDB(value);
-  }
-  if (['created_at', 'updated_at'].includes(field)) {
-    return cleanTimestampForDB(value);
-  }
-  if (field === 'departureDate') {
-    return cleanDateForDB(value);
-  }
-  return typeof value === 'string' ? value.trim() : value;
-};
-
-const cleanTimestampForDB = (timestamp: string | undefined | null): string | null => {
-  if (!timestamp || timestamp.trim() === "") return null;
-  return new Date(timestamp).toISOString();
-};
-
-const generatePassengerId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = Math.random() * 16 | 0;
-    const v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-const createNewPassenger = (
-  currentUser: UserType,
-  existingPassengers: Passenger[],
-  selectedTourData?: Tour,
-  hotels: string[] = []
-): Passenger => {
-  const serialNo = (existingPassengers.length + 1).toString();
-  const lastPassenger = existingPassengers[existingPassengers.length - 1];
-
-  const defaultRoomType = (() => {
-    if (existingPassengers.length === 0) return "";
-    if (lastPassenger?.roomType === "Double" && existingPassengers.length % 2 === 1) {
-      return "Double";
-    }
-    return "";
-  })();
-
-  const defaultHotel = hotels.length > 0 ? hotels[0] : "";
-
-  return {
-    id: generatePassengerId(),
-    order_id: "",
-    user_id: currentUser.id,
-    name: "",
-    tour_title: selectedTourData?.title || "",
-    departure_date: selectedTourData?.departure_date || "",
-    room_allocation: "",
-    serial_no: serialNo,
-    last_name: "",
-    first_name: "",
-    date_of_birth: "",
-    age: 0,
-    gender: "",
-    passport_number: "",
-    passport_expiry: null,
-    nationality: "Mongolia",
-    roomType: defaultRoomType,
-    hotel: defaultHotel,
-    additional_services: [],
-    price: selectedTourData?.base_price || 0,
-    email: "",
-    phone: "",
-    passport_upload: "",
-    allergy: "",
-    emergency_phone: "",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    status: "active",
-    is_blacklisted: false,
-    blacklisted_date: null,
-    notes: "",
-  };
-};
-
-export default function AddPassengerTab({
-  tours,
-  setOrders,
-  selectedTour,
-  setSelectedTour,
-  departureDate,
-  setDepartureDate,
-  errors,
-  setErrors,
-  showNotification,
-  currentUser,
-}: AddPassengerTabProps) {
-  const [bookingPassengers, setBookingPassengers] = useState<Passenger[]>([]);
-  const [activeStep, setActiveStep] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showInProvider, setShowInProvider] = useState<boolean>(false);
-  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [expandedPassengerId, setExpandedPassengerId] = useState<string | null>(null);
-  const [fieldLoading, setFieldLoading] = useState<Record<string, boolean>>({});
-  const [canAdd, setCanAdd] = useState(true);
-  const [showPassengerPrompt, setShowPassengerPrompt] = useState(false);
-  const [passengerCountInput, setPassengerCountInput] = useState<string>("");
-  const [lastValidationErrors, setLastValidationErrors] = useState<ValidationError[]>([]);
-
-  const newPassengerRef = useRef<HTMLDivElement | null>(null);
-  const [availableHotels, setAvailableHotels] = useState<string[]>([]);
-
-  const MAX_PASSENGERS = 20;
-  const ROOM_TYPES = ["Single", "King", "Double", "Twin", "Family"];
-  const NATIONALITIES = [
-    "Mongolia", "USA", "Canada", "UK", "Australia", "Germany", "France",
-    "Japan", "China", "South Korea", "India", "Russia", "Brazil", "South Africa"
-  ];
-
-  const isPowerUser = currentUser.role === "admin" ||
-    currentUser.role === "manager" ||
-    currentUser.role === "superadmin";
-
-  const filteredTours = isPowerUser ? tours : tours.map(({ available_seats, ...rest }) => rest);
-  const selectedTourData = tours.find((t) => t.title === selectedTour);
-
-  const wrappedShowNotification = useCallback((type: "success" | "error", message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 5000);
-    showNotification(type, message);
-  }, [showNotification]);
-
-  useEffect(() => {
-    if (selectedTourData && selectedTourData.hotels !== undefined) {
-      const hotels = selectedTourData.hotels as string | string[] | undefined;
-
-      if (Array.isArray(hotels)) {
-        setAvailableHotels(hotels.filter(hotel => hotel && hotel.trim()));
-      } else if (typeof hotels === 'string') {
-        if (hotels.trim()) {
-          setAvailableHotels(hotels.split(',').map((h: string) => h.trim()).filter(Boolean));
-        } else {
-          setAvailableHotels([]);
-        }
-      } else {
-        setAvailableHotels([]);
-      }
-    } else {
-      setAvailableHotels([]);
-    }
-  }, [selectedTourData]);
-
-  useEffect(() => {
-    if (bookingPassengers.length >= MAX_PASSENGERS || !selectedTour || !departureDate || !selectedTourData) {
-      setCanAdd(false);
-      return;
-    }
-
-    if (isPowerUser) {
-      setCanAdd(true);
-      return;
-    }
-
-    setCanAdd(true);
-  }, [bookingPassengers.length, selectedTour, departureDate, selectedTourData, isPowerUser]);
-
-  const remainingSeats = isPowerUser
-    ? undefined
-    : selectedTourData?.available_seats !== undefined
-      ? Math.max(0, selectedTourData.available_seats - bookingPassengers.length)
-      : undefined;
-
-  const canAddPassenger = useCallback(async () => {
-    if (bookingPassengers.length >= MAX_PASSENGERS) {
-      wrappedShowNotification("error", `Maximum ${MAX_PASSENGERS} passengers allowed per booking`);
-      setCanAdd(false);
-      return false;
-    }
-    if (!selectedTour || !departureDate) {
-      wrappedShowNotification("error", "Please select a tour and departure date");
-      setCanAdd(false);
-      return false;
-    }
-    if (!selectedTourData) {
-      wrappedShowNotification("error", "Invalid tour selected");
-      setCanAdd(false);
-      return false;
-    }
-
-    if (isPowerUser) {
-      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: Unlimited booking power activated!`);
-      setCanAdd(true);
-      return true;
-    }
-
-    console.log("🔢 Regular user: Checking seat availability...");
-    const { isValid, message } = await checkSeatLimit(
-      selectedTourData.id,
-      departureDate,
-      currentUser.role
-    );
-
-    if (!isValid) {
-      wrappedShowNotification("error", message);
-      setCanAdd(false);
-      return false;
-    }
-
-    console.log("✅ Seat check passed for regular user");
-    setCanAdd(true);
-    return true;
-  }, [bookingPassengers.length, selectedTour, departureDate, selectedTourData, isPowerUser, currentUser.role, wrappedShowNotification]);
-
-  const calculateAge = (dateOfBirth: string | undefined | null): number => {
-    const cleanBirthDate = cleanDateForDB(dateOfBirth);
-    if (!cleanBirthDate) return 0;
-    const dob = new Date(cleanBirthDate);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const monthDiff = today.getMonth() - dob.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
-    return Math.max(0, age);
-  };
-
-  const calculateServicePrice = (services: string[], tourData: Tour): number => {
-    return services.reduce((sum, serviceName) => {
-      const service = tourData.services.find((s) => s.name === serviceName);
-      return sum + (service ? service.price : 0);
-    }, 0);
-  };
-
-  const addMultiplePassengers = useCallback(async (count: number) => {
-    const canAddResult = await canAddPassenger();
-    if (!canAddResult) return;
-
-    const availableSlots = MAX_PASSENGERS - bookingPassengers.length;
-    const actualCount = Math.min(count, availableSlots);
-
-    if (actualCount <= 0) {
-      wrappedShowNotification("error", "No available slots for new passengers");
-      return;
-    }
-
-    try {
-      const newPassengers = Array.from({ length: actualCount }, () =>
-        createNewPassenger(currentUser, bookingPassengers, selectedTourData, availableHotels)
-      );
-
-      setBookingPassengers(prev => {
-        const updated = [...prev, ...newPassengers];
-        const withRoomAllocation = updated.map((passenger, idx) => {
-          if (idx >= prev.length) {
-            const roomAllocation = assignRoomAllocation(updated, idx, passenger.roomType);
-            return { ...passenger, room_allocation: roomAllocation };
-          }
-          return passenger;
-        });
-        return withRoomAllocation;
-      });
-
-      setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
-      wrappedShowNotification("success", `Added ${actualCount} passenger${actualCount !== 1 ? 's' : ''}`);
-      newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    } catch (error) {
-      wrappedShowNotification("error", "Failed to add passengers. Please try again.");
-    }
-  }, [bookingPassengers, currentUser, selectedTourData, availableHotels, wrappedShowNotification, canAddPassenger]);
-
-  const handleAddPassenger = useCallback(() => {
-    if (isPowerUser) {
-      setShowPassengerPrompt(true);
-    } else {
-      addMultiplePassengers(1);
-    }
-  }, [isPowerUser, addMultiplePassengers]);
-
-  const handlePassengerPromptSubmit = useCallback(() => {
-    const count = parseInt(passengerCountInput) || 0;
-    if (count <= 0) {
-      wrappedShowNotification("error", "Please enter a valid number of passengers");
-      return;
-    }
-    addMultiplePassengers(count);
-    setShowPassengerPrompt(false);
-    setPassengerCountInput("");
-  }, [passengerCountInput, addMultiplePassengers, wrappedShowNotification]);
-
-  const validatePassenger = useCallback((passenger: Passenger, departureDate: string): ValidationError[] => {
-    const errors: ValidationError[] = [];
-    console.log(`Validating passenger ${passenger.serial_no}:`, passenger);
-
-    if (!passenger.first_name?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_first_name`, message: `Passenger ${passenger.serial_no}: First name is required` });
-    }
-    if (!passenger.last_name?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_last_name`, message: `Passenger ${passenger.serial_no}: Last name is required` });
-    }
-    if (!passenger.email?.trim() || !/\S+@\S+\.\S+/.test(passenger.email)) {
-      errors.push({ field: `passenger_${passenger.serial_no}_email`, message: `Passenger ${passenger.serial_no}: Valid email is required` });
-    }
-    if (!passenger.phone?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_phone`, message: `Passenger ${passenger.serial_no}: Phone number is required` });
-    }
-    if (!passenger.nationality?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_nationality`, message: `Passenger ${passenger.serial_no}: Nationality is required` });
-    }
-    if (!passenger.gender?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_gender`, message: `Passenger ${passenger.serial_no}: Gender is required` });
-    }
-    if (!passenger.passport_number?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_passport_number`, message: `Passenger ${passenger.serial_no}: Passport number is required` });
-    }
-    if (!passenger.passport_expiry) {
-      errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport expiry date is required` });
-    } else {
-      const expiryDate = new Date(passenger.passport_expiry);
-      const minDate = new Date(departureDate);
-      minDate.setMonth(minDate.getMonth() + 6);
-      if (isNaN(expiryDate.getTime()) || expiryDate < minDate) {
-        errors.push({ field: `passenger_${passenger.serial_no}_passport_expiry`, message: `Passenger ${passenger.serial_no}: Passport must be valid for at least 6 months from departure date` });
-      }
-    }
-    if (!passenger.roomType?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_roomType`, message: `Passenger ${passenger.serial_no}: Room type is required` });
-    }
-    if (!passenger.hotel?.trim()) {
-      errors.push({ field: `passenger_${passenger.serial_no}_hotel`, message: `Passenger ${passenger.serial_no}: Hotel selection is required` });
-    }
-
-    return errors;
-  }, []);
-
-  const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
-    if (index < 0 || index >= bookingPassengers.length) {
-      wrappedShowNotification("error", "Invalid passenger index");
-      return;
-    }
-
-    const passengerId = bookingPassengers[index].id;
-    const loadingKey = `${passengerId}-${String(field)}`;
-
-    const updatedPassengers = [...bookingPassengers];
-    updatedPassengers[index] = { ...updatedPassengers[index], [field]: cleanValueForDB(field, value) };
-
-    if (field === "date_of_birth" && value) {
-      updatedPassengers[index].age = calculateAge(value);
-    }
-
-    if (field === "additional_services") {
-      const tour = tours.find((t) => t.title === selectedTour);
-      if (tour) {
-        updatedPassengers[index].price = tour.base_price + calculateServicePrice(value as string[], tour);
-      }
-    }
-
-    if (field === "first_name" || field === "last_name") {
-      const first = updatedPassengers[index].first_name || "";
-      const last = updatedPassengers[index].last_name || "";
-      updatedPassengers[index].name = `${first} ${last}`.trim();
-    }
-
-    if (field === "roomType" && value) {
-      const roomAllocation = assignRoomAllocation(updatedPassengers, index, value);
-      updatedPassengers[index].room_allocation = roomAllocation;
-
-      if (value === "Family") {
-        for (let i = index + 1; i < updatedPassengers.length && i < index + 3; i++) {
-          if (updatedPassengers[i]) {
-            updatedPassengers[i].room_allocation = roomAllocation;
-          }
-        }
-      }
-    }
-
-    if (field === "passport_upload" && value instanceof File) {
-      setFieldLoading(prev => ({ ...prev, [loadingKey]: true }));
-      try {
-        const fileExt = value.name.split(".").pop();
-        const fileName = `passport_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const { data, error } = await supabase.storage.from("passports").upload(fileName, value);
-        if (error) {
-          wrappedShowNotification("error", `Passport upload failed: ${error.message}`);
-          return;
-        }
-        updatedPassengers[index].passport_upload = data.path;
-        wrappedShowNotification("success", "Passport uploaded successfully");
-      } catch (error) {
-        wrappedShowNotification("error", "Failed to upload passport");
-      } finally {
-        setFieldLoading(prev => ({ ...prev, [loadingKey]: false }));
-      }
-    }
-
-    updatedPassengers[index].updated_at = new Date().toISOString();
-    setBookingPassengers(updatedPassengers);
-  };
-
-  const removePassenger = useCallback((index: number) => {
-    if (bookingPassengers.length === 1) {
-      wrappedShowNotification("error", "At least one passenger is required");
-      return;
-    }
-
-    if (index < 0 || index >= bookingPassengers.length) {
-      wrappedShowNotification("error", "Invalid passenger selection");
-      return;
-    }
-
-    try {
-      const updatedPassengers = bookingPassengers.filter((_, i) => i !== index);
-      const reNumberedPassengers = updatedPassengers.map((passenger, i) => ({
-        ...passenger,
-        serial_no: (i + 1).toString(),
-        updated_at: new Date().toISOString(),
-      }));
-      setBookingPassengers(reNumberedPassengers);
-      if (expandedPassengerId === bookingPassengers[index].id) {
-        setExpandedPassengerId(null);
-      }
-      wrappedShowNotification("success", `Removed passenger ${index + 1}`);
-    } catch (error) {
-      wrappedShowNotification("error", "Failed to remove passenger. Please try again.");
-    }
-  }, [bookingPassengers, expandedPassengerId, wrappedShowNotification]);
-
-  const clearAllPassengers = useCallback(() => {
-    if (bookingPassengers.length === 0) {
-      wrappedShowNotification("error", "No passengers to clear");
-      return;
-    }
-
-    if (window.confirm(`Are you sure you want to remove all ${bookingPassengers.length} passengers?`)) {
-      setBookingPassengers([]);
-      setExpandedPassengerId(null);
-      wrappedShowNotification("success", "All passengers cleared");
-    }
-  }, [bookingPassengers.length, wrappedShowNotification]);
-
-  const resetBookingForm = useCallback(() => {
-    setBookingPassengers([]);
-    setSelectedTour("");
-    setDepartureDate("");
-    setPaymentMethod("");
-    setActiveStep(1);
-    setShowInProvider(false);
-    setExpandedPassengerId(null);
-    setErrors([]); // Clear errors on reset
-    wrappedShowNotification("success", "Passenger Registered Completely!");
-  }, [wrappedShowNotification, setErrors]);
-
-  const validateBooking = useCallback((activeStep: number): boolean => {
-    const allErrors: ValidationError[] = [];
-
-    if (!selectedTour?.trim()) allErrors.push({ field: "tour", message: "Please select a tour" });
-    if (!departureDate?.trim()) allErrors.push({ field: "departure", message: "Please select a departure date" });
-    if (bookingPassengers.length === 0) allErrors.push({ field: "passengers", message: "At least one passenger is required" });
-
-    if (activeStep === 3) {
-      if (!paymentMethod?.trim()) allErrors.push({ field: "payment", message: "Please select a payment method" });
-      if (isPowerUser && !showInProvider) {
-        allErrors.push({ field: "show_in_provider", message: "Provider visibility is required for power users" });
-      }
-    }
-
-    bookingPassengers.forEach((passenger) => {
-      const passengerErrors = validatePassenger(passenger, departureDate);
-      allErrors.push(...passengerErrors);
-    });
-
-    // Only log and update errors if they’ve changed
-    const errorsChanged = JSON.stringify(allErrors) !== JSON.stringify(lastValidationErrors);
-    if (errorsChanged) {
-      console.log("Validation errors for step", activeStep, ":", allErrors);
-      setErrors(allErrors);
-      setLastValidationErrors(allErrors);
-    }
-
-    return allErrors.length === 0;
-  }, [selectedTour, departureDate, bookingPassengers, paymentMethod, showInProvider, isPowerUser, lastValidationErrors, setErrors, validatePassenger]);
-
-  const saveOrder = async () => {
-    console.log("🚀 SAVE ORDER STARTED!");
-    console.log("💪 POWER USER MODE:", isPowerUser, "Role:", currentUser.role);
-    console.log("📊 Tour:", selectedTour, "Passengers:", bookingPassengers.length);
-
-    if (!validateBooking(3)) {
-      console.log("❌ Validation failed");
-      wrappedShowNotification("error", "Please fix the validation errors before proceeding");
-      return;
-    }
-
-    const tourData = tours.find((t) => t.title === selectedTour);
-    if (!tourData) {
-      console.log("❌ Tour not found");
-      wrappedShowNotification("error", "Selected tour not found");
-      return;
-    }
-
-    if (isPowerUser) {
-      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: SKIPPING ALL SEAT CHECKS - TOTAL DOMINATION!`);
-    } else {
-      if (tourData.available_seats !== undefined && tourData.available_seats < bookingPassengers.length) {
-        console.log("❌ Regular user: Not enough seats");
-        wrappedShowNotification("error", "Cannot save booking. The tour is fully booked.");
-        return;
-      }
-    }
-
-    setLoading(true);
-
-    try {
-      const totalPrice = bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
-      const commission = totalPrice * 0.05;
-
-      const firstPassenger = bookingPassengers[0];
-      const orderData = {
-        user_id: currentUser.id,
-        tour_id: tourData.id,
-        phone: firstPassenger?.phone?.trim() || null,
-        last_name: firstPassenger?.last_name?.trim() || null,
-        first_name: firstPassenger?.first_name?.trim() || null,
-        email: firstPassenger?.email?.trim() || null,
-        age: firstPassenger?.age || null,
-        gender: firstPassenger?.gender?.trim() || null,
-        passport_number: firstPassenger?.passport_number?.trim() || null,
-        passport_expire: firstPassenger?.passport_expiry ? cleanValueForDB('passport_expiry', firstPassenger.passport_expiry) : null,
-        passport_copy: firstPassenger?.passport_upload || null,
-        commission,
-        created_by: currentUser.id,
-        createdBy: currentUser.username || currentUser.email,
-        tour: tourData.title,
-        travel_choice: selectedTour,
-        status: "pending",
-        hotel: firstPassenger?.hotel?.trim() || null,
-        room_number: firstPassenger?.room_allocation?.trim() || null,
-        payment_method: paymentMethod || null,
-        departureDate: cleanValueForDB('departureDate', departureDate),
-        total_price: totalPrice,
-        total_amount: totalPrice,
-        paid_amount: 0,
-        balance: totalPrice,
-        show_in_provider: isPowerUser ? showInProvider : false,
-      };
-
-      const { data: orderResult, error: orderError } = await supabase
-        .from("orders")
-        .insert(orderData)
-        .select()
-        .single();
-
-      if (orderError || !orderResult) {
-        throw new Error(`Order creation failed: ${orderError?.message || "No order data returned"}`);
-      }
-
-      const orderId = String(orderResult.id);
-
-      const uploadPassengerFiles = async (passengers: Passenger[]): Promise<string[]> => {
-        const uploadedPaths: string[] = [];
-
-        for (const passenger of passengers) {
-          if (passenger.passport_upload && typeof passenger.passport_upload !== 'string' && passenger.passport_upload !== null) {
-            try {
-              const file = passenger.passport_upload as File;
-              const fileExt = file.name.split(".").pop();
-              const fileName = `passport_${orderId}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-              const { data: uploadData, error: uploadError } = await supabase.storage
-                .from("passports")
-                .upload(fileName, file);
-
-              if (!uploadError && uploadData) {
-                uploadedPaths.push(uploadData.path);
-              } else {
-                uploadedPaths.push("");
-              }
-            } catch (uploadError) {
-              console.error("Passport upload failed:", uploadError);
-              uploadedPaths.push("");
-            }
-          } else {
-            uploadedPaths.push(passenger.passport_upload || "");
-          }
-        }
-
-        return uploadedPaths;
-      };
-
-      const uploadedPaths = await uploadPassengerFiles(bookingPassengers);
-
-      const passengerPromises = bookingPassengers.map(async (passenger, index) => {
-        const cleanPassenger: any = {
-          order_id: orderId,
-          user_id: currentUser.id,
-          tour_title: selectedTour,
-          departure_date: cleanValueForDB('departure_date', departureDate),
-          name: `${passenger.first_name} ${passenger.last_name}`.trim(),
-          room_allocation: passenger.room_allocation?.trim() || "",
-          serial_no: passenger.serial_no,
-          last_name: passenger.last_name?.trim() || "",
-          first_name: passenger.first_name?.trim() || "",
-          date_of_birth: cleanValueForDB('date_of_birth', passenger.date_of_birth),
-          age: passenger.age || null,
-          gender: passenger.gender?.trim() || "",
-          passport_number: passenger.passport_number?.trim() || "",
-          passport_expiry: cleanValueForDB('passport_expiry', passenger.passport_expiry),
-          nationality: passenger.nationality?.trim() || "Mongolia",
-          roomType: passenger.roomType?.trim() || "",
-          hotel: passenger.hotel?.trim() || "",
-          additional_services: Array.isArray(passenger.additional_services) ? passenger.additional_services : [],
-          price: passenger.price || 0,
-          email: passenger.email?.trim() || "",
-          phone: passenger.phone?.trim() || "",
-          passport_upload: uploadedPaths[index] || null,
-          allergy: passenger.allergy?.trim() || "",
-          emergency_phone: passenger.emergency_phone?.trim() || "",
-          status: "active",
-          is_blacklisted: passenger.is_blacklisted || false,
-          blacklisted_date: cleanValueForDB('blacklisted_date', passenger.blacklisted_date),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        return cleanPassenger;
-      });
-
-      const cleanedPassengers = await Promise.all(passengerPromises);
-
-      const { error: passengerError } = await supabase
-        .from("passengers")
-        .insert(cleanedPassengers);
-
-      if (passengerError) {
-        throw new Error(`Passenger creation failed: ${passengerError.message}`);
-      }
-
-      if (!isPowerUser && tourData.available_seats !== undefined) {
-        const newSeatCount = Math.max(0, tourData.available_seats - bookingPassengers.length);
-        const { error: tourUpdateError } = await supabase
-          .from("tours")
-          .update({
-            available_seats: newSeatCount,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", tourData.id);
-
-        if (tourUpdateError) {
-          console.warn("⚠️ Failed to update tour seats:", tourUpdateError.message);
-        }
-      }
-
-      const newOrderWithPassengers: Order = {
-        id: orderId,
-        user_id: orderData.user_id,
-        tour_id: orderData.tour_id,
-        phone: orderData.phone,
-        last_name: orderData.last_name,
-        first_name: orderData.first_name,
-        email: orderData.email,
-        age: orderData.age,
-        gender: orderData.gender,
-        tour: orderData.tour,
-        passport_number: orderData.passport_number,
-        passport_expire: orderData.passport_expire,
-        passport_copy: orderData.passport_copy,
-        commission: orderData.commission,
-        created_by: orderData.created_by,
-        edited_by: null,
-        edited_at: null,
-        travel_choice: orderData.travel_choice,
-        status: "pending" as OrderStatus,
-        hotel: orderData.hotel,
-        room_number: orderData.room_number,
-        payment_method: orderData.payment_method,
-        created_at: orderResult.created_at,
-        updated_at: orderResult.updated_at,
-        departureDate: orderData.departureDate || departureDate,
-        createdBy: orderData.createdBy,
-        total_price: orderData.total_price,
-        total_amount: orderData.total_amount,
-        paid_amount: orderData.paid_amount,
-        balance: orderData.balance,
-        show_in_provider: orderData.show_in_provider,
-        passengers: cleanedPassengers.map((p, index) => ({
-          ...p,
-          id: generatePassengerId(),
-          passport_upload: uploadedPaths[index] || null,
-        })) as Passenger[],
-      };
-
-      setOrders(prev => [...prev, newOrderWithPassengers]);
-
-      wrappedShowNotification("success", `Booking saved successfully! Order ID: ${orderId}`);
-      resetBookingForm();
-    } catch (error) {
-      console.error("💥 CRITICAL SAVE ORDER ERROR:", error);
-      wrappedShowNotification(
-        "error",
-        `Error saving booking: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDownloadCSV = () => {
-    if (bookingPassengers.length === 0) {
-      wrappedShowNotification("error", "No passengers to export");
-      return;
-    }
-
-    const headers = [
-      "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
-      "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type",
-      "Hotel", "Room Allocation", "Additional Services", "Price", "Email",
-      "Phone", "Allergy", "Emergency Phone"
-    ];
-
-    const rows = bookingPassengers.map((p) =>
-      [
-        p.serial_no, p.last_name, p.first_name, p.date_of_birth, p.age,
-        p.gender, p.passport_number, p.passport_expiry, p.nationality, p.roomType,
-        p.hotel, p.room_allocation, p.additional_services.join(","),
-        p.price, p.email, p.phone, p.allergy || "", p.emergency_phone || ""
-      ].map((v) => `"${v}"`).join(",")
-    );
-
-    const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `booking_${selectedTour}_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    wrappedShowNotification("success", "CSV downloaded successfully");
-  };
-
-  const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      wrappedShowNotification("error", "Please upload a CSV file");
-      return;
-    }
-
-    const tourData = tours.find((t) => t.title === selectedTour);
-    if (!tourData) {
-      wrappedShowNotification("error", "No tour selected");
-      return;
-    }
-
-    if (isPowerUser) {
-      console.log(`💪 ${currentUser.role?.toUpperCase()} MODE: CSV upload - UNLIMITED PASSENGERS ALLOWED!`);
-    } else {
-      const canAdd = await canAddPassenger();
-      if (!canAdd) return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string;
-        const lines = text.split("\n").filter(line => line.trim());
-        if (lines.length < 2) {
-          wrappedShowNotification("error", "CSV file must contain at least a header and one data row");
-          return;
-        }
-
-        const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
-        const requiredHeaders = [
-          "Serial No", "Last Name", "First Name", "Date of Birth", "Age",
-          "Gender", "Passport Number", "Passport Expiry", "Nationality", "Room Type",
-          "Hotel", "Room Allocation", "Additional Services", "Price", "Email",
-          "Phone", "Allergy", "Emergency Phone"
-        ];
-
-        if (!requiredHeaders.every((h) => headers.includes(h))) {
-          wrappedShowNotification("error", "CSV file is missing required headers");
-          return;
-        }
-
-        const validateCsvRow = (row: Record<string, string>): boolean => {
-          const requiredFields = ["First Name", "Last Name", "Email", "Phone"];
-          for (const field of requiredFields) {
-            if (!row[field] || row[field].length > 100 || row[field].length < 1) return false;
-          }
-
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(row["Email"])) return false;
-
-          if (row["Phone"].replace(/\D/g, '').length < 8) return false;
-
-          if (row["First Name"].length > 50 || row["Last Name"].length > 50) return false;
-
-          return true;
-        };
-
-        const data = lines.slice(1)
-          .map((line) => {
-            const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
-            return headers.reduce((obj: Record<string, string>, header, i) => {
-              obj[header] = values[i] || "";
-              return obj;
-            }, {});
-          })
-          .filter(validateCsvRow);
-
-        if (data.length === 0) {
-          wrappedShowNotification("error", "No valid passenger data found in CSV");
-          return;
-        }
-
-        if (!isPowerUser && tourData.available_seats !== undefined && data.length + bookingPassengers.length > tourData.available_seats) {
-          wrappedShowNotification("error", "Cannot import passengers. The tour is fully booked.");
-          return;
-        }
-
-        if (bookingPassengers.length + data.length > MAX_PASSENGERS) {
-          wrappedShowNotification("error", `Cannot import ${data.length} passengers. Maximum ${MAX_PASSENGERS - bookingPassengers.length} more allowed.`);
-          return;
-        }
-
-        const csvPassengers: Passenger[] = data.map((row, idx) => {
-          const baseSerial = bookingPassengers.length + idx + 1;
-          const services = row["Additional Services"]
-            ? row["Additional Services"].split(",").map((s: string) => s.trim()).filter(Boolean)
-            : [];
-          const servicePrice = calculateServicePrice(services, tourData);
-          const passenger: Passenger = {
-            id: generatePassengerId(),
-            order_id: "",
-            user_id: currentUser.id,
-            name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
-            tour_title: selectedTour,
-            departure_date: cleanDateForDB(departureDate),
-            room_allocation: row["Room Allocation"] || "",
-            serial_no: baseSerial.toString(),
-            last_name: row["Last Name"] || "",
-            first_name: row["First Name"] || "",
-            date_of_birth: cleanDateForDB(row["Date of Birth"]) ?? "",
-            age: parseInt(row["Age"]) || calculateAge(row["Date of Birth"]),
-            gender: row["Gender"] || "",
-            passport_number: row["Passport Number"] || "",
-            passport_expiry: cleanDateForDB(row["Passport Expiry"]),
-            nationality: row["Nationality"] || "Mongolia",
-            roomType: row["Room Type"] || "",
-            hotel: row["Hotel"] || availableHotels[0] || "",
-            additional_services: services,
-            price: tourData.base_price + servicePrice,
-            email: row["Email"] || "",
-            phone: row["Phone"] || "",
-            passport_upload: "",
-            allergy: row["Allergy"] || "",
-            emergency_phone: row["Emergency Phone"] || "",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            status: "active",
-            is_blacklisted: false,
-            blacklisted_date: null,
-            notes: "",
-          };
-
-          return passenger;
-        });
-
-        const newPassengers = csvPassengers.map((passenger, idx) => {
-          const roomAllocation = assignRoomAllocation([...bookingPassengers, ...csvPassengers.slice(0, idx)],
-            bookingPassengers.length + idx,
-            passenger.roomType
-          );
-          return { ...passenger, room_allocation: roomAllocation };
-        });
-
-        setBookingPassengers(prev => [...prev, ...newPassengers]);
-        setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
-        wrappedShowNotification("success", `Successfully imported ${newPassengers.length} passengers`);
-      } catch (error) {
-        console.error("❌ CSV parsing error:", error);
-        wrappedShowNotification("error", "Failed to parse CSV file. Please check the format.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  const totalPrice = useMemo(() =>
-    bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0),
-    [bookingPassengers]
-  );
-
-  const handleNextStep = useCallback(async () => {
-    switch (activeStep) {
-      case 1:
-        if (!selectedTour?.trim() || !departureDate?.trim()) {
-          wrappedShowNotification("error", "Please select tour and date");
-          return;
-        }
-        setActiveStep(2);
-        break;
-      case 2:
-        if (bookingPassengers.length === 0) {
-          wrappedShowNotification("error", "Add at least one passenger");
-          return;
-        }
-        if (validateBooking(activeStep)) {
-          setErrors((prev) => prev.filter((e) => e.field !== "payment" && e.field !== "show_in_provider"));
-          setActiveStep(3);
-        } else {
-          wrappedShowNotification("error", "Please fix all validation errors before proceeding");
-        }
-        break;
-      case 3:
-        if (!loading && validateBooking(activeStep)) {
-          await saveOrder();
-        } else if (!loading) {
-          wrappedShowNotification("error", "Please fix all validation errors before confirming");
-        }
-        break;
-    }
-  }, [activeStep, selectedTour, departureDate, bookingPassengers.length, validateBooking, loading, saveOrder, wrappedShowNotification, setErrors]);
+const NATIONALITIES = [
+  "Mongolia", "USA", "Canada", "UK", "Australia", "Germany", "France",
+  "Japan", "China", "South Korea", "India", "Russia", "Brazil", "South Africa"
+];
+
+const ROOM_TYPES = ["Single", "King", "Double", "Twin", "Family"];
+
+export default function AddPassengerTab(props: AddPassengerTabProps) {
+  const {
+    bookingPassengers,
+    activeStep,
+    setActiveStep,
+    paymentMethod,
+    setPaymentMethod,
+    loading,
+    showInProvider,
+    setShowInProvider,
+    expandedPassengerId,
+    setExpandedPassengerId,
+    fieldLoading,
+    canAdd,
+    showPassengerPrompt,
+    setShowPassengerPrompt,
+    passengerCountInput,
+    setPassengerCountInput,
+    availableHotels,
+    newPassengerRef,
+    isPowerUser,
+    selectedTourData,
+    remainingSeats,
+    totalPrice,
+    addMultiplePassengers,
+    updatePassenger,
+    removePassenger,
+    clearAllPassengers,
+    resetBookingForm,
+    handleDownloadCSV,
+    handleUploadCSV,
+    handleNextStep,
+    MAX_PASSENGERS,
+    notification,
+    setNotification,
+    leadPassengerData,
+    setLeadPassengerData,
+  } = useBooking(props);
+
+  const filteredTours = isPowerUser ? props.tours : props.tours.map(({ available_seats, ...rest }) => rest);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Notifications notification={notification} setNotification={setNotification} />
-
+      <Notification notification={notification} setNotification={setNotification} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center space-x-4">
@@ -981,7 +86,7 @@ export default function AddPassengerTab({
               </div>
             )}
           </div>
-          {(bookingPassengers.length > 0 || selectedTour || departureDate) && (
+          {(bookingPassengers.length > 0 || props.selectedTour || props.departureDate) && (
             <button
               onClick={resetBookingForm}
               className="px-4 py-2 text-green-600 border border-green-300 rounded-lg hover:bg-green-50 transition-colors"
@@ -991,11 +96,9 @@ export default function AddPassengerTab({
           )}
         </div>
       </div>
-
       <div className="max-w-9xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <ProgressSteps activeStep={activeStep} />
-        <ErrorSummary errors={errors} />
-
+        <ErrorSummary errors={props.errors} />
         {showPassengerPrompt && isPowerUser && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -1025,7 +128,16 @@ export default function AddPassengerTab({
                   Cancel
                 </button>
                 <button
-                  onClick={handlePassengerPromptSubmit}
+                  onClick={() => {
+                    const count = parseInt(passengerCountInput) || 0;
+                    if (count <= 0) {
+                      setNotification({ type: "error", message: "Please enter a valid number of passengers" });
+                      return;
+                    }
+                    addMultiplePassengers(count);
+                    setShowPassengerPrompt(false);
+                    setPassengerCountInput("");
+                  }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   Add
@@ -1034,22 +146,31 @@ export default function AddPassengerTab({
             </div>
           </div>
         )}
-
         {activeStep === 1 && (
           <TourSelection
             tours={filteredTours}
-            selectedTour={selectedTour}
-            setSelectedTour={setSelectedTour}
-            departure_date={departureDate}
-            setDepartureDate={setDepartureDate}
-            errors={errors}
+            selectedTour={props.selectedTour}
+            setSelectedTour={props.setSelectedTour}
+            departure_date={props.departureDate}
+            setDepartureDate={props.setDepartureDate}
+            errors={props.errors}
             setActiveStep={setActiveStep}
-            userRole={currentUser.role || "user"}
+            userRole={props.currentUser.role || "user"}
             showAvailableSeats={true}
           />
         )}
-
-        {activeStep === 2 && (
+       {activeStep === 2 && (
+        <LeadPassengerForm
+          selectedTour={props.selectedTour}
+          departureDate={props.departureDate}
+          setActiveStep={setActiveStep}
+          currentUser={props.currentUser}
+          selectedTourData={selectedTourData}
+          setLeadPassengerData={setLeadPassengerData}
+          setNotification={setNotification}
+        />
+      )}
+        {activeStep === 3 && (
           <>
             <div className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl shadow-sm border border-slate-200 mb-6">
               <div className="px-6 py-4 border-b border-slate-200">
@@ -1067,7 +188,7 @@ export default function AddPassengerTab({
                           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-8.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                           </svg>
-                          {bookingPassengers.length} {bookingPassengers.length === 1 ? 'passenger' : 'passengers'}
+                          {bookingPassengers.length} {bookingPassengers.length === 1 ? "passenger" : "passengers"}
                         </span>
                         <span className="flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1081,11 +202,11 @@ export default function AddPassengerTab({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                            💪 {currentUser.role?.toUpperCase()} MODE: Unlimited seats
+                            💪 {props.currentUser.role?.toUpperCase()} MODE: Unlimited seats
                           </span>
                         ) : (
                           remainingSeats !== undefined && (
-                            <span className={`flex items-center font-medium ${remainingSeats > 5 ? 'text-green-600' : remainingSeats > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                            <span className={`flex items-center font-medium ${remainingSeats > 5 ? "text-green-600" : remainingSeats > 0 ? "text-amber-600" : "text-red-600"}`}>
                               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1102,9 +223,9 @@ export default function AddPassengerTab({
               <div className="px-6 py-4 bg-white rounded-b-xl">
                 <BookingActions
                   bookingPassengers={bookingPassengers}
-                  selectedTour={selectedTour}
+                  selectedTour={props.selectedTour}
                   totalPrice={totalPrice}
-                  addPassenger={handleAddPassenger}
+                  addPassenger={() => (isPowerUser ? setShowPassengerPrompt(true) : addMultiplePassengers(1))}
                   clearAllPassengers={clearAllPassengers}
                   resetBookingForm={resetBookingForm}
                   handleDownloadTemplate={downloadTemplate}
@@ -1116,85 +237,23 @@ export default function AddPassengerTab({
                 />
               </div>
             </div>
-
-            <div className="space-y-6">
-              {bookingPassengers.map((passenger, index) => (
-                <div
-                  key={passenger.id}
-                  ref={index === bookingPassengers.length - 1 ? newPassengerRef : null}
-                  className={`border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 ${expandedPassengerId === passenger.id ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:shadow-md'}`}
-                >
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-full">
-                          <span className="text-sm font-semibold text-blue-800">{passenger.serial_no}</span>
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-gray-900">
-                            {passenger.first_name} {passenger.last_name}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            {passenger.email || 'No email'} • {passenger.nationality || 'Mongolia'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${passenger.roomType === 'Single' || passenger.roomType === 'King'
-                          ? 'bg-green-100 text-green-800'
-                          : passenger.roomType === 'Double' || passenger.roomType === 'Twin'
-                            ? 'bg-blue-100 text-blue-800'
-                            : passenger.roomType === 'Family'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                          {passenger.roomType || 'No room type'}
-                        </span>
-                        <button
-                          onClick={() => setExpandedPassengerId(
-                            expandedPassengerId === passenger.id ? null : passenger.id
-                          )}
-                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <svg className={`w-5 h-5 transform ${expandedPassengerId === passenger.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => removePassenger(index)}
-                          className="p-1 text-red-400 hover:text-red-600 transition-colors"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {expandedPassengerId === passenger.id && (
-                    <div className="p-6 bg-white">
-                      <PassengerFormFields
-                        passenger={passenger}
-                        index={index}
-                        selectedTourData={selectedTourData}
-                        errors={errors}
-                        updatePassenger={updatePassenger}
-                        expanded={true}
-                        fieldLoading={fieldLoading}
-                        nationalities={NATIONALITIES}
-                        roomTypes={ROOM_TYPES}
-                        hotels={availableHotels}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
+            <PassengerList
+              passengers={bookingPassengers}
+              selectedTourData={selectedTourData}
+              errors={props.errors}
+              updatePassenger={updatePassenger}
+              removePassenger={removePassenger}
+              expandedPassengerId={expandedPassengerId}
+              setExpandedPassengerId={setExpandedPassengerId}
+              fieldLoading={fieldLoading}
+              newPassengerRef={newPassengerRef}
+              nationalities={NATIONALITIES}
+              roomTypes={ROOM_TYPES}
+              hotels={availableHotels}
+            />
             <div className="flex gap-2 mt-8">
               <button
-                onClick={() => setActiveStep(1)}
+                onClick={() => setActiveStep(2)}
                 className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1215,105 +274,37 @@ export default function AddPassengerTab({
             </div>
           </>
         )}
-
-        {activeStep === 3 && (
+        {activeStep === 4 && (
           <BookingSummary
-            selectedTour={selectedTour}
-            departureDate={departureDate}
+            selectedTour={props.selectedTour}
+            departureDate={props.departureDate}
             passengers={bookingPassengers}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
-            errors={errors}
-            setErrors={setErrors}
+            errors={props.errors}
+            setErrors={props.setErrors}
             downloadCSV={handleDownloadCSV}
-            saveOrder={saveOrder}
+            saveOrder={handleNextStep} // Use handleNextStep to trigger saveOrder
             setActiveStep={setActiveStep}
             loading={loading}
             showInProvider={showInProvider}
             setShowInProvider={setShowInProvider}
-            currentUser={currentUser}
+            currentUser={props.currentUser}
           />
         )}
       </div>
-
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:hidden z-40">
-        <div className="flex justify-between items-center mb-2">
-          <div className="text-sm text-gray-600">Step {activeStep} of 3</div>
-          <div className="text-sm font-medium text-gray-900">
-            {bookingPassengers.length > 0 && (
-              <span>{bookingPassengers.length} passenger{bookingPassengers.length !== 1 ? "s" : ""} • ${totalPrice.toLocaleString()}</span>
-            )}
-          </div>
-        </div>
-
-        {activeStep === 2 && (
-          <div className="flex gap-2 mb-2">
-            <button
-              onClick={handleAddPassenger}
-              disabled={!canAdd || bookingPassengers.length >= MAX_PASSENGERS}
-              className="flex-1 inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              + Add
-            </button>
-            {bookingPassengers.length > 0 && (
-              <button
-                onClick={clearAllPassengers}
-                className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Clear
-              </button>
-            )}
-            <button
-              onClick={() => newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
-              className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-              Bottom
-            </button>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          {activeStep > 1 && (
-            <button
-              onClick={() => setActiveStep(activeStep - 1)}
-              className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
-          )}
-          {activeStep < 3 && (
-            <button
-              onClick={handleNextStep}
-              disabled={(activeStep === 1 && (!selectedTour?.trim() || !departureDate?.trim())) || (activeStep === 2 && bookingPassengers.length === 0)}
-              className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-            >
-              {activeStep === 1 ? "Continue to Passengers" : "Review Booking"}
-            </button>
-          )}
-          {activeStep === 3 && (
-            <button
-              onClick={handleNextStep}
-              disabled={loading || !validateBooking(3)} // Pass activeStep as 3
-              className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
-            >
-              {loading ? "Saving..." : "Confirm Booking"}
-            </button>
-          )}
-        </div>
-      </div>
-
+      <MobileFooter
+        activeStep={activeStep}
+        bookingPassengers={bookingPassengers}
+        setActiveStep={setActiveStep}
+        totalPrice={totalPrice}
+        canAdd={canAdd}
+        maxPassengers={MAX_PASSENGERS}
+        addPassenger={() => (isPowerUser ? setShowPassengerPrompt(true) : addMultiplePassengers(1))}
+        clearAllPassengers={clearAllPassengers}
+        handleNextStep={handleNextStep}
+        newPassengerRef={newPassengerRef}
+      />
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 flex items-center">

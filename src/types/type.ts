@@ -31,6 +31,38 @@ export interface User {
   auth_user_id?: string;
 }
 
+export interface LeadPassenger {
+  id: string;
+  tour_id: string;
+  tour_title: string | null; // Added
+  departure_date: string;
+  last_name: string;
+  first_name: string;
+  phone: string;
+  seat_count: number;
+  status: 'pending' | 'confirmed' | 'declined';
+  created_at: string;
+  expires_at: string;
+  user_id: string;
+}
+
+export interface PassengerInLead {
+  id: string;
+  tour_id: string;
+  departure_date: string;
+  last_name: string;
+  first_name: string;
+  phone: string;
+  seat_count: number;
+  status: "pending" | "confirmed" | "declined";
+  created_at: string;
+  expires_at: string;
+  user_id: string;
+  tour: { title: string } | null;
+  tour_title: string | null;
+  created_by: string | null;
+}
+
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
   id: string;
   first_name: string;
@@ -71,7 +103,7 @@ export interface Tour {
   creator_name: string | null;
   tour_number: number | null;
   name: string;
-  dates: string[];
+  dates: string[] | string | null;
   departure_date: string; // Maps to departuredate in database
   seats: number;
   available_seats?: number;
