@@ -40,17 +40,17 @@ export default function TourSelection({
         continue;
       }
       const normalizedTitle = tour.title.trim().toLowerCase();
+      const tourDates = tour.dates?.length ? tour.dates : tour.departure_date ? [tour.departure_date] : [];
       if (!map.has(normalizedTitle)) {
         map.set(normalizedTitle, {
           ...tour,
           title: tour.title.trim(),
-          dates: [...(tour.dates || [])],
-          available_seats: tour.available_seats ?? tour.seats ?? 0, // Fallback to seats
+          dates: [...tourDates],
+          available_seats: tour.available_seats ?? tour.seats ?? 0,
         });
       } else {
         const existing = map.get(normalizedTitle)!;
-        existing.dates = Array.from(new Set([...existing.dates, ...(tour.dates || [])]));
-        // Use the maximum available_seats or seats to avoid incorrect merging
+        existing.dates = Array.from(new Set([...existing.dates, ...tourDates]));
         existing.available_seats = Math.max(
           existing.available_seats ?? 0,
           tour.available_seats ?? tour.seats ?? 0
@@ -119,9 +119,8 @@ export default function TourSelection({
             </label>
             <select
               id="tourSelect"
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                hasTourError ? "border-red-300" : "border-gray-300"
-              }`}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${hasTourError ? "border-red-300" : "border-gray-300"
+                }`}
               value={selectedTour}
               onChange={(e) => {
                 const newTour = e.target.value.trim();
@@ -160,9 +159,8 @@ export default function TourSelection({
               <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="dateSelect"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  hasDepartureError ? "border-red-300" : "border-gray-300"
-                }`}
+                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${hasDepartureError ? "border-red-300" : "border-gray-300"
+                  }`}
                 value={departure_date}
                 onChange={(e) => {
                   console.log("Departure date selected:", e.target.value);

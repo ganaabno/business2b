@@ -60,12 +60,18 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
   };
 
   const handleAddTour = async () => {
+    if (!newTour.title.trim()) {
+      showNotification("error", "Tour title is required");
+      return;
+    }
     if (!newTour.departure_date) {
       showNotification("error", "Departure date is required");
       return;
     }
-    if (!newTour.title.trim()) {
-      showNotification("error", "Tour title is required");
+    // Validate date format
+    const parsedDate = new Date(newTour.departure_date);
+    if (Number.isNaN(parsedDate.getTime())) {
+      showNotification("error", "Invalid departure date format");
       return;
     }
 
@@ -110,7 +116,7 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
           hotels: data.hotels || [],
           services: data.services || [],
           description: data.description || "",
-          dates: [data.departure_date],
+          dates: [data.departure_date], // Ensure dates array is initialized
           base_price: data.base_price || 0,
           tour_number: data.tour_number || null,
         } as Tour,
