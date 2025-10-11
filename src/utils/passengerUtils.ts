@@ -10,7 +10,7 @@ export const validatePassenger = (passenger: Passenger): ValidationError[] => {
   if (!passenger.nationality) errors.push({ field: "nationality", message: "Nationality is required" });
   if (!passenger.gender) errors.push({ field: "gender", message: "Gender is required" });
   if (!passenger.passport_number?.trim()) errors.push({ field: "passport_number", message: "Passport number is required" });
-  if (!passenger.passport_expiry) errors.push({ field: "passport_expiry", message: "Passport expiry date is required" });
+  if (!passenger.passport_expire) errors.push({ field: "passport_expire", message: "Passport expiry date is required" });
   if (!passenger.roomType) errors.push({ field: "roomType", message: "Room type is required" });
   if (!passenger.hotel) errors.push({ field: "hotel", message: "Hotel selection is required" });
   return errors;

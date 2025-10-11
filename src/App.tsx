@@ -1,4 +1,3 @@
-// src/App.tsx - COMPLETE FIXED VERSION WITH ADMIN BYPASS
 import { useState, useEffect, useMemo } from "react";
 import {
   BrowserRouter as Router,
@@ -11,7 +10,7 @@ import {
 } from "react-router-dom";
 import { Clock, Shield, Users, AlertCircle } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { supabaseAdmin } from "./utils/adminClient"; // 🔥 ADD THIS IMPORT
+import { supabaseAdmin } from "./utils/adminClient";
 import Login from "./Pages/Login";
 import SignUp from "./Pages/SignUp";
 import UserInterface from "./Pages/UserInterface";
@@ -21,9 +20,9 @@ import ManagerInterface from "./Pages/ManagerInterface";
 import ChangePassword from "./Pages/ChangePassword";
 import Header from "./Parts/Header";
 import AnalyticDashboard from "./Pages/Overview";
-
 import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
 import { AuthProvider, useAuth, toRole } from "./context/AuthProvider";
+import { toast } from "react-toastify";
 
 function AppContent({
   booting,
@@ -56,27 +55,22 @@ function AppContent({
   // State for UserInterface
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
   const [errors, setErrors] = useState<ValidationError[]>([]);
 
-  // 🔥 NEW: Force refresh function for debugging
   const forceRefreshUsers = async () => {
     console.log('🔄 FORCE REFRESH - Fetching ALL users with admin bypass...');
-    
     try {
-      // 🔥 ADMIN BYPASS: Use admin client to fetch ALL users
       const { data: allUsers, error } = await supabaseAdmin
         .from("users")
         .select("*")
         .order('createdAt', { ascending: false });
-      
+
       console.log('🔍 FORCE REFRESH RESULT:', {
         count: allUsers?.length || 0,
         users: allUsers?.map(u => ({ id: u.id, email: u.email, role: u.role })),
-        error: error?.message
+        error: error?.message,
       });
-      
+
       if (!error && allUsers) {
         setUsers(allUsers);
         alert(`✅ FORCE REFRESH: Found ${allUsers.length} users!`);
@@ -88,19 +82,6 @@ function AppContent({
       console.error('💥 FORCE REFRESH FAILED:', err);
       alert('💥 Failed to force refresh users');
     }
-  };
-
-  // Passenger management functions
-  const addPassenger = () => {
-    // This will be implemented in UserInterface, so we pass it through
-  };
-
-  const updatePassenger = async (index: number, field: keyof Passenger, value: any) => {
-    // This will be implemented in UserInterface
-  };
-
-  const removePassenger = (index: number) => {
-    // This will be implemented in UserInterface
   };
 
   const validateBooking = () => {
@@ -127,7 +108,6 @@ function AppContent({
     }
   }, [currentUser]);
 
-  // Check if user is pending approval
   if (currentUser && currentUser.status === "pending") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-yellow-50">
@@ -149,7 +129,6 @@ function AppContent({
     );
   }
 
-  // Check if user is suspended
   if (currentUser && currentUser.access === "suspended") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
@@ -184,8 +163,8 @@ function AppContent({
         : role === "provider"
           ? ["/provider", "/change-password"]
           : role === "manager"
-          ? ["/manager", "/change-password"]
-          : ["/user", "/change-password"];
+            ? ["/manager", "/change-password"]
+            : ["/user", "/change-password"];
 
     if (["/login", "/"].includes(location.pathname)) {
       navigate(homePath, { replace: true });
@@ -266,11 +245,9 @@ function AppContent({
         </div>
       )}
 
-      {/* Header - Only show for authenticated users */}
       {currentUser && <Header currentUser={currentUser} onLogout={logout} isUserRole={role === "user"} />}
 
       <Routes>
-        {/* PROTECTED ROUTES - Require authentication */}
         <Route
           path="/change-password"
           element={
@@ -290,15 +267,15 @@ function AppContent({
                 orders={orders}
                 setOrders={setOrders}
                 setTours={setTours}
-                currentUser={currentUser}
-                selectedTour={selectedTour}
+                selectedTour={selectedTour} // Fixed: Use local state
                 setSelectedTour={setSelectedTour}
-                departureDate={departureDate}
+                departureDate={departureDate} // Fixed: Use local state
                 setDepartureDate={setDepartureDate}
                 passengers={passengers}
                 setPassengers={setPassengers}
                 errors={errors}
-                showNotification={(type: any, message: any) => alert(`${type}: ${message}`)}
+                showNotification={(type, message) => toast[type](message)} // Updated to use toast
+                currentUser={currentUser}
                 onLogout={logout}
               />
             ) : (
@@ -357,41 +334,38 @@ function AppContent({
           path="/analytics"
           element={
             currentUser && ["admin", "superadmin"].includes(role) ? (
-              <AnalyticDashboard 
-                tours={tours} 
-                orders={orders} 
-                passengers={passengers} 
-                currentUser={currentUser} />
+              <AnalyticDashboard
+                tours={tours}
+                orders={orders}
+                passengers={passengers}
+                currentUser={currentUser}
+              />
             ) : (
               <Navigate to={homePath} replace />
             )
           }
         />
-
-        {/* PUBLIC ROUTES - No authentication required */}
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             !currentUser ? (
               <Login />
             ) : (
               <Navigate to={homePath} replace />
             )
-          } 
+          }
         />
-        <Route 
-          path="/signup" 
+        <Route
+          path="/signup"
           element={
             !currentUser ? (
               <SignUp />
             ) : (
               <Navigate to={homePath} replace />
             )
-          } 
+          }
         />
         <Route path="/" element={<Navigate to={homePath} replace />} />
-        
-        {/* CATCH-ALL ROUTE */}
         <Route path="*" element={<Navigate to={homePath} replace />} />
       </Routes>
     </>
@@ -409,48 +383,44 @@ export default function App() {
     const fetchData = async () => {
       try {
         console.log('🚀 INITIAL DATA FETCH STARTING...');
-        
-        // 🔥 FIXED: Smart user fetch - use admin client for admins
+
         let usersData: UserType[] = [];
-        
-        // First, try regular fetch (for regular users)
         const { data: regularUsers, error: regularError } = await supabase
           .from("users")
           .select("*")
           .order('createdAt', { ascending: false });
-        
+
         console.log('🔍 REGULAR USERS FETCH:', {
           count: regularUsers?.length || 0,
-          error: regularError?.message
+          error: regularError?.message,
         });
 
-        // If regular fetch failed or only got 1 user, try admin bypass
         if (regularError || (regularUsers && regularUsers.length <= 1)) {
           console.log('🔄 SWITCHING TO ADMIN BYPASS...');
-          
           try {
-            // 🔥 ADMIN BYPASS: Use service role to fetch ALL users
             const { data: adminUsers, error: adminError } = await supabaseAdmin
               .from("users")
               .select("*")
               .order('createdAt', { ascending: false });
-            
+
             console.log('🔍 ADMIN BYPASS USERS FETCH:', {
               count: adminUsers?.length || 0,
               users: adminUsers?.map(u => ({ id: u.id, email: u.email, role: u.role })),
-              error: adminError?.message
+              error: adminError?.message,
             });
-            
+
             if (!adminError && adminUsers) {
               usersData = adminUsers;
               console.log('✅ ADMIN BYPASS SUCCESS - Using admin users data');
             } else {
               console.error('❌ ADMIN BYPASS FAILED:', adminError);
               usersData = regularUsers || [];
+              toast.error(`Failed to fetch users: ${adminError?.message || 'Unknown error'}`);
             }
           } catch (adminErr) {
             console.error('💥 ADMIN BYPASS EXCEPTION:', adminErr);
             usersData = regularUsers || [];
+            toast.error('Failed to fetch users');
           }
         } else {
           usersData = regularUsers || [];
@@ -460,40 +430,40 @@ export default function App() {
         setUsers(usersData);
         console.log(`📊 USERS LOADED: ${usersData.length} total`);
 
-        // Fetch tours (no RLS issues here usually)
         const { data: toursData, error: toursError } = await supabase
           .from("tours")
           .select("*")
           .order('created_at', { ascending: false });
-        
+
         if (toursError) {
           console.error('❌ TOURS ERROR:', toursError);
+          toast.error(`Failed to fetch tours: ${toursError.message}`);
         } else {
           setTours(toursData || []);
           console.log(`📊 TOURS LOADED: ${toursData?.length || 0}`);
         }
 
-        // Fetch orders
         const { data: ordersData, error: ordersError } = await supabase
           .from("orders")
           .select("*")
           .order('created_at', { ascending: false });
-        
+
         if (ordersError) {
           console.error('❌ ORDERS ERROR:', ordersError);
+          toast.error(`Failed to fetch orders: ${ordersError.message}`);
         } else {
           setOrders(ordersData || []);
           console.log(`📊 ORDERS LOADED: ${ordersData?.length || 0}`);
         }
 
-        // Fetch passengers
         const { data: passengersData, error: passengersError } = await supabase
           .from("passengers")
           .select("*")
           .order('created_at', { ascending: false });
-        
+
         if (passengersError) {
           console.error('❌ PASSENGERS ERROR:', passengersError);
+          toast.error(`Failed to fetch passengers: ${passengersError.message}`);
         } else {
           setPassengers(passengersData || []);
           console.log(`📊 PASSENGERS LOADED: ${passengersData?.length || 0}`);
@@ -502,6 +472,7 @@ export default function App() {
         console.log('✅ INITIAL DATA FETCH COMPLETE');
       } catch (err) {
         console.error("💥 CRITICAL ERROR fetching data:", err);
+        toast.error('Failed to fetch initial data');
       } finally {
         setBooting(false);
       }

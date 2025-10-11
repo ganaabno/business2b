@@ -50,7 +50,7 @@ export const createNewPassenger = (
     age: 0,
     gender: "",
     passport_number: "",
-    passport_expiry: "",
+    passport_expire: "",
     nationality: inheritedDetails.nationality,
     roomType: defaultRoomType,
     hotel: inheritedDetails.hotel,

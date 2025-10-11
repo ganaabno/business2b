@@ -71,7 +71,7 @@ export const cleanDatesInObject = (obj: any): any => {
     
     // Clean date fields (add more field names as needed)
     if ([
-      'date_of_birth', 'passport_expiry', 'departure_date', 
+      'date_of_birth', 'passport_expire', 'departure_date', 
       'created_at', 'updated_at', 'booking_date'
     ].includes(key)) {
       cleaned[key] = cleanDateForDB(value);

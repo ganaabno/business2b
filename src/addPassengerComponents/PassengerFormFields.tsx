@@ -225,14 +225,14 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           <label className="block text-sm font-medium text-gray-700 mb-1">Passport Expiry *</label>
           <input
             type="date"
-            value={passenger.passport_expiry || ""}
-            onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)}
+            value={passenger.passport_expire || ""}
+            onChange={(e) => updatePassenger(index, "passport_expire", e.target.value)}
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              getFieldError('passport_expiry') ? 'border-red-500' : getPassportExpiryColor(passenger.passport_expiry)
+              getFieldError('passport_expire') ? 'border-red-500' : getPassportExpiryColor(passenger.passport_expire)
             }`}
           />
-          {getFieldError('passport_expiry') && (
-            <p className="mt-1 text-sm text-red-600">{getFieldError('passport_expiry').message}</p>
+          {getFieldError('passport_expire') && (
+            <p className="mt-1 text-sm text-red-600">{getFieldError('passport_expire').message}</p>
           )}
         </div>
         <div>

@@ -18,7 +18,7 @@ const prepareForDatabase = (passenger: Passenger): any => {
     age: passenger.age || null,
     gender: passenger.gender || null,
     passport_number: passenger.passport_number.trim() || null,
-    passport_expiry: passenger.passport_expiry ? (passenger.passport_expiry.trim() === '' ? null : passenger.passport_expiry.trim()) : null,
+    passport_expire: passenger.passport_expire ? (passenger.passport_expire.trim() === '' ? null : passenger.passport_expire.trim()) : null,
     nationality: passenger.nationality.trim() || null,
     roomType: passenger.roomType.trim() || null,
     hotel: passenger.hotel.trim() || null,
@@ -67,7 +67,7 @@ export const usePassengers = (
       age: 0,
       gender: "",
       passport_number: "",
-      passport_expiry: "",         // ✅ Empty string
+      passport_expire: "",         // ✅ Empty string
       nationality: "Mongolia",
       roomType: initialPassengers.length > 0 && initialPassengers[initialPassengers.length - 1].roomType === "Double"
         ? initialPassengers[initialPassengers.length - 1].roomType

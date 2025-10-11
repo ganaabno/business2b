@@ -40,7 +40,7 @@ export interface LeadPassenger {
   first_name: string;
   phone: string;
   seat_count: number;
-  status: 'pending' | 'confirmed' | 'declined';
+  status: "pending" | "confirmed" | "declined";
   created_at: string;
   expires_at: string;
   user_id: string;
@@ -123,8 +123,8 @@ export interface PendingUser {
   email: string;
   username: string;
   password: string;
-  role_requested: 'user' | 'manager' | 'provider';
-  status: 'pending' | 'approved' | 'declined';
+  role_requested: "user" | "manager" | "provider";
+  status: "pending" | "approved" | "declined";
   created_at: string;
   approved_by?: string;
   approved_at?: string;
@@ -132,8 +132,8 @@ export interface PendingUser {
 }
 
 export interface Order {
-  id: string; // ✅ Keep as string for bigserial compatibility
-  user_id: string; // ✅ Use underscore for DB consistency
+  id: string;
+  user_id: string;
   tour_id: string;
   phone: string | null;
   last_name: string | null;
@@ -156,14 +156,33 @@ export interface Order {
   payment_method: string | null;
   created_at: string;
   updated_at: string;
-  departureDate: string; // ✅ Keep camelCase for React
+  passenger_count: number; // Changed from passengers to passenger
+  departureDate: string;
   createdBy: string | null;
   total_price: number;
   total_amount: number;
   paid_amount: number;
   balance: number;
   show_in_provider: boolean;
-  passengers: Passenger[]; // ✅ This is populated after creation
+  order_id: string;
+  booking_confirmation: {
+    order_id: string;
+    bus_number: string | null;
+    guide_name: string | null;
+    weather_emergency: string | null;
+    updated_by: string | null;
+    updated_at: string | null;
+  } | null;
+  passport_copy_url: string | null;
+}
+
+export interface BookingConfirmation {
+  order_id: string;
+  bus_number: string | null;
+  guide_name: string | null;
+  weather_emergency: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
 }
 
 export type OrderStatus =
@@ -192,6 +211,7 @@ export type OrderStatus =
   | "Cancelled and bought travel from another country"
   | "Completed"
   | "confirmed"
+  | "approved";
 
 export type PaymentMethod =
   | "Cash"
@@ -209,6 +229,7 @@ export interface Passenger {
   order_id: string; // bigint in DB
   user_id: string | null; // uuid in DB, nullable
   tour_title: string;
+  tour_id: string;
   departure_date: string | null;
   name: string;
   room_allocation: string;
@@ -219,7 +240,7 @@ export interface Passenger {
   age: number | null;
   gender: string | null;
   passport_number: string;
-  passport_expiry: string | null;
+  passport_expire: string | null;
   nationality: string;
   roomType: string; // Matches "roomType" in DB
   hotel: string;
@@ -232,10 +253,17 @@ export interface Passenger {
   emergency_phone: string;
   created_at: string; // timestamptz in DB
   updated_at: string; // timestamptz in DB
-  status: "pending" | "approved" | "rejected" | "active" | "inactive" | "cancelled";
+  status:
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "active"
+    | "inactive"
+    | "cancelled";
   is_blacklisted: boolean;
   blacklisted_date: string | null;
-  notes: string | null;
+  notes?: string | null;
+  seat_count?: number | null; // For lead passengers
 }
 
 export interface PassengerRequest {
@@ -249,7 +277,7 @@ export interface PassengerRequest {
   phone: string;
   nationality: string;
   passport_number: string;
-  passport_expiry: string;
+  passport_expire: string;
   roomType: string; // Matches "roomType" in DB
   hotel: string;
   status: string;
@@ -259,6 +287,7 @@ export interface PassengerRequest {
   user_email: string; // From users.email
   user_first_name: string; // From users.first_name
   user_last_name: string; // From users.last_name
+  passenger: Passenger[];
 }
 
 export interface AuthUser {
@@ -325,7 +354,7 @@ export interface PassengerFormData {
   gender: string;
   nationality: string;
   passport_number: string;
-  passport_expiry: string;
+  passport_expire: string;
   email: string;
   phone: string;
   roomType: string;
@@ -350,7 +379,7 @@ export interface PaginatedResponse<T> {
 }
 
 export interface ValidationError {
-  field: string;
+  field?: string;
   message: string;
   code?: string;
 }

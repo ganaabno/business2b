@@ -108,21 +108,20 @@ export default function ManagerInterface({
               ].map((tab) => (
                 <button
                   key={tab}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${
-                    activeTab === tab
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${activeTab === tab
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                   onClick={() =>
                     setActiveTab(
                       tab as
-                        | "orders"
-                        | "passengers"
-                        | "passengerRequests"
-                        | "addTour"
-                        | "addPassenger"
-                        | "blacklist"
-                        | "pendingLeads"
+                      | "orders"
+                      | "passengers"
+                      | "passengerRequests"
+                      | "addTour"
+                      | "addPassenger"
+                      | "blacklist"
+                      | "pendingLeads"
                     )
                   }
                 >
@@ -148,9 +147,11 @@ export default function ManagerInterface({
                             ? initialPassengers.length
                             : tab === "blacklist"
                               ? initialPassengers.filter((p) => p.is_blacklisted).length
-                              : tab === "pendingLeads"
-                                ? pendingLeadsCount
-                                : 0}
+                              : tab === "passengerRequests"
+                                ? PassengerRequests.length
+                                : tab === "pendingLeads"
+                                  ? pendingLeadsCount
+                                  : 0}
                       </span>
                     )}
                   </div>

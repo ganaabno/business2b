@@ -9,14 +9,15 @@ interface BookingSummaryProps {
   paymentMethod: string;
   setPaymentMethod: (value: string) => void;
   errors: ValidationError[];
-  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>; 
+  setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>;
   downloadCSV?: () => void;
   saveOrder: () => Promise<void>;
   setActiveStep: (value: number) => void;
   loading: boolean;
   showInProvider?: boolean;
-  setShowInProvider: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowInProvider?: React.Dispatch<React.SetStateAction<boolean>>;
   currentUser: UserType;
+  onBack: () => void;
 }
 
 const cleanDateForDB = (dateValue: any): string | null => {
@@ -29,43 +30,38 @@ const cleanDateForDB = (dateValue: any): string | null => {
     (typeof dateValue === 'string' && dateValue.trim() === '') ||
     (typeof dateValue === 'string' && !isNaN(Date.parse(dateValue)) && new Date(dateValue).toString() === 'Invalid Date')
   ) {
-    return null;  // ✅ Always return null for empty/invalid values
+    return null;
   }
-  
-  // Clean and validate date string
+
   const cleaned = String(dateValue).trim();
   const parsedDate = new Date(cleaned);
-  
-  // If it's a valid date, return it in YYYY-MM-DD format
+
   if (!isNaN(parsedDate.getTime())) {
     const year = parsedDate.getFullYear();
     const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
     const day = String(parsedDate.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
-  
-  return null;  // Fallback to null for anything else
+
+  return null;
 };
 
-// 🧮 ENHANCED AGE CALCULATOR
 const calculateAge = (dateOfBirth: string | undefined | null): number | string => {
-  // Clean the date first
   const cleanBirthDate = cleanDateForDB(dateOfBirth);
   if (!cleanBirthDate) return "N/A";
-  
+
   const today = new Date();
   const birthDate = new Date(cleanBirthDate);
-  
-  // Validate the date
+
   if (isNaN(birthDate.getTime())) return "N/A";
-  
+
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
-  
+
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
-  
+
   return age;
 };
 
@@ -76,6 +72,7 @@ export default function BookingSummary({
   paymentMethod,
   setPaymentMethod,
   errors,
+  setErrors,
   downloadCSV,
   saveOrder,
   setActiveStep,
@@ -83,31 +80,26 @@ export default function BookingSummary({
   setShowInProvider,
   loading,
   currentUser,
+  onBack,
 }: BookingSummaryProps) {
-  // 🧹 CLEAN PASSENGER DATA BEFORE ANYTHING ELSE
   const cleanedPassengers = React.useMemo(() => {
     return passengers.map(passenger => ({
       ...passenger,
-      // Clean ALL date fields
       date_of_birth: cleanDateForDB(passenger.date_of_birth),
-      passport_expiry: cleanDateForDB(passenger.passport_expiry),
-      // Clean any other date fields you might have
-      // departure_date: cleanDateForDB(passenger.departure_date), // if exists
+      passport_expire: cleanDateForDB(passenger.passport_expire),
     }));
   }, [passengers]);
 
-  // Calculate total price from cleaned passengers
   const totalPrice = cleanedPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
 
-  // 🧹 ENHANCED VALIDATION - Check cleaned data
   const hasValidationErrors = errors.length > 0 || cleanedPassengers.some(
     (p) =>
       !p.first_name?.trim() ||
       !p.last_name?.trim() ||
-      !p.date_of_birth || // Now properly null-checked
+      !p.date_of_birth ||
       !p.gender?.trim() ||
       !p.passport_number?.trim() ||
-      !p.passport_expiry || // Now properly null-checked
+      !p.passport_expire ||
       !p.nationality?.trim() ||
       !p.roomType?.trim() ||
       !p.hotel?.trim() ||
@@ -115,7 +107,6 @@ export default function BookingSummary({
       !p.phone?.trim()
   );
 
-  // 🧹 CLEAN DEPARTURE DATE FOR DISPLAY
   const cleanDepartureDate = cleanDateForDB(departureDate);
 
   const paymentMethods = [
@@ -131,23 +122,21 @@ export default function BookingSummary({
     "Credit Card",
   ];
 
-  // 🛡️ SAFETY NET: Clean data before saving
   const handleSaveOrder = async () => {
     try {
-      // Double-check and clean data one last time
       const finalPassengers = cleanedPassengers.map(p => ({
         ...p,
         date_of_birth: cleanDateForDB(p.date_of_birth),
-        passport_expiry: cleanDateForDB(p.passport_expiry),
+        passport_expire: cleanDateForDB(p.passport_expire),
       }));
-      
-      console.log("🧹 Final cleaned passengers for save:", finalPassengers);
-      
-      // Call the original save function
+
+      console.log("BookingSummary: Final cleaned passengers for save:", finalPassengers);
+
       await saveOrder();
+      console.log("BookingSummary: saveOrder successful, moving to step 5");
     } catch (error) {
-      console.error("❌ Save error:", error);
-      throw error;
+      console.error("BookingSummary: Save error:", error);
+      setErrors([{ field: "general", message: "Failed to save booking. Please try again." }]);
     }
   };
 
@@ -186,7 +175,7 @@ export default function BookingSummary({
               <MapPin className="w-8 h-8 text-blue-600 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Tour Package</h4>
-                <p className="text-sm text-gray-600">{selectedTour}</p>
+                <p className="text-sm text-gray-600">{selectedTour || "Not selected"}</p>
               </div>
             </div>
             <div className="flex items-center p-4 bg-green-50 rounded-lg">
@@ -194,15 +183,14 @@ export default function BookingSummary({
               <div>
                 <h4 className="font-medium text-gray-900">Departure Date</h4>
                 <p className="text-sm text-gray-600">
-                  {cleanDepartureDate 
+                  {cleanDepartureDate
                     ? new Date(cleanDepartureDate).toLocaleDateString("en-US", {
-                        weekday: "long",
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })
-                    : "Date not set"
-                  }
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })
+                    : "Date not set"}
                 </p>
               </div>
             </div>
@@ -233,8 +221,7 @@ export default function BookingSummary({
           {paymentMethods.map((method) => (
             <label
               key={method}
-              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 hover:border-gray-400"
-                }`}
+              className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === method ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 hover:border-gray-400"}`}
             >
               <input
                 type="radio"
@@ -254,13 +241,13 @@ export default function BookingSummary({
         )}
       </div>
 
-      {currentUser.role !== "user" && (
+      {currentUser.role !== "user" && setShowInProvider && (
         <div className="border-t pt-6">
           <h4 className="font-medium text-gray-900 mb-4">Booking Options</h4>
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={showInProvider}
+              checked={showInProvider ?? false}
               onChange={(e) => setShowInProvider(e.target.checked)}
               className="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
               aria-label="Show booking in provider dashboard (optional)"
@@ -270,7 +257,7 @@ export default function BookingSummary({
           </label>
         </div>
       )}
-  
+
       <div className="border-t pt-6">
         <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
         <div className="space-y-3">
@@ -309,7 +296,10 @@ export default function BookingSummary({
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <button
-            onClick={() => setActiveStep(2)}
+            onClick={() => {
+              console.log("BookingSummary: Back button clicked, moving to step 3");
+              onBack();
+            }}
             className="flex items-center justify-center px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
           >
             Back to Passengers
@@ -323,7 +313,7 @@ export default function BookingSummary({
             Download CSV
           </button>
           <button
-            onClick={handleSaveOrder} // ✅ Use the cleaned handler
+            onClick={handleSaveOrder}
             disabled={loading || !paymentMethod || cleanedPassengers.length === 0 || hasValidationErrors}
             className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
           >

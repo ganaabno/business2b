@@ -1,3 +1,4 @@
+// utils/bookingUtils.ts
 import type { Passenger, Tour, User as UserType } from "../types/type";
 
 export const cleanDateForDB = (dateValue: any): string | null => {
@@ -97,6 +98,5 @@ export const createNewPassenger = (
     is_blacklisted: false,
     blacklisted_date: null,
     notes: "",
-    seat_count: 0,
   };
 };

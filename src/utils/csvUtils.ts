@@ -43,7 +43,7 @@ export const downloadCSV = (
       p.age || "",
       p.gender || "",
       p.passport_number || "",
-      p.passport_expiry || "",
+      p.passport_expire || "",
       p.nationality || "",
       p.roomType || "",
       p.room_allocation || "",
@@ -97,15 +97,8 @@ export const downloadTemplate = (
     "Status",
     "Actions",
   ];
-  const sampleRow = [
-    "101",
-    "1",
-    "Doe",
-    "John",
-    "1990-01-01",
-    // ... other sample data
-  ];
-  const csv = [headers.join(","), sampleRow.join(",")].join("\n");
+  
+  const csv = [headers.join(","), ""].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");

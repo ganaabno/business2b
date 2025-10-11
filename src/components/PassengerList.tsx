@@ -1,4 +1,3 @@
-// components/PassengerList.tsx
 import React from "react";
 import { PassengerFormFields } from "../addPassengerComponents/PassengerFormFields";
 import type { Passenger, Tour, ValidationError } from "../types/type";

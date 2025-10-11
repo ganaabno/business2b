@@ -39,8 +39,9 @@ export default function TourSelectionUser({
 
   useEffect(() => {
     console.log("TourSelectionUser mounted, userRole:", userRole, "showAvailableSeats:", showAvailableSeats);
+    console.log("Tours received:", JSON.stringify(tours, null, 2));
     return () => console.log("TourSelectionUser unmounted");
-  }, [userRole, showAvailableSeats]);
+  }, [userRole, showAvailableSeats, tours]);
 
   const mergedTours = useMemo(() => {
     const map = new Map<string, Tour & { dates: string[] }>();
@@ -50,47 +51,46 @@ export default function TourSelectionUser({
         continue;
       }
       const normalizedTitle = tour.title.trim().toLowerCase();
+      // Normalize dates to an array
+      const tourDates = Array.isArray(tour.dates)
+        ? tour.dates
+        : typeof tour.dates === "string"
+        ? [tour.dates]
+        : [];
+      // Include departure_date if it exists and isn't already in dates
+      const newDates = [...tourDates];
+      if (tour.departure_date && !newDates.includes(tour.departure_date)) {
+        newDates.push(tour.departure_date);
+      }
       if (!map.has(normalizedTitle)) {
         map.set(normalizedTitle, {
           ...tour,
           title: tour.title.trim(),
-          dates: [...(tour.dates || [])],
+          dates: newDates,
           seats: tour.seats ?? 0,
         });
       } else {
         const existing = map.get(normalizedTitle)!;
-        existing.dates = Array.from(new Set([...existing.dates, ...(tour.dates || [])]));
+        const additionalDates = Array.isArray(tour.dates)
+          ? tour.dates
+          : typeof tour.dates === "string"
+          ? [tour.dates]
+          : [];
+        if (tour.departure_date && !additionalDates.includes(tour.departure_date)) {
+          additionalDates.push(tour.departure_date);
+        }
+        existing.dates = Array.from(new Set([...existing.dates, ...additionalDates]));
       }
     }
     const result = Array.from(map.values());
-    console.log("Merged tours in TourSelectionUser:", JSON.stringify(result, null, 2));
+    console.log("Merged tours:", JSON.stringify(result, null, 2));
     return result;
   }, [tours]);
 
-  useEffect(() => {
-    console.log("Tours received in TourSelectionUser:", JSON.stringify(tours, null, 2));
-    console.log("Current selectedTour:", selectedTour);
-    console.log("Merged tours titles:", mergedTours.map((tour) => tour.title));
-    if (
-      selectedTour &&
-      !mergedTours.some((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase())
-    ) {
-      console.warn("Selected tour not found in mergedTours, resetting:", selectedTour);
-      setSelectedTour("");
-      setDepartureDate("");
-    }
-  }, [tours, selectedTour, mergedTours, setSelectedTour, setDepartureDate]);
-
   const selectedTourData = useMemo(() => {
-    console.log("Searching for tour with title:", JSON.stringify(selectedTour));
-    const tour = mergedTours.find((tour) => {
-      const tourTitle = tour.title.trim().toLowerCase();
-      const selectedTitle = selectedTour.trim().toLowerCase();
-      const matches = tourTitle === selectedTitle;
-      console.log(`Comparing: ${tourTitle} === ${selectedTitle} -> ${matches}`);
-      return matches;
-    });
-    console.log("Selected tour data in TourSelectionUser:", JSON.stringify(tour, null, 2));
+    if (!selectedTour) return undefined;
+    const tour = mergedTours.find((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase());
+    console.log("Selected tour data:", JSON.stringify(tour, null, 2));
     return tour;
   }, [mergedTours, selectedTour]);
 
@@ -98,14 +98,14 @@ export default function TourSelectionUser({
     if (selectedTourData?.id && departureDate) {
       checkSeatLimit(selectedTourData.id, departureDate)
         .then(({ isValid, message, seats }) => {
-          console.log("Seat check in TourSelectionUser:", { isValid, message, seats });
+          console.log("Seat check:", { isValid, message, seats });
           setAvailableSeats(seats);
           if (!isValid) {
             toast.error(message);
           }
         })
         .catch((error) => {
-          console.error("Error checking seats in TourSelectionUser:", error);
+          console.error("Error checking seats:", error);
           toast.error("Failed to check seat availability");
           setAvailableSeats(0);
         });
@@ -117,8 +117,6 @@ export default function TourSelectionUser({
   const hasTourError = errors.some((e) => e.field === "tour");
   const hasDepartureError = errors.some((e) => e.field === "departure");
   const hasDates = (selectedTourData?.dates?.length ?? 0) > 0;
-
-  console.log("Rendering tour select with value:", selectedTour, "disabled:", mergedTours.length === 0);
 
   const handleContinue = async () => {
     console.log("Continue to Passengers clicked, selectedTour:", selectedTour, "departureDate:", departureDate);
@@ -154,7 +152,9 @@ export default function TourSelectionUser({
       </h3>
 
       {mergedTours.length === 0 ? (
-        <p className="text-red-500 text-sm mb-4">No tours available. Please contact support.</p>
+        <p className="text-red-500 text-sm mb-4">
+          No tours available. Please contact support or try refreshing the page.
+        </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
@@ -168,20 +168,18 @@ export default function TourSelectionUser({
               }`}
               value={selectedTour}
               onChange={(e) => {
-                const newTour = e.target.value.trim();
-                console.log("Tour selected in TourSelectionUser:", newTour);
+                const newTour = e.target.value;
+                console.log("Tour selected:", newTour);
                 setSelectedTour(newTour);
-                setDepartureDate("");
-                console.log("After setSelectedTour, newTour:", newTour);
+                if (!newTour) {
+                  setDepartureDate("");
+                }
               }}
-              onClick={() => console.log("Tour dropdown clicked")}
               aria-invalid={hasTourError}
               aria-describedby={hasTourError ? "tour-error" : undefined}
               disabled={mergedTours.length === 0}
             >
-              <option value="" disabled>
-                Select a tour
-              </option>
+              <option value="">Select a tour</option>
               {mergedTours.map((tour, index) => (
                 <option key={`${tour.id}-${index}`} value={tour.title}>
                   {tour.title}
@@ -208,16 +206,14 @@ export default function TourSelectionUser({
                 }`}
                 value={departureDate}
                 onChange={(e) => {
-                  console.log("Departure date selected in TourSelectionUser:", e.target.value);
+                  console.log("Departure date selected:", e.target.value);
                   setDepartureDate(e.target.value);
                 }}
                 disabled={!selectedTour || !hasDates}
                 aria-invalid={hasDepartureError}
                 aria-describedby={hasDepartureError ? "departure-error" : undefined}
               >
-                <option value="" disabled>
-                  {selectedTour ? "Select a date" : "Select a tour first"}
-                </option>
+                <option value="">{selectedTour ? "Select a date" : "Select a tour first"}</option>
                 {hasDates &&
                   selectedTourData!.dates.map((d, index) => (
                     <option key={`${d}-${index}`} value={d}>

@@ -105,7 +105,7 @@ export const isPassengerComplete = (passenger: Partial<Passenger>): boolean => {
     'phone',
     'gender',
     'passport_number',
-    'passport_expiry',
+    'passport_expire',
     'nationality',
     'hotel'
   ];
@@ -129,7 +129,7 @@ export const getPassengerCompletion = (passenger: Partial<Passenger>): number =>
     'phone',
     'gender',
     'passport_number',
-    'passport_expiry',
+    'passport_expire',
     'nationality',
     'hotel'
   ];

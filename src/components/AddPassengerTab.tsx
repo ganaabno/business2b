@@ -290,6 +290,7 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
             showInProvider={showInProvider}
             setShowInProvider={setShowInProvider}
             currentUser={props.currentUser}
+            onBack={() => setActiveStep(3)}
           />
         )}
       </div>

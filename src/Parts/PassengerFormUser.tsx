@@ -282,17 +282,17 @@ export default function PassengerForm({
                     </label>
                     <input
                       type="date"
-                      value={passenger.passport_expiry || ""} // ✅ SIMPLE WORKING LOGIC
-                      onChange={(e) => updatePassenger(index, "passport_expiry", e.target.value)} // ✅ DIRECT UPDATE
+                      value={passenger.passport_expire || ""} // ✅ SIMPLE WORKING LOGIC
+                      onChange={(e) => updatePassenger(index, "passport_expire", e.target.value)} // ✅ DIRECT UPDATE
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getError(index, "passport_expiry")
+                        getError(index, "passport_expire")
                           ? "border-red-500 bg-red-50"
-                          : getPassportExpiryColor(passenger.passport_expiry || "")
+                          : getPassportExpiryColor(passenger.passport_expire || "")
                       }`}
                     />
-                    {getError(index, "passport_expiry") && (
+                    {getError(index, "passport_expire") && (
                       <p className="text-sm text-red-600 mt-1">
-                        {getError(index, "passport_expiry")?.message}
+                        {getError(index, "passport_expire")?.message}
                       </p>
                     )}
                   </div>

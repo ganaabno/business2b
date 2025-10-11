@@ -101,27 +101,8 @@ export const useBooking = ({
 
   const MAX_PASSENGERS = 20;
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
-    currentUser.role || "user"
+    currentUser.role || ""
   );
-
-  useEffect(() => {
-    console.log("useBooking: Initialized", {
-      currentUserId: currentUser.id,
-      currentUserRole: currentUser.role || "user",
-      isPowerUser,
-      selectedTour,
-      departureDate,
-      remainingSeats,
-      leadPassengerData,
-    });
-  }, [
-    currentUser.id,
-    currentUser.role,
-    isPowerUser,
-    selectedTour,
-    departureDate,
-    leadPassengerData,
-  ]);
 
   const selectedTourData = tours.find((t) => t.title === selectedTour);
   const remainingSeats = isPowerUser
@@ -133,56 +114,6 @@ export const useBooking = ({
           (bookingPassengers.length + (leadPassengerData?.seat_count || 0))
       )
     : undefined;
-
-  useEffect(() => {
-    console.log(
-      "useBooking: showPassengerPrompt changed to",
-      showPassengerPrompt,
-      {
-        isPowerUser,
-        canAdd,
-        bookingPassengersLength: bookingPassengers.length,
-        remainingSeats,
-      }
-    );
-  }, [
-    showPassengerPrompt,
-    isPowerUser,
-    canAdd,
-    bookingPassengers,
-    remainingSeats,
-  ]);
-
-  useEffect(() => {
-    const canAddValue =
-      bookingPassengers.length < MAX_PASSENGERS &&
-      !!selectedTour &&
-      !!departureDate &&
-      !!selectedTourData &&
-      (isPowerUser ||
-        (remainingSeats !== undefined &&
-          remainingSeats > 0 &&
-          (leadPassengerData?.seat_count === undefined ||
-            bookingPassengers.length < leadPassengerData.seat_count)));
-    console.log("useBooking: canAdd updated", {
-      canAdd: canAddValue,
-      bookingPassengersLength: bookingPassengers.length,
-      selectedTour,
-      departureDate,
-      selectedTourDataExists: !!selectedTourData,
-      remainingSeats,
-      leadPassengerData,
-    });
-    setCanAdd(canAddValue);
-  }, [
-    bookingPassengers.length,
-    selectedTour,
-    departureDate,
-    selectedTourData,
-    isPowerUser,
-    remainingSeats,
-    leadPassengerData,
-  ]);
 
   useEffect(() => {
     if (selectedTourData?.hotels) {
@@ -203,9 +134,30 @@ export const useBooking = ({
     }
   }, [selectedTourData]);
 
+  useEffect(() => {
+    setCanAdd(
+      bookingPassengers.length < MAX_PASSENGERS &&
+        !!selectedTour &&
+        !!departureDate &&
+        !!selectedTourData &&
+        (isPowerUser ||
+          (remainingSeats !== undefined &&
+            remainingSeats > 0 &&
+            (leadPassengerData?.seat_count === undefined ||
+              bookingPassengers.length < leadPassengerData.seat_count)))
+    );
+  }, [
+    bookingPassengers.length,
+    selectedTour,
+    departureDate,
+    selectedTourData,
+    isPowerUser,
+    remainingSeats,
+    leadPassengerData,
+  ]);
+
   const showNotification = useCallback(
     (type: "success" | "error", message: string) => {
-      console.log("useBooking: showNotification", { type, message });
       setNotification({ type, message });
       setTimeout(() => setNotification(null), 5000);
     },
@@ -238,61 +190,36 @@ export const useBooking = ({
   );
 
   const canAddPassenger = useCallback(async () => {
-    console.log("useBooking: canAddPassenger called", {
-      bookingPassengersLength: bookingPassengers.length,
-      selectedTour,
-      departureDate,
-      selectedTourDataExists: !!selectedTourData,
-      remainingSeats,
-      leadPassengerData,
-      isPowerUser,
-    });
     if (bookingPassengers.length >= MAX_PASSENGERS) {
       showNotification(
         "error",
         `Maximum ${MAX_PASSENGERS} passengers allowed per booking`
       );
-      console.log(
-        "useBooking: canAddPassenger failed - Max passengers reached"
-      );
       return false;
     }
     if (!selectedTour || !departureDate || !selectedTourData) {
       showNotification("error", "Please select a tour and departure date");
-      console.log("useBooking: canAddPassenger failed - Missing tour or date");
       return false;
     }
-    if (!isPowerUser) {
-      if (remainingSeats !== undefined && remainingSeats <= 0) {
-        showNotification("error", "No seats available for this tour");
-        console.log("useBooking: canAddPassenger failed - No seats available");
-        return false;
-      }
-      if (
-        leadPassengerData?.seat_count !== undefined &&
-        bookingPassengers.length >= leadPassengerData.seat_count
-      ) {
-        showNotification(
-          "error",
-          `Cannot add more passengers: exceeds lead passenger limit of ${leadPassengerData.seat_count}`
-        );
-        console.log(
-          "useBooking: canAddPassenger failed - Lead passenger seat limit"
-        );
-        return false;
-      }
-      const { isValid, message } = await checkSeatLimit(
-        selectedTourData.id,
-        departureDate,
-        currentUser.role
+    if (isPowerUser) return true;
+    if (
+      leadPassengerData?.seat_count !== undefined &&
+      bookingPassengers.length >= leadPassengerData.seat_count
+    ) {
+      showNotification(
+        "error",
+        `Cannot add more passengers: exceeds lead passenger limit of ${leadPassengerData.seat_count}`
       );
-      if (!isValid) {
-        showNotification("error", message);
-        console.log("useBooking: canAddPassenger failed - checkSeatLimit", {
-          message,
-        });
-        return false;
-      }
+      return false;
+    }
+    const { isValid, message } = await checkSeatLimit(
+      selectedTourData.id,
+      departureDate,
+      currentUser.role
+    );
+    if (!isValid) {
+      showNotification("error", message);
+      return false;
     }
     return true;
   }, [
@@ -301,41 +228,31 @@ export const useBooking = ({
     departureDate,
     selectedTourData,
     isPowerUser,
-    remainingSeats,
-    leadPassengerData,
     currentUser.role,
+    leadPassengerData,
   ]);
 
   const addMultiplePassengers = useCallback(
     async (count: number) => {
-      console.log("useBooking: addMultiplePassengers called", {
+      console.log(
+        "addMultiplePassengers called with count:",
         count,
-        isPowerUser,
-        remainingSeats,
-        leadPassengerData,
-        bookingPassengersLength: bookingPassengers.length,
-      });
-      if (!(await canAddPassenger())) {
-        console.log("useBooking: canAddPassenger returned false");
-        return;
-      }
+        "isPowerUser:",
+        isPowerUser
+      );
+      if (!(await canAddPassenger())) return;
 
-      const availableSlots = isPowerUser
-        ? MAX_PASSENGERS - bookingPassengers.length
-        : Math.min(
-            MAX_PASSENGERS - bookingPassengers.length,
-            remainingSeats !== undefined ? remainingSeats : MAX_PASSENGERS,
-            leadPassengerData?.seat_count !== undefined
-              ? leadPassengerData.seat_count - bookingPassengers.length
-              : MAX_PASSENGERS
-          );
+      const availableSlots = Math.min(
+        MAX_PASSENGERS - bookingPassengers.length,
+        remainingSeats || MAX_PASSENGERS,
+        leadPassengerData?.seat_count !== undefined
+          ? leadPassengerData.seat_count - bookingPassengers.length
+          : MAX_PASSENGERS
+      );
       const actualCount = Math.min(count, availableSlots);
 
       if (actualCount <= 0) {
         showNotification("error", "No available slots for new passengers");
-        console.log(
-          "useBooking: addMultiplePassengers failed - No available slots"
-        );
         return;
       }
 
@@ -351,11 +268,6 @@ export const useBooking = ({
 
         setBookingPassengers((prev) => {
           const updated = [...prev, ...newPassengers];
-          console.log("useBooking: Updating bookingPassengers", {
-            previousLength: prev.length,
-            newPassengersLength: newPassengers.length,
-            totalLength: updated.length,
-          });
           return updated.map((passenger, idx) => ({
             ...passenger,
             room_allocation:
@@ -366,10 +278,6 @@ export const useBooking = ({
         });
 
         setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
-        console.log(
-          "useBooking: setExpandedPassengerId",
-          newPassengers[newPassengers.length - 1].id
-        );
         showNotification(
           "success",
           `Added ${actualCount} passenger${actualCount !== 1 ? "s" : ""}`
@@ -379,7 +287,6 @@ export const useBooking = ({
           block: "center",
         });
       } catch (error) {
-        console.error("useBooking: Error in addMultiplePassengers", error);
         showNotification(
           "error",
           "Failed to add passengers. Please try again."
@@ -395,7 +302,6 @@ export const useBooking = ({
       canAddPassenger,
       remainingSeats,
       leadPassengerData,
-      isPowerUser,
     ]
   );
 
@@ -456,18 +362,13 @@ export const useBooking = ({
         const fileName = `passport_${Date.now()}_${Math.random()
           .toString(36)
           .substring(2)}.${fileExt}`;
-        console.log("updatePassenger: Uploading passport", { fileName });
         const { data, error } = await supabase.storage
           .from("passports")
           .upload(fileName, value);
-        if (error) {
-          console.error("updatePassenger: Passport upload failed", { error });
-          throw new Error(error.message);
-        }
+        if (error) throw new Error(error.message);
         updatedPassengers[index].passport_upload = data.path;
         showNotification("success", "Passport uploaded successfully");
       } catch (error) {
-        console.error("updatePassenger: Error uploading passport", error);
         showNotification("error", "Failed to upload passport");
       } finally {
         setFieldLoading((prev) => ({ ...prev, [loadingKey]: false }));
@@ -497,7 +398,7 @@ export const useBooking = ({
       }
       showNotification("success", `Removed passenger ${index + 1}`);
     },
-    [bookingPassengers, expandedPassengerId, showNotification]
+    [bookingPassengers, expandedPassengerId]
   );
 
   const clearAllPassengers = useCallback(() => {
@@ -514,7 +415,7 @@ export const useBooking = ({
       setExpandedPassengerId(null);
       showNotification("success", "All passengers cleared");
     }
-  }, [bookingPassengers.length, showNotification]);
+  }, [bookingPassengers.length]);
 
   const resetBookingForm = useCallback(() => {
     setBookingPassengers([]);
@@ -526,8 +427,8 @@ export const useBooking = ({
     setExpandedPassengerId(null);
     setErrors([]);
     setLeadPassengerData(null);
-    showNotification("success", "Booking form reset successfully");
-  }, [setSelectedTour, setDepartureDate, setErrors, showNotification]);
+    showNotification("success", "Booking added successfully!");
+  }, [setSelectedTour, setDepartureDate, setErrors]);
 
   const validatePassenger = useCallback(
     (passenger: Passenger, departureDate: string): ValidationError[] => {
@@ -579,7 +480,7 @@ export const useBooking = ({
         if (!cleanExpireDate) {
           errors.push({
             field: `passenger_${serial_no}_passport_expire`,
-            message: `Passenger ${serial_no}: Invalid passport expire date format`,
+            message: `Passenger ${serial_no}: Invalid passport expire date format. Use yyyy-MM-dd, dd-MM-yyyy, or similar.`,
           });
         } else {
           const expireDate = new Date(cleanExpireDate);
@@ -587,7 +488,7 @@ export const useBooking = ({
           if (!cleanDepDate) {
             errors.push({
               field: `passenger_${serial_no}_passport_expire`,
-              message: `Passenger ${serial_no}: Invalid departure date`,
+              message: `Passenger ${serial_no}: Invalid departure date.`,
             });
           } else {
             const minDate = new Date(cleanDepDate);
@@ -640,6 +541,12 @@ export const useBooking = ({
             field: "payment",
             message: "Please select a payment method",
           });
+        if (isPowerUser && !showInProvider) {
+          allErrors.push({
+            field: "show_in_provider",
+            message: "Provider visibility is required for power users",
+          });
+        }
       }
 
       bookingPassengers.forEach((passenger) =>
@@ -654,6 +561,7 @@ export const useBooking = ({
       departureDate,
       bookingPassengers,
       paymentMethod,
+      showInProvider,
       isPowerUser,
       leadPassengerData,
       validatePassenger,
@@ -662,28 +570,17 @@ export const useBooking = ({
   );
 
   const saveOrder = async () => {
-    console.log("saveOrder: Starting save process", {
-      userId: currentUser.id,
-      userRole: currentUser.role || "user",
-      isPowerUser,
-      selectedTour,
-      departureDate,
-      passengerCount: bookingPassengers.length,
-    });
-
     if (!validateBooking(4)) {
       showNotification(
         "error",
         "Please fix the validation errors before proceeding"
       );
-      console.log("saveOrder: Validation failed", { errors });
       return;
     }
 
     const tourData = tours.find((t) => t.title === selectedTour);
     if (!tourData) {
       showNotification("error", "Selected tour not found");
-      console.log("saveOrder: Tour not found", { selectedTour });
       return;
     }
 
@@ -692,11 +589,10 @@ export const useBooking = ({
       tourData.available_seats !== undefined &&
       tourData.available_seats < bookingPassengers.length
     ) {
-      showNotification("error", "Cannot save booking: No seats available");
-      console.log("saveOrder: Insufficient seats", {
-        availableSeats: tourData.available_seats,
-        passengerCount: bookingPassengers.length,
-      });
+      showNotification(
+        "error",
+        "Cannot save booking. The tour is fully booked."
+      );
       return;
     }
 
@@ -723,24 +619,22 @@ export const useBooking = ({
         passport_copy: firstPassenger?.passport_upload || null,
         commission,
         created_by: currentUser.id,
-        createdBy: currentUser.username || currentUser.email || "Unknown",
+        createdBy: currentUser.username || currentUser.email,
         tour: tourData.title,
         travel_choice: selectedTour,
         status: isPowerUser ? "confirmed" : "pending",
         hotel: firstPassenger?.hotel?.trim() || null,
         room_number: firstPassenger?.room_allocation?.trim() || null,
         payment_method: paymentMethod || null,
-        departureDate: cleanDateForDB(departureDate) || null,
+        departureDate: cleanDateForDB(departureDate),
         total_price: totalPrice,
         total_amount: totalPrice,
         paid_amount: 0,
         balance: totalPrice,
         show_in_provider: isPowerUser ? showInProvider : false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       };
 
-      console.log("saveOrder: Inserting order", { orderData });
+      console.log("Saving order:", orderData);
 
       const { data: orderResult, error: orderError } = await supabase
         .from("orders")
@@ -748,16 +642,12 @@ export const useBooking = ({
         .select()
         .single();
 
-      if (orderError || !orderResult) {
-        console.error("saveOrder: Order insertion failed", { orderError });
+      if (orderError || !orderResult)
         throw new Error(orderError?.message || "No order data returned");
-      }
 
       const orderId = String(orderResult.id);
-      console.log("saveOrder: Order inserted", { orderId });
-
       const uploadedPaths = await Promise.all(
-        bookingPassengers.map(async (passenger, index) => {
+        bookingPassengers.map(async (passenger) => {
           if (
             passenger.passport_upload &&
             typeof passenger.passport_upload !== "string"
@@ -767,21 +657,10 @@ export const useBooking = ({
             const fileName = `passport_${orderId}_${Date.now()}_${Math.random()
               .toString(36)
               .substring(2)}.${fileExt}`;
-            console.log("saveOrder: Uploading passport", {
-              fileName,
-              passengerIndex: index,
-            });
             const { data, error } = await supabase.storage
               .from("passports")
               .upload(fileName, file);
-            if (error) {
-              console.error("saveOrder: Passport upload failed", {
-                error,
-                passengerIndex: index,
-              });
-              return "";
-            }
-            return data.path;
+            return error ? "" : data.path;
           }
           return passenger.passport_upload || "";
         })
@@ -789,23 +668,20 @@ export const useBooking = ({
 
       const cleanedPassengers = await Promise.all(
         bookingPassengers.map(async (passenger, index) => ({
-          order_id: parseInt(orderId, 10), // Convert to bigint for passenger_requests
+          order_id: orderId,
           user_id: currentUser.id,
-          tour_id: tourData.id,
           tour_title: selectedTour,
-          departure_date: cleanDateForDB(departureDate) || null,
-          name: `${passenger.first_name || ""} ${
-            passenger.last_name || ""
-          }`.trim(),
+          departure_date: cleanDateForDB(departureDate),
+          name: `${passenger.first_name} ${passenger.last_name}`.trim(),
           room_allocation: passenger.room_allocation?.trim() || "",
-          serial_no: passenger.serial_no || (index + 1).toString(),
+          serial_no: passenger.serial_no,
           last_name: passenger.last_name?.trim() || "",
           first_name: passenger.first_name?.trim() || "",
-          date_of_birth: cleanDateForDB(passenger.date_of_birth) || null,
+          date_of_birth: cleanDateForDB(passenger.date_of_birth) ?? "",
           age: passenger.age || null,
           gender: passenger.gender?.trim() || "",
           passport_number: passenger.passport_number?.trim() || "",
-          passport_expire: cleanDateForDB(passenger.passport_expire) || null,
+          passport_expire: cleanDateForDB(passenger.passport_expire),
           nationality: passenger.nationality?.trim() || "Mongolia",
           roomType: passenger.roomType?.trim() || "",
           hotel: passenger.hotel?.trim() || "",
@@ -816,56 +692,29 @@ export const useBooking = ({
           email: passenger.email?.trim() || "",
           phone: passenger.phone?.trim() || "",
           passport_upload: uploadedPaths[index] || null,
-          allergy: passenger.allergy?.trim() || null,
-          emergency_phone: passenger.emergency_phone?.trim() || null,
-          status: isPowerUser ? "active" : "pending",
+          allergy: passenger.allergy?.trim() || "",
+          emergency_phone: passenger.emergency_phone?.trim() || "",
+          status: "active",
           is_blacklisted: passenger.is_blacklisted || false,
-          blacklisted_date: cleanDateForDB(passenger.blacklisted_date) || null,
+          blacklisted_date: cleanValueForDB(
+            "blacklisted_date",
+            passenger.blacklisted_date
+          ),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          notes: passenger.notes?.trim() || null,
-          seat_count: passenger.seat_count || 1,
         }))
       );
 
-      const targetTable = isPowerUser ? "passengers" : "passenger_requests";
-      console.log("saveOrder: Inserting passengers", {
-        targetTable,
-        passengerCount: cleanedPassengers.length,
-        passengerData: cleanedPassengers,
-      });
+      const { error: passengerError } = await supabase
+        .from("passengers")
+        .insert(cleanedPassengers);
+      if (passengerError) throw new Error(passengerError.message);
 
-      const { data: insertedPassengers, error: passengerError } = await supabase
-        .from(targetTable)
-        .insert(cleanedPassengers)
-        .select();
-
-      if (passengerError) {
-        console.error(
-          `saveOrder: Passenger insertion failed in ${targetTable}`,
-          {
-            passengerError,
-            cleanedPassengers,
-          }
-        );
-        throw new Error(passengerError.message);
-      }
-
-      console.log("saveOrder: Passengers inserted successfully", {
-        targetTable,
-        insertedPassengerIds: insertedPassengers?.map((p) => p.id) || [],
-      });
-
-      if (isPowerUser && tourData.available_seats !== undefined) {
+      if (!isPowerUser && tourData.available_seats !== undefined) {
         const newSeatCount = Math.max(
           0,
           tourData.available_seats - bookingPassengers.length
         );
-        console.log("saveOrder: Updating tour seats", {
-          tourId: tourData.id,
-          currentSeats: tourData.available_seats,
-          newSeatCount,
-        });
         const { error: tourUpdateError } = await supabase
           .from("tours")
           .update({
@@ -873,16 +722,8 @@ export const useBooking = ({
             updated_at: new Date().toISOString(),
           })
           .eq("id", tourData.id);
-        if (tourUpdateError) {
-          console.warn(
-            "saveOrder: Failed to update tour seats",
-            tourUpdateError.message
-          );
-          showNotification(
-            "error",
-            `Failed to update tour seats: ${tourUpdateError.message}`
-          );
-        }
+        if (tourUpdateError)
+          console.warn("Failed to update tour seats:", tourUpdateError.message);
       }
 
       const newOrder: Order = {
@@ -897,7 +738,7 @@ export const useBooking = ({
         paid_amount: 0,
         show_in_provider: isPowerUser ? showInProvider : false,
         created_by: currentUser.id,
-        createdBy: currentUser.username || currentUser.email || "Unknown",
+        createdBy: currentUser.username || currentUser.email,
         user_id: currentUser.id,
         tour_id: tourData.id,
         travel_choice: selectedTour,
@@ -907,42 +748,30 @@ export const useBooking = ({
         room_number: firstPassenger?.room_allocation || null,
         phone: firstPassenger?.phone || null,
         last_name: firstPassenger?.last_name || null,
-        first_name: firstPassenger?.first_name?.trim() || null,
+        first_name: firstPassenger?.first_name || null,
         email: firstPassenger?.email || null,
         tour: tourData.title,
         passport_number: firstPassenger?.passport_number || null,
         passport_expire: cleanDateForDB(firstPassenger?.passport_expire),
         passport_copy: firstPassenger?.passport_upload || null,
         commission,
-        order_id: orderId,
         payment_method: paymentMethod || null,
         passengers: cleanedPassengers.map((p, index) => ({
           ...p,
-          id: insertedPassengers?.[index]?.id || generatePassengerId(),
+          id: generatePassengerId(),
           passport_upload: uploadedPaths[index] || null,
-          order_id: String(p.order_id), // Ensure order_id is string for Passenger type
         })) as Passenger[],
         edited_by: null,
         edited_at: null,
-        booking_confirmation: null,
       };
 
       setOrders((prev) => [...prev, newOrder]);
       showNotification(
         "success",
-        `Booking ${isPowerUser ? "confirmed" : "submitted for approval"}`
+        `Booking saved successfully! Order ID: ${orderId}`
       );
-      console.log("saveOrder: Order saved successfully", {
-        orderId,
-        targetTable,
-        passengerIds: insertedPassengers?.map((p) => p.id) || [],
-      });
       resetBookingForm();
     } catch (error) {
-      console.error("saveOrder: Failed to save booking", {
-        error,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
       showNotification(
         "error",
         `Error saving booking: ${
@@ -1002,7 +831,7 @@ export const useBooking = ({
         p.allergy || "",
         p.emergency_phone || "",
       ]
-        .map((v) => `"${v || ""}"`)
+        .map((v) => `"${v}"`)
         .join(",")
     );
 
@@ -1111,22 +940,35 @@ export const useBooking = ({
           return;
         }
 
-        const availableSlots = isPowerUser
-          ? MAX_PASSENGERS - bookingPassengers.length
-          : Math.min(
-              MAX_PASSENGERS - bookingPassengers.length,
-              tourData.available_seats !== undefined
-                ? tourData.available_seats - bookingPassengers.length
-                : MAX_PASSENGERS,
-              leadPassengerData?.seat_count !== undefined
-                ? leadPassengerData.seat_count - bookingPassengers.length
-                : MAX_PASSENGERS
-            );
-
-        if (data.length > availableSlots) {
+        if (
+          !isPowerUser &&
+          tourData.available_seats !== undefined &&
+          data.length + bookingPassengers.length > tourData.available_seats
+        ) {
           showNotification(
             "error",
-            `Cannot import ${data.length} passengers. Only ${availableSlots} seats available.`
+            "Cannot import passengers. The tour is fully booked."
+          );
+          return;
+        }
+
+        if (
+          leadPassengerData?.seat_count !== undefined &&
+          data.length + bookingPassengers.length > leadPassengerData.seat_count
+        ) {
+          showNotification(
+            "error",
+            `Cannot import ${data.length} passengers. Exceeds lead passenger limit of ${leadPassengerData.seat_count}.`
+          );
+          return;
+        }
+
+        if (bookingPassengers.length + data.length > MAX_PASSENGERS) {
+          showNotification(
+            "error",
+            `Cannot import ${data.length} passengers. Maximum ${
+              MAX_PASSENGERS - bookingPassengers.length
+            } more allowed.`
           );
           return;
         }
@@ -1143,9 +985,8 @@ export const useBooking = ({
           const cleanPassportExpiry = cleanDateForDB(row["Passport Expiry"]);
           return {
             id: generatePassengerId(),
-            order_id: "", // Will be set after order insertion
+            order_id: "",
             user_id: currentUser.id,
-            tour_id: tourData.id,
             name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
             tour_title: selectedTour,
             departure_date: cleanDateForDB(departureDate),
@@ -1153,7 +994,7 @@ export const useBooking = ({
             serial_no: baseSerial.toString(),
             last_name: row["Last Name"] || "",
             first_name: row["First Name"] || "",
-            date_of_birth: cleanDateForDB(row["Date of Birth"]) || "",
+            date_of_birth: cleanDateForDB(row["Date of Birth"]) ?? "",
             age: parseInt(row["Age"]) || calculateAge(row["Date of Birth"]),
             gender: row["Gender"] || "",
             passport_number: row["Passport Number"] || "",
@@ -1170,7 +1011,7 @@ export const useBooking = ({
             emergency_phone: row["Emergency Phone"] || "",
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            status: isPowerUser ? "active" : "pending",
+            status: "active",
             is_blacklisted: false,
             blacklisted_date: null,
             notes: "",
@@ -1194,7 +1035,6 @@ export const useBooking = ({
           `Successfully imported ${newPassengers.length} passengers`
         );
       } catch (error) {
-        console.error("useBooking: Error in handleUploadCSV", error);
         showNotification(
           "error",
           "Failed to parse CSV file. Please check the format."
@@ -1211,7 +1051,7 @@ export const useBooking = ({
   );
 
   const handleNextStep = useCallback(async () => {
-    console.log("useBooking: handleNextStep called, activeStep:", activeStep);
+    console.log("handleNextStep called, activeStep:", activeStep);
     switch (activeStep) {
       case 1:
         if (!selectedTour?.trim() || !departureDate?.trim()) {
@@ -1261,7 +1101,6 @@ export const useBooking = ({
     validateBooking,
     loading,
     saveOrder,
-    showNotification,
   ]);
 
   return {

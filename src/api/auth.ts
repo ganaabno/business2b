@@ -54,7 +54,7 @@ export async function loginUser(
       birth_date: String(userData.birth_date ?? ""),
       id_card_number: String(userData.id_card_number ?? ""),
       passport_number: String(userData.passport_number ?? ""),
-      passport_expire: String(userData.passport_expiry ?? ""),
+      passport_expire: String(userData.passport_expire ?? ""),
       allergy: String(userData.allergy ?? ""),
       emergency_phone: String(userData.emergency_phone ?? ""),
       membership_rank: String(userData.membership_rank ?? ""),

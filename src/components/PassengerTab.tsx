@@ -122,9 +122,9 @@ const validateField = (field: keyof Passenger, value: any, passenger: Passenger)
       return !passenger.gender || passenger.gender === "" ? "Gender is required" : null;
     case "passport_number":
       return !passenger.passport_number || passenger.passport_number === "" ? "Passport number is required" : null;
-    case "passport_expiry":
-      if (!passenger.passport_expiry) return "Passport expiry is required";
-      const expiry = new Date(passenger.passport_expiry);
+    case "passport_expire":
+      if (!passenger.passport_expire) return "Passport expiry is required";
+      const expiry = new Date(passenger.passport_expire);
       if (expiry <= new Date()) return "Passport expiry must be in the future";
       if (isNaN(expiry.getTime())) return "Invalid date format";
       return null;
@@ -198,7 +198,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
       passengers.forEach((passenger) => {
         const fields: (keyof Passenger)[] = [
           "first_name", "last_name", "order_id", "date_of_birth",
-          "gender", "passport_number", "passport_expiry",
+          "gender", "passport_number", "passport_expire",
           "nationality", "hotel", "status", "notes"
         ];
 
@@ -422,7 +422,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             age,
             gender,
             passport_number,
-            passport_expiry,
+            passport_expire,
             nationality,
             hotel,
             allergy,
@@ -441,7 +441,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
             age: age || null,
             gender: gender || null,
             passport_number: passport_number || null,
-            passport_expiry: passport_expiry || null,
+            passport_expire: passport_expire || null,
             nationality: nationality || "Mongolia",
             hotel: hotel || "",
             allergy: allergy || "",
@@ -933,19 +933,19 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                       <div className="space-y-1">
                         <input
                           type="date"
-                          value={passenger.passport_expiry || ""}
-                          onChange={(e) => handlePassengerChange(passenger.id, "passport_expiry", e.target.value || "")}
-                          className={getInputClass("passport_expiry", passenger, isEditMode)}
+                          value={passenger.passport_expire || ""}
+                          onChange={(e) => handlePassengerChange(passenger.id, "passport_expire", e.target.value || "")}
+                          className={getInputClass("passport_expire", passenger, isEditMode)}
                           min={new Date().toISOString().split('T')[0]} // Can't select past dates
                         />
-                        {hasFieldError(passenger.id, "passport_expiry") && (
+                        {hasFieldError(passenger.id, "passport_expire") && (
                           <p className="text-xs text-red-600 mt-1">
-                            {getErrorMessage(passenger.id, "passport_expiry")}
+                            {getErrorMessage(passenger.id, "passport_expire")}
                           </p>
                         )}
                       </div>
                     ) : (
-                      <span className="text-gray-700">{passenger.passport_expiry || "N/A"}</span>
+                      <span className="text-gray-700">{passenger.passport_expire || "N/A"}</span>
                     )}
                   </td>
 

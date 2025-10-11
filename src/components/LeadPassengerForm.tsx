@@ -59,7 +59,7 @@ export default function LeadPassengerForm({
     first_name: "",
     last_name: "",
     phone: "",
-    seat_count: "" as string | number, // Allow string for typing
+    seat_count: "" as string | number,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -139,6 +139,7 @@ export default function LeadPassengerForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("LeadPassengerForm: handleSubmit called with leadPassenger:", leadPassenger);
     if (!validateForm()) {
       setNotification({ type: "error", message: "Please fix all errors before submitting" });
       return;
@@ -185,8 +186,7 @@ export default function LeadPassengerForm({
       if (error) throw new Error(`Lead submission failed: ${error.message}`);
       if (!data) throw new Error("No data returned from lead submission");
 
-      console.log("Inserted leadData:", leadData); // Debug: Log inserted lead
-
+      console.log("LeadPassengerForm: Inserted leadData:", leadData);
       setLeadId(data.id);
       setLeadPassengerData(data);
       setTimeLeft(expiryHours * 3600);
@@ -195,8 +195,8 @@ export default function LeadPassengerForm({
         message: `Lead passenger registered. You have ${expiryHours} hour${expiryHours !== 1 ? "s" : ""} to complete the booking.`,
       });
 
-      // Navigate to PendingLeads (adjust step number if needed)
-      setActiveStep(0); // Assuming PendingLeads is step 0; confirm your tab structure
+      console.log("LeadPassengerForm: Moving to step 3 after submit");
+      setActiveStep(3);
     } catch (error) {
       setNotification({
         type: "error",
@@ -208,7 +208,11 @@ export default function LeadPassengerForm({
   };
 
   const handleSkip = () => {
-    setActiveStep(3);
+    console.log("LeadPassengerForm: handleSkip called, setting activeStep to 3");
+    setActiveStep((prev) => {
+      console.log("LeadPassengerForm: setActiveStep called, previous step:", prev, "new step: 3");
+      return 3;
+    });
   };
 
   useEffect(() => {
@@ -323,7 +327,10 @@ export default function LeadPassengerForm({
         <div className="flex gap-3 mt-8">
           <button
             type="button"
-            onClick={() => setActiveStep(1)}
+            onClick={() => {
+              console.log("LeadPassengerForm: Back button clicked, moving to step 1");
+              setActiveStep(1);
+            }}
             className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
             disabled={loading}
           >

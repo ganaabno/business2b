@@ -4,7 +4,6 @@ import type { Order, OrderStatus, User as UserType } from "../types/type";
 import { formatDate } from "../utils/tourUtils";
 import { useNotifications } from "../hooks/useNotifications";
 
-// Cache for schema checks (shared with ProviderInterface)
 const schemaCache = {
   orders: null as boolean | null,
 };
@@ -26,21 +25,18 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   const [showCompletedOnly, setShowCompletedOnly] = useState<boolean>(false);
   const [hasShowInProvider, setHasShowInProvider] = useState<boolean | null>(null);
   const [originalOrders, setOriginalOrders] = useState<Order[]>([]);
-  const ordersPerPage = 10;
+  const ordersPerPage: number = 10;
 
-  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly]);
 
-  // Store original orders when entering edit mode
   useEffect(() => {
     if (isEditMode) {
       setOriginalOrders([...orders]);
     }
   }, [isEditMode, orders]);
 
-  // Check for show_in_provider column
   const checkOrdersSchema = async () => {
     if (schemaCache.orders !== null) {
       setHasShowInProvider(schemaCache.orders);
@@ -74,12 +70,10 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     console.log("show_in_provider column exists in orders:", hasColumn);
   };
 
-  // Initialize schema check
   useEffect(() => {
     checkOrdersSchema();
   }, []);
 
-  // Real-time subscription for orders
   useEffect(() => {
     if (hasShowInProvider === null) return;
 
@@ -91,8 +85,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
           event: '*',
           schema: 'public',
           table: 'orders',
-          // Optional: Filter by show_in_provider to reduce updates
-          // filter: hasShowInProvider ? 'show_in_provider=eq.true' : undefined,
+          filter: hasShowInProvider ? 'show_in_provider=eq.true' : undefined,
         },
         (payload) => {
           console.log("Received orders subscription payload:", payload);
@@ -108,20 +101,25 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     tour_id: String(payload.new.tour_id),
                     created_by: payload.new.created_by ? String(payload.new.created_by) : null,
                     edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                    passengers: payload.new.passengers ?? order.passengers,
+                    passengers: payload.new.passengers ?? order.passenger_count,
                     total_price: payload.new.total_price,
                     total_amount: payload.new.total_amount,
                     paid_amount: payload.new.paid_amount,
                     balance: payload.new.balance,
-                    show_in_provider: payload.new.show_in_provider ?? true, // Aligned with ToursTab
+                    show_in_provider: payload.new.show_in_provider ?? false,
                     createdBy: payload.new.users?.email ?? payload.new.createdBy ?? null,
                     departureDate: payload.new.departure_date ?? payload.new.departureDate ?? '',
+                    status: payload.new.status as OrderStatus,
                   } as Order
                   : order
               )
             );
             console.log("Order updated:", payload.new);
           } else if (payload.eventType === 'INSERT') {
+            if (payload.new.status === "approved" && !["admin", "manager", "superadmin"].includes(currentUser.role || "")) {
+              console.log("Skipping approved order for non-manager:", payload.new.id);
+              return;
+            }
             setOrders((prev) => [
               ...prev,
               {
@@ -136,27 +134,38 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 gender: payload.new.gender ?? null,
                 tour: payload.new.tour ?? null,
                 passport_number: payload.new.passport_number ?? null,
-                passport_expire: payload.new.passport_expiry ?? null,
+                passport_expire: payload.new.passport_expire ?? null,
                 passport_copy: payload.new.passport_copy ?? null,
                 commission: payload.new.commission ?? null,
                 created_by: payload.new.created_by ? String(payload.new.created_by) : null,
                 edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
                 edited_at: payload.new.edited_at ?? null,
-                travel_choice: payload.new.travel_choice,
+                travel_choice: payload.new.travel_choice ?? '',
                 status: payload.new.status as OrderStatus,
                 hotel: payload.new.hotel ?? null,
                 room_number: payload.new.room_number ?? null,
                 payment_method: payload.new.payment_method ?? null,
                 created_at: payload.new.created_at,
                 updated_at: payload.new.updated_at,
-                passengers: payload.new.passengers ?? [],
-                departureDate: payload.new.departure_date ?? payload.new.departureDate ?? '',
-                createdBy: payload.new.users?.email ?? payload.new.createdBy ?? null,
+                departureDate: payload.new.departureDate ?? '',
+                createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
                 total_price: payload.new.total_price,
                 total_amount: payload.new.total_amount,
                 paid_amount: payload.new.paid_amount,
                 balance: payload.new.balance,
-                show_in_provider: payload.new.show_in_provider ?? true, // Aligned with ToursTab
+                order_id: String(payload.new.id),
+                passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
+                booking_confirmation: payload.new.booking_confirmations
+                  ? {
+                    order_id: String(payload.new.id),
+                    bus_number: payload.new.booking_confirmations.bus_number ?? null,
+                    guide_name: payload.new.booking_confirmations.guide_name ?? null,
+                    weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
+                    updated_by: payload.new.booking_confirmations.updated_by ?? null,
+                    updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                  }
+                  : null,
+                passport_copy_url: null,
               } as Order,
             ]);
             console.log("Order inserted:", payload.new);
@@ -178,9 +187,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     return () => {
       supabase.removeChannel(orderSubscription);
     };
-  }, [hasShowInProvider, setOrders]);
+  }, [hasShowInProvider, setOrders, currentUser.role]);
 
-  // Fetch with retry logic
   const fetchWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 1000) => {
     for (let i = 0; i < retries; i++) {
       try {
@@ -211,7 +219,6 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       })
     );
 
-    // Immediately save show_in_provider changes
     if (field === "show_in_provider" && hasShowInProvider) {
       console.log(`Toggling show_in_provider for order ${id} to ${value}`);
       try {
@@ -228,8 +235,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
         showNotification("success", "Show in provider updated! 😎");
       } catch (error: any) {
         console.error(`Error updating show_in_provider for order ${id}:`, error);
-        showNotification("error", `Failed to update show in provider: ${error.message}`);
-        // Revert UI state
+        showNotification("error", `Failed to update show_in provider: ${error.message}`);
         setOrders(previousOrders);
       }
     }
@@ -254,7 +260,6 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
           edited_by: currentUser.id,
         };
 
-        // Remove show_in_provider if column doesn't exist
         if (hasShowInProvider === false) {
           delete updateData.show_in_provider;
         }
@@ -320,7 +325,8 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   };
 
   const filteredOrders = useMemo(() => {
-    return [...orders]
+    const validOrders = orders.filter(order => order && order.id); // Ensure no invalid orders
+    return validOrders
       .sort((a, b) => {
         const dateA = a.departureDate ? new Date(a.departureDate) : new Date(0);
         const dateB = b.departureDate ? new Date(b.departureDate) : new Date(0);
@@ -332,25 +338,27 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
         const matchesStatus = statusFilter === "all" || order.status === statusFilter;
         const matchesTourTitle = order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) || false;
         const isCompleted = order.status === "Completed" || order.status === "Travel ended completely";
-        return matchesCustomerName && matchesStatus && matchesTourTitle && (showCompletedOnly ? isCompleted : !isCompleted);
+        const isManager = ["admin", "manager", "superadmin"].includes(currentUser.role || "");
+        const matchesApproval = isManager || order.status !== "approved";
+        return matchesCustomerName && matchesStatus && matchesTourTitle && matchesApproval && (showCompletedOnly ? isCompleted : !isCompleted);
       });
-  }, [orders, customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly]);
+  }, [orders, customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly, currentUser.role]);
 
-  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+  const totalPages: number = Math.ceil((filteredOrders?.length || 0) / ordersPerPage);
   const paginatedOrders = useMemo(() => {
     const startIndex = (currentPage - 1) * ordersPerPage;
     return filteredOrders.slice(startIndex, startIndex + ordersPerPage);
-  }, [filteredOrders, currentPage]);
+  }, [filteredOrders, currentPage, ordersPerPage]);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
+      setCurrentPage(prev => prev - 1);
     }
   };
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
+      setCurrentPage(prev => prev + 1);
     }
   };
 
@@ -380,6 +388,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       "Cancelled and bought travel from another country": "bg-red-500 text-white border-red-600",
       Completed: "bg-gray-200 text-gray-900 border-gray-300",
       "Travel ended completely": "bg-gray-200 text-gray-900 border-gray-300",
+      approved: "bg-green-100 text-green-800 border-green-200",
+      partially_approved: "bg-yellow-100 text-yellow-800 border-yellow-200",
+      rejected: "bg-red-100 text-red-800 border-red-200",
     };
     return statusConfig[status as keyof typeof statusConfig] || "bg-gray-100 text-gray-800 border-gray-200";
   };
@@ -441,9 +452,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">⏳ pending</option>
-              <option value="confirmed">✅ confirmed</option>
-              <option value="cancelled">❌ cancelled</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="partially_approved">⏳ Partially Approved</option>
+              <option value="approved">✅ Approved</option>
+              <option value="confirmed">✅ Confirmed</option>
+              <option value="cancelled">❌ Cancelled</option>
               <option value="Information given">ℹ️ Information given</option>
               <option value="Need to give information">📝 Need to give information</option>
               <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
@@ -477,7 +490,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 }}
                 className="w-full px-28 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-all duration-200 font-semibold text-sm"
               >
-                {isEditMode ? "Cancel Edit " : "Edit Orders"}
+                {isEditMode ? "Cancel Edit" : "Edit Orders"}
               </button>
               {isEditMode && (
                 <button
@@ -622,9 +635,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     className={`w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(order.status || "pending")}`}
                     disabled={!isEditMode}
                   >
-                    <option value="pending">⏳ pending</option>
-                    <option value="confirmed">✅ confirmed</option>
-                    <option value="cancelled">❌ cancelled</option>
+                    <option value="pending">⏳ Pending</option>
+                    <option value="partially_approved">⏳ Partially Approved</option>
+                    <option value="approved">✅ Approved</option>
+                    <option value="confirmed">✅ Confirmed</option>
+                    <option value="cancelled">❌ Cancelled</option>
                     <option value="Information given">ℹ️ Information given</option>
                     <option value="Need to give information">📝 Need to give information</option>
                     <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
@@ -705,18 +720,21 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
                 className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                   }`}
               >
                 Previous
               </button>
+              <span className="self-center text-sm text-gray-700">
+                Page {currentPage} of {totalPages}
+              </span>
               <button
                 onClick={handleNextPage}
-                disabled={currentPage === totalPages}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${currentPage === totalPages
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                disabled={currentPage >= totalPages}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${currentPage >= totalPages
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                   }`}
               >
                 Next

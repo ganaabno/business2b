@@ -44,7 +44,7 @@ export default function PassengerTable({
       date_of_birth: passenger.date_of_birth,
       gender: passenger.gender,
       passport_number: passenger.passport_number,
-      passport_expiry: passenger.passport_expiry,
+      passport_expire: passenger.passport_expire,
       nationality: passenger.nationality,
       roomType: passenger.roomType,
       hotel: passenger.hotel,
@@ -71,8 +71,8 @@ export default function PassengerTable({
     if (!editForm.gender) errors.push({ field: `edit_gender`, message: "Gender is required" });
     if (!editForm.passport_number?.trim())
       errors.push({ field: `edit_passport_number`, message: "Passport number is required" });
-    if (!editForm.passport_expiry)
-      errors.push({ field: `edit_passport_expiry`, message: "Passport expiry date is required" });
+    if (!editForm.passport_expire)
+      errors.push({ field: `edit_passport_expire`, message: "Passport expiry date is required" });
     if (!editForm.roomType) errors.push({ field: `edit_roomType`, message: "Room type is required" });
     if (!editForm.hotel) errors.push({ field: `edit_hotel`, message: "Hotel selection is required" });
     return errors;
@@ -324,8 +324,8 @@ export default function PassengerTable({
                 <label className="block text-sm font-medium text-gray-700">Passport Expiry</label>
                 <input
                   type="date"
-                  value={editForm.passport_expiry || ""}
-                  onChange={(e) => handleInputChange("passport_expiry", e.target.value)}
+                  value={editForm.passport_expire || ""}
+                  onChange={(e) => handleInputChange("passport_expire", e.target.value)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>

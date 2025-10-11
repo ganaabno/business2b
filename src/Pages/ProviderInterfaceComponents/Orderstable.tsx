@@ -1,0 +1,148 @@
+import { useMemo } from 'react';
+import type { Order, OrderStatus } from '../../types/type';
+
+interface OrdersTableProps {
+  orders: Order[];
+  selectedDate: string;
+  setSelectedDate: React.Dispatch<React.SetStateAction<string>>;
+  searchTerm: string;
+  setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
+  loading: boolean;
+  currentPage: number;
+  setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
+  ordersPerPage: number;
+  updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
+  exportOrdersToCSV: () => Promise<void>;
+  exportLoading: boolean;
+  uniqueDates: string[];
+  formatDate: (dateString: string | null) => string;
+}
+
+const OrdersTable: React.FC<OrdersTableProps> = ({
+  orders,
+  selectedDate,
+  setSelectedDate,
+  searchTerm,
+  setSearchTerm,
+  loading,
+  currentPage,
+  setCurrentPage,
+  ordersPerPage,
+  updateOrderStatus,
+  exportOrdersToCSV,
+  exportLoading,
+  uniqueDates,
+  formatDate,
+}) => {
+  const indexOfLastOrder = currentPage * ordersPerPage;
+  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
+  const currentOrders = orders.slice(indexOfFirstOrder, indexOfLastOrder);
+  const totalPages = Math.ceil(orders.length / ordersPerPage);
+
+  const handleStatusChange = (orderId: string, status: OrderStatus) => {
+    updateOrderStatus(orderId, status);
+  };
+
+  return (
+    <div className="my-8">
+      <h2 className="text-2xl font-semibold text-gray-800 mb-4">All Orders</h2>
+      <div className="flex justify-between mb-4">
+        <div className="flex items-center space-x-4">
+          <input
+            type="text"
+            placeholder="Search orders..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <select
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All Dates</option>
+            {uniqueDates.map((date) => (
+              <option key={date} value={date}>
+                {date}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={exportOrdersToCSV}
+          disabled={exportLoading}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400"
+        >
+          {exportLoading ? 'Exporting...' : 'Export to CSV'}
+        </button>
+      </div>
+      {loading ? (
+        <p className="text-gray-500">Loading orders...</p>
+      ) : orders.length === 0 ? (
+        <p className="text-gray-500">No orders found.</p>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="min-w-full bg-white border border-gray-200">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passengers</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {currentOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.travel_choice || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(order.departureDate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.passenger_count || 0}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <select
+                        value={order.status}
+                        onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
+                        className="border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${order.total_amount?.toFixed(2) || '0.00'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.createdBy || order.created_by || 'N/A'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-between mt-4">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-gray-200 rounded-md disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-gray-200 rounded-md disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default OrdersTable;

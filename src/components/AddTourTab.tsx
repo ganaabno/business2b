@@ -40,7 +40,6 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
 
   const [newTour, setNewTour] = useState({
     title: "",
-    name: "",
     departure_date: "",
     seats: "",
     hotels: "",
@@ -78,7 +77,6 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
     const seatsValue = newTour.seats ? parseInt(newTour.seats, 10) : 0;
     const tourData = {
       title: newTour.title.trim() || null,
-      name: newTour.name.trim() || null,
       description: newTour.description.trim() || null,
       departure_date: newTour.departure_date,
       seats: seatsValue,
@@ -123,7 +121,6 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       ]);
       setNewTour({
         title: "",
-        name: "",
         departure_date: "",
         seats: "",
         hotels: "",
@@ -183,17 +180,7 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
               onChange={(e) => setNewTour({ ...newTour, title: e.target.value })}
               placeholder="Enter tour title..."
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={newTour.name}
-              onChange={(e) => setNewTour({ ...newTour, name: e.target.value })}
-              placeholder="Enter tour name..."
-            />
-          </div>
+          </div>          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Departure Date</label>
             <input
