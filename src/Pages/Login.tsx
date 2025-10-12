@@ -1,4 +1,3 @@
-// src/components/Login.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
@@ -25,33 +24,38 @@ export default function Login() {
         setError("Invalid email or password");
         return;
       }
-      const homePath = user.role === "admin" || user.role === "superadmin" ? "/admin" :
-        user.role === "provider" ? "/provider" :
-          user.role === "manager" ? "/manager" : "/user";
+      const homePath =
+        user.role === "admin" || user.role === "superadmin"
+          ? "/admin"
+          : user.role === "provider"
+            ? "/provider"
+            : user.role === "manager"
+              ? "/manager"
+              : "/user";
       navigate(homePath, { replace: true });
     } catch (err: any) {
       setError(err.message || "An error occurred during login");
+      console.error("Login error:", err);
     } finally {
+      console.log("Resetting isLoading to false");
       setIsLoading(false);
     }
   };
 
   const handleSignupClick = () => {
-    navigate('/signup');
+    console.log("Navigating to /signup");
+    navigate("/signup");
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
-      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse delay-1000"></div>
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Main login card */}
         <div className="bg-white/80 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 transition-all duration-300 hover:shadow-3xl">
-          {/* Logo and header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
               <img src={Logo} alt="LogoPic" className="w-8 h-8" />
@@ -62,23 +66,31 @@ export default function Login() {
             <p className="text-gray-600 mt-2">Sign in to continue your journey</p>
           </div>
 
-          {/* Error message */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 animate-shake">
               <div className="flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                <svg
+                  className="w-5 h-5 mr-2"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
                 </svg>
                 {error}
               </div>
             </div>
           )}
 
-          {/* Login form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email field */}
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-gray-700">
+              <label
+                htmlFor="email"
+                className="text-sm font-medium text-gray-700"
+              >
                 Email Address
               </label>
               <div className="relative">
@@ -90,7 +102,7 @@ export default function Login() {
                   type="email"
                   placeholder="Enter your email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
                   required
                   disabled={isLoading}
@@ -98,9 +110,11 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Password field */}
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-gray-700">
+              <label
+                htmlFor="password"
+                className="text-sm font-medium text-gray-700"
+              >
                 Password
               </label>
               <div className="relative">
@@ -112,7 +126,7 @@ export default function Login() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
                   required
                   disabled={isLoading}
@@ -123,12 +137,15 @@ export default function Login() {
                   disabled={isLoading}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
 
-            {/* Submit button */}
             <button
               type="submit"
               disabled={isLoading}
@@ -145,11 +162,13 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Additional options */}
           <div className="mt-6 space-y-4">
             <div className="text-center">
-              <button 
-                onClick={() => navigate('/change-password')}
+              <button
+                onClick={() => {
+                  console.log("Forgot password clicked, isLoading:", isLoading);
+                  navigate("/forgot-password");
+                }}
                 disabled={isLoading}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors disabled:opacity-50"
               >
@@ -162,12 +181,14 @@ export default function Login() {
                 <div className="w-full border-t border-gray-300"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">New to our platform?</span>
+                <span className="px-2 bg-white text-gray-500">
+                  New to our platform?
+                </span>
               </div>
             </div>
 
             <div className="text-center">
-              <button 
+              <button
                 onClick={handleSignupClick}
                 disabled={isLoading}
                 className="text-sm text-blue-700 hover:text-blue-900 font-semibold transition-colors disabled:opacity-50"
@@ -178,7 +199,6 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
           <p>Secure login powered by advanced encryption</p>
         </div>

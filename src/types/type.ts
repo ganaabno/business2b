@@ -1,4 +1,3 @@
-// src/types/type.ts
 export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
 
 export interface User {
@@ -13,7 +12,7 @@ export interface User {
   password: string;
   blacklist: boolean;
   company: string;
-  access: "active" | "suspended" | "pending"; // Added "pending"
+  access: "active" | "suspended" | "pending";
   status: "pending" | "declined" | "approved";
   birth_date: string;
   id_card_number: string;
@@ -26,15 +25,15 @@ export interface User {
   membership_points: number;
   registered_by: string;
   createdBy: string;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
+  createdAt: string;
+  updatedAt: string;
   auth_user_id?: string;
 }
 
 export interface LeadPassenger {
   id: string;
   tour_id: string;
-  tour_title: string | null; // Added
+  tour_title: string | null;
   departure_date: string;
   last_name: string;
   first_name: string;
@@ -99,23 +98,34 @@ export interface Service {
 export interface Tour {
   id: string;
   title: string;
-  description: string;
+  description: string | null;
   creator_name: string | null;
-  tour_number: number | null;
+  tour_number: string | null;
   name: string;
   dates: string[] | string | null;
-  departure_date: string; // Maps to departuredate in database
+  departure_date: string;
   seats: number;
   available_seats?: number;
   hotels: string[];
   services: { name: string; price: number }[];
-  price_base?: number; // Deprecated
+  price_base?: number;
   base_price: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
-  status?: "active" | "inactive" | "full" | "hidden";
+  status?: "active" | "inactive" | "full" | "hidden" | "pending";
   show_in_provider?: boolean | null;
+  booking_confirmation: {
+    order_id: string;
+    bus_number: string | null;
+    guide_name: string | null;
+    weather_emergency: string | null;
+    updated_by: string | null;
+    updated_by_email?: string;
+    updated_by_username?: string;
+    updated_at: string | null;
+    passenger_count?: number;
+  } | null;
 }
 
 export interface PendingUser {
@@ -156,7 +166,7 @@ export interface Order {
   payment_method: string | null;
   created_at: string;
   updated_at: string;
-  passenger_count: number; // Changed from passengers to passenger
+  passenger_count: number;
   departureDate: string;
   createdBy: string | null;
   total_price: number;
@@ -225,9 +235,9 @@ export type PaymentMethod =
   | "Loan";
 
 export interface Passenger {
-  id: string; // uuid in DB
-  order_id: string; // bigint in DB
-  user_id: string | null; // uuid in DB, nullable
+  id: string;
+  order_id: string;
+  user_id: string | null;
   tour_title: string;
   tour_id: string;
   departure_date: string | null;
@@ -242,7 +252,7 @@ export interface Passenger {
   passport_number: string;
   passport_expire: string | null;
   nationality: string;
-  roomType: string; // Matches "roomType" in DB
+  roomType: string;
   hotel: string;
   additional_services: string[];
   price: number;
@@ -251,8 +261,8 @@ export interface Passenger {
   passport_upload: string | null;
   allergy: string;
   emergency_phone: string;
-  created_at: string; // timestamptz in DB
-  updated_at: string; // timestamptz in DB
+  created_at: string;
+  updated_at: string;
   status:
     | "pending"
     | "approved"
@@ -263,7 +273,7 @@ export interface Passenger {
   is_blacklisted: boolean;
   blacklisted_date: string | null;
   notes?: string | null;
-  seat_count?: number | null; // For lead passengers
+  seat_count?: number | null;
 }
 
 export interface PassengerRequest {
@@ -278,15 +288,15 @@ export interface PassengerRequest {
   nationality: string;
   passport_number: string;
   passport_expire: string;
-  roomType: string; // Matches "roomType" in DB
+  roomType: string;
   hotel: string;
   status: string;
   created_at: string;
-  tour_title: string; // From orders.travel_choice
-  departure_date: string; // From orders.departureDate
-  user_email: string; // From users.email
-  user_first_name: string; // From users.first_name
-  user_last_name: string; // From users.last_name
+  tour_title: string;
+  departure_date: string;
+  user_email: string;
+  user_first_name: string;
+  user_last_name: string;
   passenger: Passenger[];
 }
 

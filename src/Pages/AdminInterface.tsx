@@ -377,7 +377,7 @@ function AdminInterface({
                         <td className="px-6 py-4">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             <Users className="w-3 h-3 mr-1" />
-                            {order.passengers?.length || 0} passengers
+                            {order.passenger_count || 0} passengers
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

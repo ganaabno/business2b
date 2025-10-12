@@ -18,6 +18,8 @@ import AdminInterface from "./Pages/AdminInterface";
 import ProviderInterface from "./Pages/ProviderInterface";
 import ManagerInterface from "./Pages/ManagerInterface";
 import ChangePassword from "./Pages/ChangePassword";
+import ForgotPassword from "./Pages/ForgotPassword"; // New
+import ResetPassword from "./Pages/ResetPassword"; // New
 import Header from "./Parts/Header";
 import AnalyticDashboard from "./Pages/Overview";
 import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
@@ -73,14 +75,14 @@ function AppContent({
 
       if (!error && allUsers) {
         setUsers(allUsers);
-        alert(`✅ FORCE REFRESH: Found ${allUsers.length} users!`);
+        toast.success(`Found ${allUsers.length} users!`);
       } else {
         console.error('❌ FORCE REFRESH ERROR:', error);
-        alert(`❌ Error: ${error?.message}`);
+        toast.error(`Error: ${error?.message}`);
       }
     } catch (err) {
       console.error('💥 FORCE REFRESH FAILED:', err);
-      alert('💥 Failed to force refresh users');
+      toast.error('Failed to force refresh users');
     }
   };
 
@@ -159,12 +161,15 @@ function AppContent({
 
     const validPaths =
       ["admin", "superadmin"].includes(role)
-        ? ["/user", "/provider", "/admin", "/manager", "/change-password", "/analytics"]
+        ? ["/user", "/provider", "/admin", "/manager", "/change-password", "/analytics", "/reset-password"]
         : role === "provider"
-          ? ["/provider", "/change-password"]
+          ? ["/provider", "/change-password", "/reset-password"]
           : role === "manager"
-            ? ["/manager", "/change-password"]
-            : ["/user", "/change-password"];
+            ? ["/manager", "/change-password", "/reset-password"]
+            : ["/user", "/change-password", "/reset-password"];
+
+    // Allow /reset-password even if authenticated
+    if (location.pathname === "/reset-password") return;
 
     if (["/login", "/"].includes(location.pathname)) {
       navigate(homePath, { replace: true });
@@ -252,12 +257,19 @@ function AppContent({
           path="/change-password"
           element={
             currentUser ? (
-              <ChangePassword onChangePassword={async (pw) => { const { error } = await supabase.auth.updateUser({ password: pw }); return !error; }} />
+              <ChangePassword
+                onChangePassword={async (pw) => {
+                  const { error } = await supabase.auth.updateUser({ password: pw });
+                  return !error;
+                }}
+              />
             ) : (
               <Navigate to="/login" replace />
             )
           }
         />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/user"
           element={
@@ -267,14 +279,14 @@ function AppContent({
                 orders={orders}
                 setOrders={setOrders}
                 setTours={setTours}
-                selectedTour={selectedTour} // Fixed: Use local state
+                selectedTour={selectedTour}
                 setSelectedTour={setSelectedTour}
-                departureDate={departureDate} // Fixed: Use local state
+                departureDate={departureDate}
                 setDepartureDate={setDepartureDate}
                 passengers={passengers}
                 setPassengers={setPassengers}
                 errors={errors}
-                showNotification={(type, message) => toast[type](message)} // Updated to use toast
+                showNotification={(type, message) => toast[type](message)}
                 currentUser={currentUser}
                 onLogout={logout}
               />

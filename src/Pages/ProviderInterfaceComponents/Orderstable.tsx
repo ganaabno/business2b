@@ -45,7 +45,10 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
 
   return (
     <div className="my-8">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">All Orders</h2>
+      <div>
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">All Orders</h2>
+        <div className="h-1 w-[1200px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded mb-10"></div>
+      </div>
       <div className="flex justify-between mb-4">
         <div className="flex items-center space-x-4">
           <input

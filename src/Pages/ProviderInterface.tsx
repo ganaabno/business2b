@@ -8,6 +8,8 @@ import StatsCards from './ProviderInterfaceComponents/StatsCards';
 import OrdersTable from '../Pages/ProviderInterfaceComponents/Orderstable';
 import ToursGrid from './ProviderInterfaceComponents/ToursGrid';
 import BookingConfirmationTab from '../Pages/ProviderInterfaceComponents/BookingConfirmation';
+import AddTourTab from '../components/AddTourTab';
+import { Users, MapPin, CheckCircle, Settings } from 'lucide-react';
 
 // Cache to store schema check results
 const schemaCache = {
@@ -76,6 +78,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   const [currentPage, setCurrentPage] = useState(1);
   const [ordersPerPage] = useState(10);
   const [exportLoading, setExportLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'orders' | 'tours' | 'booking' | 'addTour'>('orders');
   const hasFetchedRef = useRef(false);
   const subscriptionRef = useRef<any>(null);
 
@@ -321,16 +324,16 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           balance: order.balance,
           show_in_provider: hasShowInProviderOrders ? (order.show_in_provider ?? true) : true,
           order_id: String(order.id),
-          passenger_count: order.first_name ? 1 : 0, // Default to 1 if order exists
+          passenger_count: order.first_name ? 1 : 0,
           booking_confirmation: order.booking_confirmations
             ? {
-                order_id: String(order.id),
-                bus_number: order.booking_confirmations.bus_number ?? null,
-                guide_name: order.booking_confirmations.guide_name ?? null,
-                weather_emergency: order.booking_confirmations.weather_emergency ?? null,
-                updated_by: order.booking_confirmations.updated_by ?? null,
-                updated_at: order.booking_confirmations.updated_at ?? null,
-              }
+              order_id: String(order.id),
+              bus_number: order.booking_confirmations.bus_number ?? null,
+              guide_name: order.booking_confirmations.guide_name ?? null,
+              weather_emergency: order.booking_confirmations.weather_emergency ?? null,
+              updated_by: order.booking_confirmations.updated_by ?? null,
+              updated_at: order.booking_confirmations.updated_at ?? null,
+            }
             : null,
           passport_copy_url: null,
         }));
@@ -371,16 +374,16 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         balance: order.balance,
         show_in_provider: hasShowInProviderOrders ? (order.show_in_provider ?? true) : true,
         order_id: String(order.id),
-        passenger_count: order.passengers?.length || (order.first_name ? 1 : 0), // Use passengers table or default to 1
+        passenger_count: order.passengers?.length || (order.first_name ? 1 : 0),
         booking_confirmation: order.booking_confirmations
           ? {
-              order_id: String(order.id),
-              bus_number: order.booking_confirmations.bus_number ?? null,
-              guide_name: order.booking_confirmations.guide_name ?? null,
-              weather_emergency: order.booking_confirmations.weather_emergency ?? null,
-              updated_by: order.booking_confirmations.updated_by ?? null,
-              updated_at: order.booking_confirmations.updated_at ?? null,
-            }
+            order_id: String(order.id),
+            bus_number: order.booking_confirmations.bus_number ?? null,
+            guide_name: order.booking_confirmations.guide_name ?? null,
+            weather_emergency: order.booking_confirmations.weather_emergency ?? null,
+            updated_by: order.booking_confirmations.updated_by ?? null,
+            updated_at: order.booking_confirmations.updated_at ?? null,
+          }
           : null,
         passport_copy_url: null,
       }));
@@ -528,34 +531,34 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                     const updatedOrders = prev.map((order) =>
                       order.id === String(payload.new.id)
                         ? {
-                            ...order,
-                            ...payload.new,
-                            id: String(payload.new.id),
-                            user_id: String(payload.new.user_id),
-                            tour_id: String(payload.new.tour_id),
-                            created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                            edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                            passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
-                            total_amount: payload.new.total_amount,
-                            total_price: payload.new.total_price,
-                            paid_amount: payload.new.paid_amount,
-                            balance: payload.new.balance,
-                            show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
-                            createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
-                            departureDate: payload.new.departureDate ?? '',
-                            order_id: String(payload.new.id),
-                            booking_confirmation: payload.new.booking_confirmations
-                              ? {
-                                  order_id: String(payload.new.id),
-                                  bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                                  guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                                  weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                                  updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                                  updated_at: payload.new.booking_confirmations.updated_at ?? null,
-                                }
-                              : null,
-                            passport_copy_url: null,
-                          } as Order
+                          ...order,
+                          ...payload.new,
+                          id: String(payload.new.id),
+                          user_id: String(payload.new.user_id),
+                          tour_id: String(payload.new.tour_id),
+                          created_by: payload.new.created_by ? String(payload.new.created_by) : null,
+                          edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
+                          passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
+                          total_amount: payload.new.total_amount,
+                          total_price: payload.new.total_price,
+                          paid_amount: payload.new.paid_amount,
+                          balance: payload.new.balance,
+                          show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
+                          createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
+                          departureDate: payload.new.departureDate ?? '',
+                          order_id: String(payload.new.id),
+                          booking_confirmation: payload.new.booking_confirmations
+                            ? {
+                              order_id: String(payload.new.id),
+                              bus_number: payload.new.booking_confirmations.bus_number ?? null,
+                              guide_name: payload.new.booking_confirmations.guide_name ?? null,
+                              weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
+                              updated_by: payload.new.booking_confirmations.updated_by ?? null,
+                              updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                            }
+                            : null,
+                          passport_copy_url: null,
+                        } as Order
                         : order
                     );
                     return updatedOrders;
@@ -604,13 +607,13 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                       passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
                       booking_confirmation: payload.new.booking_confirmations
                         ? {
-                            order_id: String(payload.new.id),
-                            bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                            guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                            weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                            updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                            updated_at: payload.new.booking_confirmations.updated_at ?? null,
-                          }
+                          order_id: String(payload.new.id),
+                          bus_number: payload.new.booking_confirmations.bus_number ?? null,
+                          guide_name: payload.new.booking_confirmations.guide_name ?? null,
+                          weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
+                          updated_by: payload.new.booking_confirmations.updated_by ?? null,
+                          updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                        }
                         : null,
                       passport_copy_url: null,
                     } as Order,
@@ -681,8 +684,21 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               updated_at: data.updated_at || undefined,
               available_seats: data.available_seats || 0,
               price_base: data.price_base || undefined,
-              creator_name: typeof data.creator_name === 'object' ? data.creator_name?.email || 'Unknown Creator' : data.creator_name || 'Unknown Creator',
+              creator_name:
+                typeof data.creator_name === 'object'
+                  ? data.creator_name?.email || 'Unknown Creator'
+                  : data.creator_name || 'Unknown Creator',
               tour_number: data.tour_number || '0',
+              booking_confirmation: data.booking_confirmation
+                ? {
+                  order_id: data.booking_confirmation.order_id || '',
+                  bus_number: data.booking_confirmation.bus_number ?? null,
+                  guide_name: data.booking_confirmation.guide_name ?? null,
+                  weather_emergency: data.booking_confirmation.weather_emergency ?? null,
+                  updated_by: data.booking_confirmation.updated_by ?? null,
+                  updated_at: data.booking_confirmation.updated_at ?? null,
+                }
+                : null,
             });
 
             if (payload.eventType === 'UPDATE') {
@@ -749,7 +765,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set',
         order.passenger_count,
         order.status,
-        `$${order.total_amount?.toFixed(2) || '0.00'}`,
+        `${order.total_amount?.toFixed(2) || '0.00'}`,
         order.createdBy || order.created_by || 'N/A',
         order.edited_at ? new Date(order.edited_at).toLocaleDateString('en-US') : 'N/A',
         order.payment_method || 'N/A',
@@ -759,7 +775,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         order.email || 'N/A',
         order.age || 'N/A',
         order.gender || 'N/A',
-        order.commission ? `$${order.commission.toFixed(2)}` : 'N/A',
+        order.commission ? `${order.commission.toFixed(2)}` : 'N/A',
         order.hotel || 'N/A',
         order.room_number || 'N/A',
         order.booking_confirmation?.bus_number || 'N/A',
@@ -848,35 +864,123 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     }
   };
 
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    toast[type](message);
+  };
+
+  // Enhanced Tab Navigation
+  const tabs = [
+    {
+      id: 'orders' as const,
+      label: 'Orders',
+      icon: Users,
+      color: 'blue'
+    },
+    {
+      id: 'tours' as const,
+      label: 'Tours',
+      icon: MapPin,
+      color: 'blue'
+    },
+    {
+      id: 'booking' as const,
+      label: 'Booking Confirmation',
+      icon: CheckCircle,
+      color: 'blue'
+    },
+    {
+      id: 'addTour' as const,
+      label: 'Tour Management',
+      icon: Settings,
+      color: 'blue'
+    }
+  ];
+
+  const getColorClasses = (color: string, isActive: boolean) => {
+    const colors: Record<string, { active: string; inactive: string }> = {
+      blue: {
+        active: 'border-blue-600 text-blue-600 bg-blue-50',
+        inactive: 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+      },
+    };
+    return isActive ? colors[color].active : colors[color].inactive;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <ToastContainer />
       <DashboardHeader />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <StatsCards orders={confirmedOrders} tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} />
-        <OrdersTable
-          orders={filteredOrders}
-          selectedDate={selectedDate}
-          setSelectedDate={setSelectedDate}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          loading={loading}
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          ordersPerPage={ordersPerPage}
-          updateOrderStatus={updateOrderStatus}
-          exportOrdersToCSV={exportOrdersToCSV}
-          exportLoading={exportLoading}
-          uniqueDates={uniqueDates}
-          formatDate={formatDate}
-        />
-        <BookingConfirmationTab
-          orders={filteredOrders}
-          currentUser={currentUser}
-          setOrders={setOrders}
-          formatDate={formatDate}
-        />
-        <ToursGrid tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} formatDate={formatDate} />
+        
+        {/* Enhanced Tab Navigation */}
+        <div className="mb-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`
+                      flex items-center gap-2 py-3 px-5 rounded-lg text-sm font-semibold
+                      transition-all duration-200 ease-in-out
+                      ${isActive ? 'border-2 shadow-md transform scale-105' : 'border-2 border-transparent'}
+                      ${getColorClasses(tab.color, isActive)}
+                    `}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {activeTab === 'orders' && (
+          <>
+            <StatsCards orders={confirmedOrders} tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} />
+            <OrdersTable
+              orders={filteredOrders}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              loading={loading}
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              ordersPerPage={ordersPerPage}
+              updateOrderStatus={updateOrderStatus}
+              exportOrdersToCSV={exportOrdersToCSV}
+              exportLoading={exportLoading}
+              uniqueDates={uniqueDates}
+              formatDate={formatDate}
+            />
+          </>
+        )}
+        {activeTab === 'tours' && (
+          <ToursGrid tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} formatDate={formatDate} />
+        )}
+        {activeTab === 'booking' && (
+          <BookingConfirmationTab
+            orders={filteredOrders}
+            currentUser={currentUser}
+            setOrders={setOrders}
+            formatDate={formatDate}
+          />
+        )}
+        {activeTab === 'addTour' && (
+          <AddTourTab
+            tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)}
+            setTours={setTours}
+            currentUser={currentUser}
+            showNotification={showNotification}
+            hideProviderColumn={true}
+          />
+        )}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   loading: true,
   login: async () => null,
-  logout: async () => { },
+  logout: async () => {},
   hasPendingRequest: async () => false,
 });
 
@@ -151,6 +151,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state change:", { event, session });
+      if (event === "PASSWORD_RECOVERY") {
+        console.log("Skipping currentUser update for PASSWORD_RECOVERY");
+        return; // Skip setting currentUser to avoid redirect
+      }
+
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
         if (!session?.user) {
@@ -214,13 +220,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{
-      currentUser,
-      loading,
-      login,
-      logout,
-      hasPendingRequest
-    }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        loading,
+        login,
+        logout,
+        hasPendingRequest,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
