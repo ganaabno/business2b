@@ -3,6 +3,7 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { supabase } from '../supabaseClient';
 import type { Order, Tour, User as UserType, Passenger, OrderStatus } from '../types/type';
+import { useTranslation } from 'react-i18next';
 import DashboardHeader from '../Pages/ProviderInterfaceComponents/Dashboardheader';
 import StatsCards from './ProviderInterfaceComponents/StatsCards';
 import OrdersTable from '../Pages/ProviderInterfaceComponents/Orderstable';
@@ -69,6 +70,7 @@ interface RawOrder {
 }
 
 function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfaceProps) {
+  const { t, i18n } = useTranslation();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,6 +83,11 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   const [activeTab, setActiveTab] = useState<'orders' | 'tours' | 'booking' | 'addTour'>('orders');
   const hasFetchedRef = useRef(false);
   const subscriptionRef = useRef<any>(null);
+
+  // Language toggle
+  const toggleLanguage = () => {
+    i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -107,7 +114,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     const { data, error } = await supabase.auth.refreshSession();
     if (error) {
       console.error('Error refreshing session:', error);
-      toast.error('Failed to refresh session.');
+      toast.error(t('failedToRefreshSession'));
     }
     return data.session;
   };
@@ -141,7 +148,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         hasColumn = schemaData.length > 0;
       } catch (schemaError) {
         console.error("Error checking orders schema:", schemaError);
-        toast.error("Failed to verify orders schema.");
+        toast.error(t('failedToVerifyOrdersSchema'));
         return;
       }
     }
@@ -178,7 +185,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         hasColumn = schemaData.length > 0;
       } catch (schemaError) {
         console.error("Error checking tours schema:", schemaError);
-        toast.error("Failed to verify tours schema.");
+        toast.error(t('failedToVerifyToursSchema'));
         return;
       }
     }
@@ -244,7 +251,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
 
       if (!data || data.length === 0) {
         console.warn('No data from initial query, trying without joins');
-        toast.warn('No orders found, attempting fallback query.');
+        toast.warn(t('failedToFetchOrders'));
         let fallbackQuery = supabase
           .from('orders')
           .select(`
@@ -327,13 +334,13 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           passenger_count: order.first_name ? 1 : 0,
           booking_confirmation: order.booking_confirmations
             ? {
-              order_id: String(order.id),
-              bus_number: order.booking_confirmations.bus_number ?? null,
-              guide_name: order.booking_confirmations.guide_name ?? null,
-              weather_emergency: order.booking_confirmations.weather_emergency ?? null,
-              updated_by: order.booking_confirmations.updated_by ?? null,
-              updated_at: order.booking_confirmations.updated_at ?? null,
-            }
+                order_id: String(order.id),
+                bus_number: order.booking_confirmations.bus_number ?? null,
+                guide_name: order.booking_confirmations.guide_name ?? null,
+                weather_emergency: order.booking_confirmations.weather_emergency ?? null,
+                updated_by: order.booking_confirmations.updated_by ?? null,
+                updated_at: order.booking_confirmations.updated_at ?? null,
+              }
             : null,
           passport_copy_url: null,
         }));
@@ -377,13 +384,13 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         passenger_count: order.passengers?.length || (order.first_name ? 1 : 0),
         booking_confirmation: order.booking_confirmations
           ? {
-            order_id: String(order.id),
-            bus_number: order.booking_confirmations.bus_number ?? null,
-            guide_name: order.booking_confirmations.guide_name ?? null,
-            weather_emergency: order.booking_confirmations.weather_emergency ?? null,
-            updated_by: order.booking_confirmations.updated_by ?? null,
-            updated_at: order.booking_confirmations.updated_at ?? null,
-          }
+              order_id: String(order.id),
+              bus_number: order.booking_confirmations.bus_number ?? null,
+              guide_name: order.booking_confirmations.guide_name ?? null,
+              weather_emergency: order.booking_confirmations.weather_emergency ?? null,
+              updated_by: order.booking_confirmations.updated_by ?? null,
+              updated_at: order.booking_confirmations.updated_at ?? null,
+            }
           : null,
         passport_copy_url: null,
       }));
@@ -391,7 +398,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       setOrders(ordersWithTotals);
     } catch (error) {
       console.error('Error fetching orders:', JSON.stringify(error, null, 2));
-      toast.error('Failed to fetch orders!');
+      toast.error(t('failedToFetchOrders'));
     } finally {
       setLoading(false);
     }
@@ -420,7 +427,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       setTours(toursWithEmails);
     } catch (error) {
       console.error('Error fetching creator emails:', error);
-      toast.error('Failed to fetch creator emails.');
+      toast.error(t('failedToFetchCreatorEmails'));
     }
   };
 
@@ -453,7 +460,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         console.error('No active session found. Real-time subscriptions may fail.');
-        toast.error('Please log in to enable real-time updates.');
+        toast.error(t('loginForRealTime'));
       }
     };
     checkSession();
@@ -531,34 +538,34 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                     const updatedOrders = prev.map((order) =>
                       order.id === String(payload.new.id)
                         ? {
-                          ...order,
-                          ...payload.new,
-                          id: String(payload.new.id),
-                          user_id: String(payload.new.user_id),
-                          tour_id: String(payload.new.tour_id),
-                          created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                          edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                          passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
-                          total_amount: payload.new.total_amount,
-                          total_price: payload.new.total_price,
-                          paid_amount: payload.new.paid_amount,
-                          balance: payload.new.balance,
-                          show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
-                          createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
-                          departureDate: payload.new.departureDate ?? '',
-                          order_id: String(payload.new.id),
-                          booking_confirmation: payload.new.booking_confirmations
-                            ? {
-                              order_id: String(payload.new.id),
-                              bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                              guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                              weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                              updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                              updated_at: payload.new.booking_confirmations.updated_at ?? null,
-                            }
-                            : null,
-                          passport_copy_url: null,
-                        } as Order
+                            ...order,
+                            ...payload.new,
+                            id: String(payload.new.id),
+                            user_id: String(payload.new.user_id),
+                            tour_id: String(payload.new.tour_id),
+                            created_by: payload.new.created_by ? String(payload.new.created_by) : null,
+                            edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
+                            passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
+                            total_amount: payload.new.total_amount,
+                            total_price: payload.new.total_price,
+                            paid_amount: payload.new.paid_amount,
+                            balance: payload.new.balance,
+                            show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
+                            createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
+                            departureDate: payload.new.departureDate ?? '',
+                            order_id: String(payload.new.id),
+                            booking_confirmation: payload.new.booking_confirmations
+                              ? {
+                                  order_id: String(payload.new.id),
+                                  bus_number: payload.new.booking_confirmations.bus_number ?? null,
+                                  guide_name: payload.new.booking_confirmations.guide_name ?? null,
+                                  weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
+                                  updated_by: payload.new.booking_confirmations.updated_by ?? null,
+                                  updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                                }
+                              : null,
+                            passport_copy_url: null,
+                          } as Order
                         : order
                     );
                     return updatedOrders;
@@ -607,13 +614,13 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                       passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
                       booking_confirmation: payload.new.booking_confirmations
                         ? {
-                          order_id: String(payload.new.id),
-                          bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                          guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                          weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                          updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                          updated_at: payload.new.booking_confirmations.updated_at ?? null,
-                        }
+                            order_id: String(payload.new.id),
+                            bus_number: payload.new.booking_confirmations.bus_number ?? null,
+                            guide_name: payload.new.booking_confirmations.guide_name ?? null,
+                            weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
+                            updated_by: payload.new.booking_confirmations.updated_by ?? null,
+                            updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                          }
                         : null,
                       passport_copy_url: null,
                     } as Order,
@@ -627,7 +634,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           .subscribe((status, error) => {
             if (error) {
               console.error(`Order subscription error (status=${status}):`, error);
-              toast.error(`Real-time subscription failed: ${error.message}`);
+              toast.error(t('loginForRealTime'));
               refreshSession();
             }
           });
@@ -691,13 +698,13 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               tour_number: data.tour_number || '0',
               booking_confirmation: data.booking_confirmation
                 ? {
-                  order_id: data.booking_confirmation.order_id || '',
-                  bus_number: data.booking_confirmation.bus_number ?? null,
-                  guide_name: data.booking_confirmation.guide_name ?? null,
-                  weather_emergency: data.booking_confirmation.weather_emergency ?? null,
-                  updated_by: data.booking_confirmation.updated_by ?? null,
-                  updated_at: data.booking_confirmation.updated_at ?? null,
-                }
+                    order_id: data.booking_confirmation.order_id || '',
+                    bus_number: data.booking_confirmation.bus_number ?? null,
+                    guide_name: data.booking_confirmation.guide_name ?? null,
+                    weather_emergency: data.booking_confirmation.weather_emergency ?? null,
+                    updated_by: data.booking_confirmation.updated_by ?? null,
+                    updated_at: data.booking_confirmation.updated_at ?? null,
+                  }
                 : null,
             });
 
@@ -728,7 +735,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         .subscribe((status, error) => {
           if (error) {
             console.error('Tour subscription error:', error);
-            toast.error(`Real-time tour subscription failed: ${error.message}`);
+            toast.error(t('loginForRealTime'));
             refreshSession();
           }
         });
@@ -748,26 +755,43 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
 
   const exportOrdersToCSV = async () => {
     if (filteredOrders.length === 0) {
-      toast.warn('No orders to export!');
+      toast.warn(t('noOrdersToExport'));
       return;
     }
     setExportLoading(true);
     try {
       const headers = [
-        'Order ID', 'Tour', 'Departure Date', 'Passengers', 'Status',
-        'Total Amount', 'Created By', 'Edited At', 'Payment Method',
-        'Phone', 'First Name', 'Last Name', 'Email', 'Age', 'Gender',
-        'Commission', 'Hotel', 'Room Number', 'Bus Number', 'Guide Name', 'Weather/Emergency',
+        t('orderId'),
+        t('tour'),
+        t('departureDate'),
+        t('passengers'),
+        t('status'),
+        t('totalAmount'),
+        t('createdBy'),
+        'Edited At',
+        'Payment Method',
+        'Phone',
+        'First Name',
+        'Last Name',
+        'Email',
+        'Age',
+        'Gender',
+        'Commission',
+        'Hotel',
+        'Room Number',
+        'Bus Number',
+        'Guide Name',
+        'Weather/Emergency',
       ];
       const csvRows = filteredOrders.map(order => [
         order.id,
         order.tour || 'N/A',
-        order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set',
+        order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet'),
         order.passenger_count,
-        order.status,
+        t(order.status),
         `${order.total_amount?.toFixed(2) || '0.00'}`,
         order.createdBy || order.created_by || 'N/A',
-        order.edited_at ? new Date(order.edited_at).toLocaleDateString('en-US') : 'N/A',
+        order.edited_at ? new Date(order.edited_at).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : 'N/A',
         order.payment_method || 'N/A',
         order.phone || 'N/A',
         order.first_name || 'N/A',
@@ -796,10 +820,10 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast.success(`Exported ${filteredOrders.length} orders to CSV!`);
+      toast.success(t('exportSuccess', { count: filteredOrders.length }));
     } catch (error) {
       console.error('Error exporting orders:', error);
-      toast.error('Failed to export orders!');
+      toast.error(t('exportFailed'));
     } finally {
       setExportLoading(false);
     }
@@ -821,10 +845,10 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           .eq('id', orderId)
       );
       if (error) throw error;
-      toast.success('Order status updated!');
+      toast.success(t('orderStatusUpdated'));
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update order status.');
+      toast.error(t('orderStatusUpdateFailed'));
       setOrders(previousOrders);
     }
   };
@@ -835,32 +859,32 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   });
 
   const uniqueDates = Array.from(
-    new Set(confirmedOrders.map((order) => (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set')))
-  ).sort();
+    new Set(confirmedOrders.map((order) => (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')))
+  )).sort();
 
   const filteredOrders = confirmedOrders.filter((order) => {
     const lowerTerm = searchTerm.toLowerCase();
     return (
       (selectedDate
-        ? (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set') === selectedDate
+        ? (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')) === selectedDate
         : true) &&
       ((order.phone?.toLowerCase().includes(lowerTerm) || false) ||
         (order.first_name?.toLowerCase().includes(lowerTerm) || false) ||
         (order.last_name?.toLowerCase().includes(lowerTerm) || false) ||
-        (order.departureDate ? new Date(order.departureDate).toLocaleDateString('en-US') : 'Not set').includes(lowerTerm))
+        (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')).includes(lowerTerm))
     );
   });
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Not set';
+    if (!dateString) return t('notSet');
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      return new Date(dateString).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
       });
     } catch {
-      return 'Invalid date';
+      return t('invalidDate');
     }
   };
 
@@ -872,25 +896,25 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   const tabs = [
     {
       id: 'orders' as const,
-      label: 'Orders',
+      label: t('orders'),
       icon: Users,
       color: 'blue'
     },
     {
       id: 'tours' as const,
-      label: 'Tours',
+      label: t('tours'),
       icon: MapPin,
       color: 'blue'
     },
     {
       id: 'booking' as const,
-      label: 'Booking Confirmation',
+      label: t('bookingConfirmation'),
       icon: CheckCircle,
       color: 'blue'
     },
     {
       id: 'addTour' as const,
-      label: 'Tour Management',
+      label: t('tourManagement'),
       icon: Settings,
       color: 'blue'
     }
@@ -909,9 +933,19 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   return (
     <div className="min-h-screen bg-gray-50">
       <ToastContainer />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={toggleLanguage}
+            className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-sm border border-gray-200 text-sm font-semibold text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200"
+          >
+            <span>{t('switchLanguage')}</span>
+            <span>{i18n.language === 'en' ? 'EN' : 'ZH'}</span>
+          </button>
+        </div>
+      </div>
       <DashboardHeader />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
         {/* Enhanced Tab Navigation */}
         <div className="mb-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">

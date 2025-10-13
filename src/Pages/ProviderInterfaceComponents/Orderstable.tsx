@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { Order, OrderStatus } from '../../types/type';
+import { useTranslation } from 'react-i18next';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -34,6 +35,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   uniqueDates,
   formatDate,
 }) => {
+  const { t } = useTranslation();
   const indexOfLastOrder = currentPage * ordersPerPage;
   const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
   const currentOrders = orders.slice(indexOfFirstOrder, indexOfLastOrder);
@@ -46,14 +48,14 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   return (
     <div className="my-8">
       <div>
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">All Orders</h2>
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">{t('allOrders')}</h2>
         <div className="h-1 w-[1200px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded mb-10"></div>
       </div>
       <div className="flex justify-between mb-4">
         <div className="flex items-center space-x-4">
           <input
             type="text"
-            placeholder="Search orders..."
+            placeholder={t('searchOrders')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -63,7 +65,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
             onChange={(e) => setSelectedDate(e.target.value)}
             className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="">All Dates</option>
+            <option value="">{t('allDates')}</option>
             {uniqueDates.map((date) => (
               <option key={date} value={date}>
                 {date}
@@ -76,26 +78,26 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
           disabled={exportLoading}
           className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400"
         >
-          {exportLoading ? 'Exporting...' : 'Export to CSV'}
+          {exportLoading ? t('exporting') : t('exportToCSV')}
         </button>
       </div>
       {loading ? (
-        <p className="text-gray-500">Loading orders...</p>
+        <p className="text-gray-500">{t('loadingOrders')}</p>
       ) : orders.length === 0 ? (
-        <p className="text-gray-500">No orders found.</p>
+        <p className="text-gray-500">{t('noOrdersFound')}</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="min-w-full bg-white border border-gray-200">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passengers</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('orderId')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('tour')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('departureDate')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('passengers')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('status')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('totalAmount')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('createdBy')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -111,9 +113,9 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                         onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
                         className="border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
-                        <option value="pending">Pending</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="cancelled">Cancelled</option>
+                        <option value="pending">{t('pending')}</option>
+                        <option value="confirmed">{t('confirmed')}</option>
+                        <option value="cancelled">{t('cancelled')}</option>
                       </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${order.total_amount?.toFixed(2) || '0.00'}</td>
@@ -129,17 +131,17 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
               disabled={currentPage === 1}
               className="px-4 py-2 bg-gray-200 rounded-md disabled:opacity-50"
             >
-              Previous
+              {t('previous')}
             </button>
             <span className="text-sm text-gray-700">
-              Page {currentPage} of {totalPages}
+              {t('pageOf', { current: currentPage, total: totalPages })}
             </span>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="px-4 py-2 bg-gray-200 rounded-md disabled:opacity-50"
             >
-              Next
+              {t('next')}
             </button>
           </div>
         </>

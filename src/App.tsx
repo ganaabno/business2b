@@ -18,13 +18,14 @@ import AdminInterface from "./Pages/AdminInterface";
 import ProviderInterface from "./Pages/ProviderInterface";
 import ManagerInterface from "./Pages/ManagerInterface";
 import ChangePassword from "./Pages/ChangePassword";
-import ForgotPassword from "./Pages/ForgotPassword"; // New
-import ResetPassword from "./Pages/ResetPassword"; // New
+import ForgotPassword from "./Pages/ForgotPassword";
+import ResetPassword from "./Pages/ResetPassword";
 import Header from "./Parts/Header";
 import AnalyticDashboard from "./Pages/Overview";
 import type { User as UserType, Tour, Order, Passenger, ValidationError } from "./types/type";
 import { AuthProvider, useAuth, toRole } from "./context/AuthProvider";
 import { toast } from "react-toastify";
+import { useTranslation } from "react-i18next";
 
 function AppContent({
   booting,
@@ -49,6 +50,7 @@ function AppContent({
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
 }) {
+  const { t } = useTranslation();
   const { currentUser, logout, loading: authLoading } = useAuth();
   const role = useMemo(() => toRole(currentUser?.role), [currentUser]);
   const navigate = useNavigate();
@@ -75,22 +77,22 @@ function AppContent({
 
       if (!error && allUsers) {
         setUsers(allUsers);
-        toast.success(`Found ${allUsers.length} users!`);
+        toast.success(t('usersFound', { count: allUsers.length }));
       } else {
         console.error('❌ FORCE REFRESH ERROR:', error);
-        toast.error(`Error: ${error?.message}`);
+        toast.error(t('errorUsers', { message: error?.message }));
       }
     } catch (err) {
       console.error('💥 FORCE REFRESH FAILED:', err);
-      toast.error('Failed to force refresh users');
+      toast.error(t('failedUsers'));
     }
   };
 
   const validateBooking = () => {
     const newErrors: ValidationError[] = [];
-    if (!selectedTour) newErrors.push({ field: "tour", message: "Please select a tour" });
-    if (!departureDate) newErrors.push({ field: "departure", message: "Please select a departure date" });
-    if (passengers.length === 0) newErrors.push({ field: "passengers", message: "At least one passenger is required" });
+    if (!selectedTour) newErrors.push({ field: "tour", message: t('selectTour') });
+    if (!departureDate) newErrors.push({ field: "departure", message: t('selectDepartureDate') });
+    if (passengers.length === 0) newErrors.push({ field: "passengers", message: t('atLeastOnePassenger') });
     setErrors(newErrors);
     return newErrors.length === 0;
   };
@@ -117,14 +119,14 @@ function AppContent({
           <div className="w-16 h-16 bg-yellow-200 rounded-full flex items-center justify-center mx-auto mb-4">
             <Clock className="w-8 h-8 text-yellow-600" />
           </div>
-          <h1 className="text-2xl font-bold text-yellow-800 mb-4">Account Pending Approval</h1>
-          <p className="text-yellow-700 mb-4">Your account request is under review.</p>
-          <p className="text-sm text-yellow-600 mb-6">An admin will approve your account shortly. You'll receive an email notification.</p>
+          <h1 className="text-2xl font-bold text-yellow-800 mb-4">{t('accountPendingApproval')}</h1>
+          <p className="text-yellow-700 mb-4">{t('pendingReviewMessage')}</p>
+          <p className="text-sm text-yellow-600 mb-6">{t('pendingApprovalMessage')}</p>
           <button
             onClick={logout}
             className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
           >
-            Check Later
+            {t('checkLater')}
           </button>
         </div>
       </div>
@@ -138,18 +140,18 @@ function AppContent({
           <div className="w-16 h-16 bg-red-200 rounded-full flex items-center justify-center mx-auto mb-4">
             <Shield className="w-8 h-8 text-red-600" />
           </div>
-          <h1 className="text-2xl font-bold text-red-800 mb-4">Account Suspended</h1>
+          <h1 className="text-2xl font-bold text-red-800 mb-4">{t('accountSuspended')}</h1>
           <p className="text-red-700 mb-6">
-            Your account has been temporarily suspended. If you believe this is an error, please{" "}
+            {t('suspendedMessage')}{" "}
             <a href="mailto:support@yourapp.com" className="text-red-900 underline font-medium">
-              contact support
+              {t('contactSupport')}
             </a>.
           </p>
           <button
             onClick={logout}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
           >
-            Sign Out
+            {t('signOut')}
           </button>
         </div>
       </div>
@@ -168,7 +170,6 @@ function AppContent({
             ? ["/manager", "/change-password", "/reset-password"]
             : ["/user", "/change-password", "/reset-password"];
 
-    // Allow /reset-password even if authenticated
     if (location.pathname === "/reset-password") return;
 
     if (["/login", "/"].includes(location.pathname)) {
@@ -183,7 +184,7 @@ function AppContent({
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="flex flex-col items-center space-y-4">
           <div className="w-16 h-16 border-4 border-t-4 border-blue-600 border-solid rounded-full animate-spin border-t-transparent"></div>
-          <p className="text-lg font-medium text-gray-800">Loading your dashboard...</p>
+          <p className="text-lg font-medium text-gray-800">{t('loadingDashboard')}</p>
         </div>
       </div>
     );
@@ -200,7 +201,7 @@ function AppContent({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
                 </svg>
               </div>
-              <span className="font-medium text-gray-700 text-sm">View as:</span>
+              <span className="font-medium text-gray-700 text-sm">{t('viewAs')}</span>
             </div>
 
             <div className="flex items-center gap-1 ml-2">
@@ -208,7 +209,7 @@ function AppContent({
                 to="/user"
                 className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-blue-100"
               >
-                <span className="relative z-10">User</span>
+                <span className="relative z-10">{t('userLink')}</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
 
@@ -216,7 +217,7 @@ function AppContent({
                 to="/provider"
                 className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-emerald-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-emerald-100"
               >
-                <span className="relative z-10">Provider</span>
+                <span className="relative z-10">{t('providerLink')}</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
 
@@ -224,7 +225,7 @@ function AppContent({
                 to="/admin"
                 className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-purple-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-purple-100"
               >
-                <span className="relative z-10">Admin</span>
+                <span className="relative z-10">{t('adminLink')}</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-50 to-violet-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
 
@@ -232,7 +233,7 @@ function AppContent({
                 to="/manager"
                 className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-amber-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-amber-100"
               >
-                <span className="relative z-10">Manager</span>
+                <span className="relative z-10">{t('managerLink')}</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
 
@@ -240,7 +241,7 @@ function AppContent({
                 to="/analytics"
                 className="group relative px-3 py-2 text-sm font-medium text-gray-600 hover:text-orange-600 transition-all duration-200 rounded-lg hover:bg-white/70 hover:shadow-sm border border-transparent hover:border-orange-100"
               >
-                <span className="relative z-10">Charts</span>
+                <span className="relative z-10">{t('chartsLink')}</span>
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </Link>
             </div>
@@ -427,12 +428,10 @@ export default function App() {
             } else {
               console.error('❌ ADMIN BYPASS FAILED:', adminError);
               usersData = regularUsers || [];
-              toast.error(`Failed to fetch users: ${adminError?.message || 'Unknown error'}`);
             }
           } catch (adminErr) {
             console.error('💥 ADMIN BYPASS EXCEPTION:', adminErr);
             usersData = regularUsers || [];
-            toast.error('Failed to fetch users');
           }
         } else {
           usersData = regularUsers || [];
@@ -449,7 +448,6 @@ export default function App() {
 
         if (toursError) {
           console.error('❌ TOURS ERROR:', toursError);
-          toast.error(`Failed to fetch tours: ${toursError.message}`);
         } else {
           setTours(toursData || []);
           console.log(`📊 TOURS LOADED: ${toursData?.length || 0}`);
@@ -462,7 +460,6 @@ export default function App() {
 
         if (ordersError) {
           console.error('❌ ORDERS ERROR:', ordersError);
-          toast.error(`Failed to fetch orders: ${ordersError.message}`);
         } else {
           setOrders(ordersData || []);
           console.log(`📊 ORDERS LOADED: ${ordersData?.length || 0}`);
@@ -475,7 +472,6 @@ export default function App() {
 
         if (passengersError) {
           console.error('❌ PASSENGERS ERROR:', passengersError);
-          toast.error(`Failed to fetch passengers: ${passengersError.message}`);
         } else {
           setPassengers(passengersData || []);
           console.log(`📊 PASSENGERS LOADED: ${passengersData?.length || 0}`);
@@ -484,7 +480,6 @@ export default function App() {
         console.log('✅ INITIAL DATA FETCH COMPLETE');
       } catch (err) {
         console.error("💥 CRITICAL ERROR fetching data:", err);
-        toast.error('Failed to fetch initial data');
       } finally {
         setBooting(false);
       }
