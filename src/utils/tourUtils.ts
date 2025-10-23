@@ -69,6 +69,11 @@ export const createNewPassenger = (
     is_blacklisted: false,
     blacklisted_date: "",
     notes: "",
+    tour_id: "",
+    passenger_number: "",
+    has_sub_passengers: false,
+    main_passenger_id: "",
+    sub_passenger_count: 0,
   };
 };
 

@@ -11,13 +11,17 @@ interface PassengersInLeadProps {
   showNotification: (type: "success" | "error", message: string) => void;
 }
 
-export default function PassengersInLead({ currentUser, showNotification }: PassengersInLeadProps) {
+export default function PassengersInLead({
+  currentUser,
+  showNotification,
+}: PassengersInLeadProps) {
   const [passengers, setPassengers] = useState<PassengerInLead[]>([]);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Update current time every second for ticking timers
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -28,12 +32,12 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
   useEffect(() => {
     const fetchPassengers = async () => {
       setLoading(true);
-      console.log("Fetching passengers for user:", currentUser.id); // Debug: Log user
+      console.log("Fetching passengers for user:", currentUser.id);
       try {
-        // Fetch from passengers_in_lead with join on users for username
         let { data, error } = await supabase
           .from("passengers_in_lead")
-          .select(`
+          .select(
+            `
             id,
             tour_id,
             tour_title,
@@ -47,20 +51,21 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
             expires_at,
             user_id,
             users!passengers_in_lead_user_id_fkey(username)
-          `)
-          .eq("status", "pending")
+            `
+          )
+          .eq("user_id", currentUser.id)
+          .in("status", ["pending", "confirmed"])
           .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Error fetching passengers:", error);
-          showNotification("error", `Failed to fetch pending leads: ${error.message}`);
+          showNotification("error", `Failed to fetch leads: ${error.message}`);
           setPassengers([]);
           return;
         }
 
-        console.log("Supabase response:", data); // Debug: Log raw response
+        console.log("Supabase response:", data);
 
-        // Map data to PassengerInLead, including username as created_by
         const mapped = (data || []).map((row: any) => ({
           ...row,
           tour: { title: row.tour_title || "No Tour" },
@@ -68,15 +73,18 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
           created_by: row.users?.username || "Unknown",
         }));
 
-        console.log("Mapped passengers:", mapped); // Debug: Log mapped data
+        console.log("Mapped passengers:", mapped);
         setPassengers(mapped);
       } catch (error) {
         console.error("Unexpected error fetching passengers:", error);
-        showNotification("error", "An unexpected error occurred while fetching pending leads.");
+        showNotification(
+          "error",
+          "An unexpected error occurred while fetching leads."
+        );
         setPassengers([]);
       } finally {
         setLoading(false);
-        console.log("Loading state:", false); // Debug: Log loading state
+        console.log("Loading state:", false);
       }
     };
 
@@ -90,17 +98,23 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
           event: "*",
           schema: "public",
           table: "passengers_in_lead",
-          filter: "status=eq.pending",
+          filter: `user_id=eq.${currentUser.id}`,
         },
         async (payload) => {
-          console.log("Real-time payload:", payload); // Debug: Log payload
+          console.log("Real-time payload:", payload);
 
-          const newRow = payload.new as PassengerInLead & { users?: { username: string } } | undefined;
+          const newRow = payload.new as
+            | (PassengerInLead & { users?: { username: string } })
+            | undefined;
           const oldRow = payload.old as PassengerInLead | undefined;
 
           if (!newRow && !oldRow) return;
 
-          // Fetch username for new or updated rows
+          if (newRow && !["pending", "confirmed"].includes(newRow.status))
+            return;
+          if (oldRow && !["pending", "confirmed"].includes(oldRow.status))
+            return;
+
           const fetchUsername = async (userId: string): Promise<string> => {
             const { data, error } = await supabase
               .from("users")
@@ -122,7 +136,7 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time INSERT:", mappedRow); // Debug: Log new row
+            console.log("Real-time INSERT:", mappedRow);
             setPassengers((prev) => [mappedRow, ...prev]);
           } else if (payload.eventType === "UPDATE" && newRow) {
             const username = await fetchUsername(newRow.user_id);
@@ -132,12 +146,12 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time UPDATE:", mappedRow); // Debug: Log updated row
+            console.log("Real-time UPDATE:", mappedRow);
             setPassengers((prev) =>
               prev.map((p) => (p.id === newRow.id ? mappedRow : p))
             );
           } else if (payload.eventType === "DELETE" && oldRow) {
-            console.log("Real-time DELETE:", oldRow.id); // Debug: Log deleted ID
+            console.log("Real-time DELETE:", oldRow.id);
             setPassengers((prev) => prev.filter((p) => p.id !== oldRow.id));
           }
         }
@@ -145,9 +159,12 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
       .subscribe((status, error) => {
         if (error) {
           console.error("Subscription error:", error);
-          showNotification("error", `Real-time subscription failed: ${error.message}`);
+          showNotification(
+            "error",
+            `Real-time subscription failed: ${error.message}`
+          );
         }
-        console.log("Subscription status:", status); // Debug: Log subscription status
+        console.log("Subscription status:", status);
       });
 
     return () => {
@@ -159,10 +176,16 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
     const previousPassengers = [...passengers];
     setPassengers(passengers.filter((p) => p.id !== id));
     try {
-      const { error } = await supabase.from("passengers_in_lead").delete().eq("id", id);
+      const { error } = await supabase
+        .from("passengers_in_lead")
+        .delete()
+        .eq("id", id);
       if (error) {
         console.error("Error deleting passenger:", error);
-        showNotification("error", `Failed to delete passenger: ${error.message}`);
+        showNotification(
+          "error",
+          `Failed to delete passenger: ${error.message}`
+        );
         setPassengers(previousPassengers);
       } else {
         showNotification("success", "Passenger deleted successfully");
@@ -170,7 +193,10 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
       setShowDeleteConfirm(null);
     } catch (error) {
       console.error("Unexpected error deleting passenger:", error);
-      showNotification("error", "An unexpected error occurred while deleting the passenger.");
+      showNotification(
+        "error",
+        "An unexpected error occurred while deleting the passenger."
+      );
       setPassengers(previousPassengers);
     }
   };
@@ -187,8 +213,19 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
 
-    return `${hours > 0 ? `${hours}h ` : ""}${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+    return `${hours > 0 ? `${hours}h ` : ""}${minutes}m ${seconds
+      .toString()
+      .padStart(2, "0")}s`;
   };
+
+  const sortedPassengers = [...passengers].sort((a, b) => {
+    const statusOrder = { pending: 1, confirmed: 2 };
+    return (
+      statusOrder[a.status as keyof typeof statusOrder] -
+        statusOrder[b.status as keyof typeof statusOrder] ||
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -197,7 +234,7 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
             <MapPin className="w-5 h-5 mr-2" />
-            Pending Lead Passengers ({passengers.length})
+            Lead Passengers ({passengers.length})
           </h3>
         </div>
         <div className="overflow-x-auto">
@@ -216,11 +253,16 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
                   d="M4 12a8 8 0 0116 0 8 8 0 01-16 0zm8-8v2m0 12v2m8-8h-2m-12 0H4m15.364 4.364l-1.414-1.414m-12.728 0L6.636 13.95M16.95 6.636l-1.414 1.414M7.05 16.95l-1.414-1.414"
                 />
               </svg>
-              <p className="text-gray-500">Loading pending leads...</p>
+              <p className="text-gray-500">Loading leads...</p>
             </div>
           ) : passengers.length === 0 ? (
             <div className="text-center py-12">
-              <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-12 h-12 text-gray-400 mx-auto mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -228,8 +270,11 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
                   d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                 />
               </svg>
-              <p className="text-gray-500">No pending lead passengers.</p>
-              <p className="text-sm text-gray-400 mt-1">Lead passengers with pending status will appear here.</p>
+              <p className="text-gray-500">No lead passengers.</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Lead passengers with pending or confirmed status will appear
+                here.
+              </p>
             </div>
           ) : (
             <table className="min-w-full divide-y divide-gray-200">
@@ -254,7 +299,7 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
                     Created By
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                    Time Left
+                    Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                     Actions
@@ -262,7 +307,7 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {passengers.map((passenger) => (
+                {sortedPassengers.map((passenger) => (
                   <tr key={passenger.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 border-r border-gray-200 text-sm text-gray-900">
                       {passenger.id.slice(0, 6)}
@@ -285,8 +330,17 @@ export default function PassengersInLead({ currentUser, showNotification }: Pass
                       {passenger.created_by}
                     </td>
                     <td className="px-4 py-3 border-r border-gray-200">
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                        ⏰ {formatCountdown(passenger.expires_at)}
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                          passenger.status === "pending"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {passenger.status === "pending"
+                          ? `⏰ ${formatCountdown(passenger.expires_at)}`
+                          : passenger.status.charAt(0).toUpperCase() +
+                            passenger.status.slice(1)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

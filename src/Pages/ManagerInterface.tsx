@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import "react-toastify/dist/ReactToastify.css";
-import type { User as UserType, Tour, Order, Passenger, ValidationError } from "../types/type";
+import type {
+  User as UserType,
+  Tour,
+  Order,
+  Passenger,
+  ValidationError,
+} from "../types/type";
 import OrdersTab from "../components/OrdersTab";
 import PassengersTab from "../components/PassengerTab";
 import AddTourTab from "../components/AddTourTab";
@@ -8,6 +14,7 @@ import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
 import PassengersInLead from "../components/PassengersInLead";
+import ExcelLikeTable from "../Pages/ExcelLikeTable"; // Replace CustomTablesTab with ExcelLikeTable
 import { useNotifications } from "../hooks/useNotifications";
 import { supabase } from "../supabaseClient";
 
@@ -31,54 +38,151 @@ export default function ManagerInterface({
   currentUser,
 }: ManagerInterfaceProps) {
   const [activeTab, setActiveTab] = useState<
-    "orders" | "passengers" | "addTour" | "addPassenger" | "passengerRequests" | "blacklist" | "pendingLeads"
+    | "orders"
+    | "passengers"
+    | "addTour"
+    | "addPassenger"
+    | "passengerRequests"
+    | "blacklist"
+    | "pendingLeads"
+    | "customTables"
   >("orders");
 
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const { showNotification } = useNotifications();
   const [pendingLeadsCount, setPendingLeadsCount] = useState(0);
+  const [passengerRequestsCount, setPassengerRequestsCount] = useState(0);
 
-  // Fetch pending leads count for badge
+  // Fetch leads count for badge (pending and confirmed)
   useEffect(() => {
     const fetchPendingLeadsCount = async () => {
       try {
         const { count, error } = await supabase
           .from("passengers_in_lead")
           .select("*", { count: "exact", head: true })
-          .eq("status", "pending");
+          .eq("user_id", currentUser.id)
+          .in("status", ["pending", "confirmed"]);
 
         if (error) {
-          console.error("Error fetching pending leads count:", error);
-          showNotification("error", `Failed to fetch pending leads count: ${error.message}`);
+          console.error("Error fetching leads count:", error);
+          showNotification(
+            "error",
+            `Failed to fetch leads count: ${error.message}`
+          );
           return;
         }
 
+        console.log("Leads count for user", currentUser.id, ":", count);
         setPendingLeadsCount(count || 0);
       } catch (error) {
-        console.error("Unexpected error fetching pending leads count:", error);
-        showNotification("error", "An unexpected error occurred while fetching pending leads count.");
+        console.error("Unexpected error fetching leads count:", error);
+        showNotification(
+          "error",
+          "An unexpected error occurred while fetching leads count."
+        );
       }
     };
 
     fetchPendingLeadsCount();
 
-    // Subscribe to real-time updates for pending leads count
-    const subscription = supabase
+    const leadsSubscription = supabase
       .channel("passengers_in_lead_count_changes")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "passengers_in_lead", filter: "status=eq.pending" },
-        () => {
-          fetchPendingLeadsCount(); // Refresh count on any change
+        {
+          event: "*",
+          schema: "public",
+          table: "passengers_in_lead",
+          filter: `user_id=eq.${currentUser.id}`,
+        },
+        (payload) => {
+          console.log("Real-time leads count change:", payload);
+          fetchPendingLeadsCount();
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error("Leads subscription error:", error);
+          showNotification(
+            "error",
+            `Real-time leads subscription failed: ${error.message}`
+          );
+        }
+        console.log("Leads subscription status:", status);
+      });
+
+    // Fetch passenger requests count
+    const fetchPassengerRequestsCount = async () => {
+      try {
+        const { count, error } = await supabase
+          .from("passenger_requests")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", currentUser.id)
+          .eq("status", "pending");
+
+        if (error) {
+          console.error("Error fetching passenger requests count:", error);
+          showNotification(
+            "error",
+            `Failed to fetch passenger requests count: ${error.message}`
+          );
+          return;
+        }
+
+        console.log(
+          "Passenger requests count for user",
+          currentUser.id,
+          ":",
+          count
+        );
+        setPassengerRequestsCount(count || 0);
+      } catch (error) {
+        console.error(
+          "Unexpected error fetching passenger requests count:",
+          error
+        );
+        showNotification(
+          "error",
+          "An unexpected error occurred while fetching passenger requests count."
+        );
+      }
+    };
+
+    fetchPassengerRequestsCount();
+
+    const requestsSubscription = supabase
+      .channel("passenger_requests_count_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "passenger_requests",
+          filter: `user_id=eq.${currentUser.id},status=eq.pending`,
+        },
+        (payload) => {
+          console.log("Real-time passenger requests count change:", payload);
+          fetchPassengerRequestsCount();
+        }
+      )
+      .subscribe((status, error) => {
+        if (error) {
+          console.error("Requests subscription error:", error);
+          showNotification(
+            "error",
+            `Real-time requests subscription failed: ${error.message}`
+          );
+        }
+        console.log("Requests subscription status:", status);
+      });
 
     return () => {
-      supabase.removeChannel(subscription);
+      console.log("Cleaning up subscriptions");
+      supabase.removeChannel(leadsSubscription);
+      supabase.removeChannel(requestsSubscription);
     };
-  }, [showNotification]);
+  }, [showNotification, currentUser.id]);
 
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isGroup, setIsGroup] = useState(false);
@@ -89,8 +193,13 @@ export default function ManagerInterface({
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Manager Dashboard</h1>
-            <p className="mt-2 text-gray-600">Manage your tours, orders, and passengers efficiently</p>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Manager Dashboard
+            </h1>
+            <p className="mt-2 text-gray-600">
+              Manage your tours, orders, passengers, and custom tables
+              efficiently
+            </p>
           </div>
         </div>
 
@@ -105,23 +214,26 @@ export default function ManagerInterface({
                 "addPassenger",
                 "blacklist",
                 "pendingLeads",
+                "customTables",
               ].map((tab) => (
                 <button
                   key={tab}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${activeTab === tab
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${
+                    activeTab === tab
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
                   onClick={() =>
                     setActiveTab(
                       tab as
-                      | "orders"
-                      | "passengers"
-                      | "passengerRequests"
-                      | "addTour"
-                      | "addPassenger"
-                      | "blacklist"
-                      | "pendingLeads"
+                        | "orders"
+                        | "passengers"
+                        | "passengerRequests"
+                        | "addTour"
+                        | "addPassenger"
+                        | "blacklist"
+                        | "pendingLeads"
+                        | "customTables"
                     )
                   }
                 >
@@ -130,30 +242,35 @@ export default function ManagerInterface({
                       {tab === "addPassenger"
                         ? "Add Passenger"
                         : tab === "passengerRequests"
-                          ? "Passenger Requests"
-                          : tab === "addTour"
-                            ? "Add Tour"
-                            : tab === "blacklist"
-                              ? "Blacklist"
-                              : tab === "pendingLeads"
-                                ? "Pending Leads"
-                                : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        ? "Passenger Requests"
+                        : tab === "addTour"
+                        ? "Add Tour"
+                        : tab === "blacklist"
+                        ? "Blacklist"
+                        : tab === "pendingLeads"
+                        ? "Leads"
+                        : tab === "customTables"
+                        ? "Custom Tables"
+                        : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </span>
-                    {tab !== "addTour" && tab !== "addPassenger" && (
-                      <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-semibold ml-2">
-                        {tab === "orders"
-                          ? orders.length
-                          : tab === "passengers"
+                    {tab !== "addTour" &&
+                      tab !== "addPassenger" &&
+                      tab !== "customTables" && (
+                        <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-semibold ml-2">
+                          {tab === "orders"
+                            ? orders.length
+                            : tab === "passengers"
                             ? initialPassengers.length
                             : tab === "blacklist"
-                              ? initialPassengers.filter((p) => p.is_blacklisted).length
-                              : tab === "passengerRequests"
-                                ? PassengerRequests.length
-                                : tab === "pendingLeads"
-                                  ? pendingLeadsCount
-                                  : 0}
-                      </span>
-                    )}
+                            ? initialPassengers.filter((p) => p.is_blacklisted)
+                                .length
+                            : tab === "passengerRequests"
+                            ? passengerRequestsCount
+                            : tab === "pendingLeads"
+                            ? pendingLeadsCount
+                            : 0}
+                        </span>
+                      )}
                   </div>
                 </button>
               ))}
@@ -161,7 +278,13 @@ export default function ManagerInterface({
           </div>
         </div>
 
-        {activeTab === "orders" && <OrdersTab orders={orders} setOrders={setOrders} currentUser={currentUser} />}
+        {activeTab === "orders" && (
+          <OrdersTab
+            orders={orders}
+            setOrders={setOrders}
+            currentUser={currentUser}
+          />
+        )}
         {activeTab === "passengers" && (
           <PassengersTab
             passengers={initialPassengers}
@@ -170,9 +293,16 @@ export default function ManagerInterface({
             showNotification={showNotification}
           />
         )}
-        {activeTab === "passengerRequests" && <PassengerRequests showNotification={showNotification} />}
+        {activeTab === "passengerRequests" && (
+          <PassengerRequests showNotification={showNotification} />
+        )}
         {activeTab === "addTour" && (
-          <AddTourTab tours={tours} setTours={setTours} currentUser={currentUser} showNotification={showNotification} />
+          <AddTourTab
+            tours={tours}
+            setTours={setTours}
+            currentUser={currentUser}
+            showNotification={showNotification}
+          />
         )}
         {activeTab === "addPassenger" && (
           <AddPassengerTab
@@ -184,8 +314,9 @@ export default function ManagerInterface({
             departureDate={departureDate}
             setDepartureDate={setDepartureDate}
             errors={errors}
-            currentUser={currentUser}
             setErrors={setErrors}
+            showNotification={showNotification}
+            currentUser={currentUser}
           />
         )}
         {activeTab === "blacklist" && (
@@ -197,7 +328,16 @@ export default function ManagerInterface({
           />
         )}
         {activeTab === "pendingLeads" && (
-          <PassengersInLead currentUser={currentUser} showNotification={showNotification} />
+          <PassengersInLead
+            currentUser={currentUser}
+            showNotification={showNotification}
+          />
+        )}
+        {activeTab === "customTables" && (
+          <ExcelLikeTable
+            currentUser={currentUser}
+            showNotification={showNotification}
+          />
         )}
       </div>
     </div>

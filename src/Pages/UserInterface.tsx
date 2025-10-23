@@ -1,5 +1,18 @@
-import { type Dispatch, type SetStateAction, useMemo, useState, useEffect } from "react";
-import type { Tour, Passenger, User as UserType, ValidationError, Order, LeadPassenger } from "../types/type";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useMemo,
+  useState,
+  useEffect,
+} from "react";
+import type {
+  Tour,
+  Passenger,
+  User as UserType,
+  ValidationError,
+  Order,
+  LeadPassenger,
+} from "../types/type";
 import Notifications from "../Parts/Notification";
 import ProgressSteps from "../Parts/ProgressSteps";
 import ErrorSummary from "../Parts/ErrorSummary";
@@ -10,9 +23,9 @@ import { BookingActions } from "../addPassengerComponents/BookingActions";
 import BookingSummary from "../Parts/BookingSummary";
 import { MobileFooter } from "../components/MobileFooter";
 import BookingsList from "../Pages/userInterface/BookingsList";
+import ManageLead from "../components/ManageLead";
 import { useBooking } from "../hooks/useBooking";
-import useRealTimeSubscriptions from "../Pages/userInterface/useRealTimeSubscriptions";
-import { downloadTemplate } from "../utils/csvUtils"; // Ensure this is imported
+import { downloadTemplate } from "../utils/csvUtils";
 
 interface UserInterfaceProps {
   tours: Tour[];
@@ -50,8 +63,6 @@ export default function UserInterface({
     bookingPassengers,
     activeStep,
     setActiveStep,
-    paymentMethod,
-    setPaymentMethod,
     loading,
     showInProvider,
     setShowInProvider,
@@ -82,6 +93,11 @@ export default function UserInterface({
     setNotification,
     leadPassengerData,
     setLeadPassengerData,
+    passengerFormData,
+    setPassengerFormData,
+    confirmLeadPassenger,
+    paymentMethod, // From useBooking
+    setPaymentMethod, // From useBooking
   } = useBooking({
     tours,
     setOrders,
@@ -96,47 +112,109 @@ export default function UserInterface({
     currentUser,
   });
 
-  const [validationErrors, setValidationErrors] = useState<ValidationError[]>(errors);
+  const [validationErrors, setValidationErrors] =
+    useState<ValidationError[]>(errors);
   const [currentPage, setCurrentPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"bookings" | "leads">("bookings");
+  const [leadPassengerFormData, setLeadPassengerFormData] = useState<{
+    seat_count: number;
+    tour_id: string;
+    departure_date: string;
+  } | null>(null);
 
-  // Debug rendering
+  // Debug rendering and state reset
   useEffect(() => {
-    console.log("Rendering UserInterface.tsx", {
+    console.log("UserInterface: Rendering", {
       isPowerUser,
       showPassengerPrompt,
       bookingPassengersLength: bookingPassengers.length,
       activeStep,
+      activeTab,
+      selectedTour,
+      departureDate,
+      passengersLength: passengers.length,
+      paymentMethod,
     });
-  }, [isPowerUser, showPassengerPrompt, bookingPassengers, activeStep]);
-
-  useRealTimeSubscriptions({
-    currentUser,
-    setPassengers,
-    setOrders,
-    setTours,
+  }, [
+    isPowerUser,
+    showPassengerPrompt,
+    bookingPassengers,
+    activeStep,
+    activeTab,
     selectedTour,
     departureDate,
-    wrappedShowNotification: showNotification,
-    tours,
     passengers,
-  });
+    paymentMethod,
+  ]);
 
+  // Sync passengers with bookingPassengers (unsubmitted passengers)
   useEffect(() => {
     setPassengers((prev) => {
       const unsubmitted = bookingPassengers.filter((p) => p.order_id === "");
-      return [...prev.filter((p) => p.order_id !== ""), ...unsubmitted];
+      const newPassengers = [
+        ...prev.filter((p) => p.order_id !== ""),
+        ...unsubmitted,
+      ];
+      // Only update if passengers have actually changed to avoid infinite loop
+      if (JSON.stringify(newPassengers) !== JSON.stringify(prev)) {
+        return newPassengers;
+      }
+      return prev;
     });
   }, [bookingPassengers, setPassengers]);
 
+  useEffect(() => {
+    if (activeStep === 1) {
+      console.log("UserInterface: Resetting props for step 1");
+      setSelectedTour((prev) => (prev === "" ? prev : ""));
+      setDepartureDate((prev) => (prev === "" ? prev : ""));
+      setPassengers((prev) => {
+        const filtered = prev.filter((p) => p.order_id !== "");
+        return JSON.stringify(filtered) !== JSON.stringify(prev)
+          ? filtered
+          : prev;
+      });
+      setValidationErrors((prev) => (prev.length === 0 ? prev : []));
+      setActiveTab((prev) => (prev === "bookings" ? prev : "bookings"));
+    }
+  }, [
+    activeStep,
+    setSelectedTour,
+    setDepartureDate,
+    setPassengers,
+    setActiveTab,
+  ]);
+
+  // Filter submitted passengers
   const submittedPassengers = useMemo(() => {
     return passengers.filter((p) => p.order_id !== "");
   }, [passengers]);
+
+  useEffect(() => {
+    if (passengerFormData) {
+      const tour = tours.find((t) => t.id === passengerFormData.tour_id);
+      if (tour) {
+        console.log("UserInterface: Setting tour and departure date", {
+          tour_title: tour.title,
+          departure_date: passengerFormData.departure_date,
+        });
+        setSelectedTour((prev) => (prev === tour.title ? prev : tour.title));
+        setDepartureDate((prev) =>
+          prev === passengerFormData.departure_date
+            ? prev
+            : passengerFormData.departure_date
+        );
+      }
+    }
+  }, [passengerFormData, tours, setSelectedTour, setDepartureDate]);  
 
   // Calculate max passengers for prompt
   const maxPassengersForPrompt = Math.min(
     MAX_PASSENGERS - bookingPassengers.length,
     remainingSeats !== undefined ? remainingSeats : MAX_PASSENGERS,
-    leadPassengerData?.seat_count !== undefined ? leadPassengerData.seat_count - bookingPassengers.length : MAX_PASSENGERS
+    leadPassengerData?.seat_count !== undefined
+      ? leadPassengerData.seat_count - bookingPassengers.length
+      : MAX_PASSENGERS
   );
 
   // Handle Add Passenger click
@@ -151,7 +229,10 @@ export default function UserInterface({
       departureDate,
     });
     if (!canAdd) {
-      showNotification("error", "Cannot add passengers: Check tour, date, or seat availability");
+      showNotification(
+        "error",
+        "Cannot add passengers: Check tour, date, or seat availability"
+      );
       return;
     }
     setShowPassengerPrompt(true);
@@ -159,7 +240,10 @@ export default function UserInterface({
 
   return (
     <div className="px-64 py-12 bg-gray-50">
-      <Notifications notification={notification} setNotification={setNotification} />
+      <Notifications
+        notification={notification}
+        setNotification={setNotification}
+      />
 
       <div className="max-w-9xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <ProgressSteps activeStep={activeStep} />
@@ -170,7 +254,10 @@ export default function UserInterface({
             <div className="bg-white rounded-lg p-6 w-full max-w-md">
               <h3 className="text-lg font-semibold mb-4">Add Passengers</h3>
               <div className="mb-4">
-                <label htmlFor="passengerCount" className="block text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="passengerCount"
+                  className="block text-sm font-medium text-gray-700"
+                >
                   How many passengers? (Max: {maxPassengersForPrompt})
                 </label>
                 <input
@@ -180,7 +267,10 @@ export default function UserInterface({
                   max={maxPassengersForPrompt}
                   value={passengerCountInput}
                   onChange={(e) => {
-                    console.log("UserInterface: passengerCountInput changed to", e.target.value);
+                    console.log(
+                      "UserInterface: passengerCountInput changed to",
+                      e.target.value
+                    );
                     setPassengerCountInput(e.target.value);
                   }}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -199,16 +289,25 @@ export default function UserInterface({
                 </button>
                 <button
                   onClick={() => {
-                    console.log("UserInterface: Add passengers clicked, count:", passengerCountInput);
+                    console.log(
+                      "UserInterface: Add passengers clicked, count:",
+                      passengerCountInput
+                    );
                     const count = parseInt(passengerCountInput) || 0;
                     if (count <= 0 || count > maxPassengersForPrompt) {
-                      showNotification("error", `Please enter a valid number of passengers (1-${maxPassengersForPrompt})`);
+                      showNotification(
+                        "error",
+                        `Please enter a valid number of passengers (1-${maxPassengersForPrompt})`
+                      );
                       return;
                     }
                     addMultiplePassengers(count);
                     setShowPassengerPrompt(false);
                     setPassengerCountInput("");
-                    newPassengerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    newPassengerRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "center",
+                    });
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
@@ -220,17 +319,19 @@ export default function UserInterface({
         )}
 
         {activeStep === 1 && (
-          <TourSelection
-            tours={tours}
-            selectedTour={selectedTour}
-            setSelectedTour={setSelectedTour}
-            departure_date={departureDate}
-            setDepartureDate={setDepartureDate}
-            errors={validationErrors}
-            setActiveStep={setActiveStep}
-            userRole={currentUser.role || "user"}
-            showAvailableSeats={false}
-          />
+          <div className="animate-fade-in">
+            <TourSelection
+              tours={tours}
+              selectedTour={selectedTour}
+              setSelectedTour={setSelectedTour}
+              departure_date={departureDate}
+              setDepartureDate={setDepartureDate}
+              errors={validationErrors}
+              setActiveStep={setActiveStep}
+              userRole={currentUser.role || "user"}
+              showAvailableSeats={false}
+            />
+          </div>
         )}
 
         {activeStep === 2 && (
@@ -242,6 +343,8 @@ export default function UserInterface({
             selectedTourData={selectedTourData}
             setLeadPassengerData={setLeadPassengerData}
             setNotification={setNotification}
+            confirmLeadPassenger={confirmLeadPassenger}
+            leadPassengerData={leadPassengerData}
           />
         )}
 
@@ -252,30 +355,88 @@ export default function UserInterface({
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center space-x-4">
                     <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
-                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      <svg
+                        className="h-5 w-5 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                        />
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">Booking Details</h3>
+                      <h3 className="text-lg font-bold text-slate-900">
+                        Booking Details
+                      </h3>
                       <p className="text-sm text-slate-600 flex items-center space-x-4">
                         <span className="flex items-center">
-                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-8.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                          <svg
+                            className="w-4 h-4 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-8.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
+                            />
                           </svg>
-                          {bookingPassengers.length} {bookingPassengers.length === 1 ? "passenger" : "passengers"}
+                          {bookingPassengers.length}{" "}
+                          {bookingPassengers.length === 1
+                            ? "passenger"
+                            : "passengers"}
                         </span>
                         <span className="flex items-center">
-                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                          <svg
+                            className="w-4 h-4 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
+                            />
                           </svg>
                           ${totalPrice.toLocaleString()}
                         </span>
                         {remainingSeats !== undefined && (
-                          <span className={`flex items-center font-medium ${remainingSeats > 5 ? "text-green-600" : remainingSeats > 0 ? "text-amber-600" : "text-red-600"}`}>
-                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <span
+                            className={`flex items-center font-medium ${
+                              remainingSeats > 5
+                                ? "text-green-600"
+                                : remainingSeats > 0
+                                ? "text-amber-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            <svg
+                              className="w-4 h-4 mr-1"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                              />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                              />
                             </svg>
                             {remainingSeats} seats left
                           </span>
@@ -294,7 +455,9 @@ export default function UserInterface({
                   clearAllPassengers={clearAllPassengers}
                   resetBookingForm={resetBookingForm}
                   handleDownloadCSV={handleDownloadCSV}
-                  handleDownloadTemplate={() => downloadTemplate(showNotification)}
+                  handleDownloadTemplate={() =>
+                    downloadTemplate(showNotification)
+                  }
                   handleUploadCSV={handleUploadCSV}
                   newPassengerRef={newPassengerRef}
                   maxPassengers={MAX_PASSENGERS}
@@ -312,17 +475,44 @@ export default function UserInterface({
               setExpandedPassengerId={setExpandedPassengerId}
               fieldLoading={fieldLoading}
               newPassengerRef={newPassengerRef}
-              nationalities={["Mongolia", "USA", "Canada", "UK", "Australia", "Germany", "France", "Japan", "China", "South Korea", "India", "Russia", "Brazil", "South Africa"]}
+              nationalities={[
+                "Mongolia",
+                "USA",
+                "Canada",
+                "UK",
+                "Australia",
+                "Germany",
+                "France",
+                "Japan",
+                "China",
+                "South Korea",
+                "India",
+                "Russia",
+                "Brazil",
+                "South Africa",
+              ]}
               roomTypes={["Single", "Double", "Twin", "Family", "King"]}
               hotels={availableHotels}
+              setNotification={() => {}}
+              addMainPassenger={() => addMultiplePassengers(1)}
             />
             <div className="flex gap-2 mt-8">
               <button
                 onClick={() => setActiveStep(2)}
                 className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
               >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <svg
+                  className="w-4 h-4 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
                 </svg>
                 Back
               </button>
@@ -332,8 +522,18 @@ export default function UserInterface({
                 className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
               >
                 Review Booking
-                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <svg
+                  className="w-4 h-4 ml-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
                 </svg>
               </button>
             </div>
@@ -359,6 +559,56 @@ export default function UserInterface({
             onBack={() => setActiveStep(3)}
           />
         )}
+
+        {activeStep === 1 && (
+          <div className="mt-8">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100">
+              <div className="flex border-b border-gray-200">
+                <button
+                  onClick={() => setActiveTab("bookings")}
+                  className={`flex-1 py-4 px-6 text-sm font-semibold text-center transition-all duration-200 ${
+                    activeTab === "bookings"
+                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-900 border-b-2 border-blue-600"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  Your Bookings
+                </button>
+                <button
+                  onClick={() => setActiveTab("leads")}
+                  className={`flex-1 py-4 px-6 text-sm font-semibold text-center transition-all duration-200 ${
+                    activeTab === "leads"
+                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-900 border-b-2 border-blue-600"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  Your Lead Passengers
+                </button>
+              </div>
+              <div className="p-8">
+                {activeTab === "bookings" && (
+                  <BookingsList
+                    passengers={submittedPassengers}
+                    orders={orders}
+                    tours={tours}
+                    currentUser={currentUser}
+                    currentPage={currentPage}
+                    setCurrentPage={setCurrentPage}
+                  />
+                )}
+                {activeTab === "leads" && (
+                  <ManageLead
+                    currentUser={currentUser}
+                    showNotification={showNotification}
+                    setActiveStep={setActiveStep}
+                    setLeadPassengerData={setLeadPassengerData}
+                    setPassengerFormData={setLeadPassengerFormData}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <MobileFooter
@@ -382,15 +632,6 @@ export default function UserInterface({
           </div>
         </div>
       )}
-
-      <BookingsList
-        passengers={submittedPassengers}
-        orders={orders}
-        tours={tours}
-        currentUser={currentUser}
-        currentPage={currentPage}
-        setCurrentPage={setCurrentPage}
-      />
     </div>
   );
 }

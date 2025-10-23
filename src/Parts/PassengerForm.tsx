@@ -6,7 +6,11 @@ interface PassengerFormProps {
   setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
   selectedTourData?: Tour;
   errors: ValidationError[];
-  updatePassenger: (index: number, field: keyof Passenger, value: any) => Promise<void>;
+  updatePassenger: (
+    index: number,
+    field: keyof Passenger,
+    value: any
+  ) => Promise<void>;
   removePassenger: (index: number) => void;
   downloadTemplate: () => void;
   handleUploadCSV: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -51,11 +55,13 @@ const calculateAge = (birthDate: string): number => {
 };
 
 // 🧹 DATE CLEANER - FIXES EMPTY STRING ISSUES
-const cleanDateForDB = (dateValue: string | undefined | null): string | null => {
-  if (!dateValue || dateValue.trim() === '') {
-    return null;  // ✅ Return null instead of empty string
+const cleanDateForDB = (
+  dateValue: string | undefined | null
+): string | null => {
+  if (!dateValue || dateValue.trim() === "") {
+    return null; // ✅ Return null instead of empty string
   }
-  return dateValue.trim();  // ✅ Return cleaned date string
+  return dateValue.trim(); // ✅ Return cleaned date string
 };
 
 export default function PassengerForm({
@@ -75,7 +81,11 @@ export default function PassengerForm({
   };
 
   // 🧹 CLEAN DATE CHANGE HANDLER - No more empty strings!
-  const handleDateChange = async (index: number, field: keyof Passenger, value: string) => {
+  const handleDateChange = async (
+    index: number,
+    field: keyof Passenger,
+    value: string
+  ) => {
     // Clean the date value before saving
     const cleanValue = cleanDateForDB(value);
     await updatePassenger(index, field, cleanValue);
@@ -87,24 +97,40 @@ export default function PassengerForm({
   };
 
   // 🎨 REQUIRED FIELDS HELPER - FIXED TYPE ISSUE
-  const isRequiredFieldEmpty = (passenger: Passenger, field: keyof Passenger): boolean => {
+  const isRequiredFieldEmpty = (
+    passenger: Passenger,
+    field: keyof Passenger
+  ): boolean => {
     const value = passenger[field];
 
     const requiredFields: (keyof Passenger)[] = [
-      'first_name', 'last_name', 'date_of_birth', 'gender',
-      'passport_number', 'passport_expire', 'nationality',
-      'roomType', 'hotel', 'email', 'phone'
+      "first_name",
+      "last_name",
+      "date_of_birth",
+      "gender",
+      "passport_number",
+      "passport_expire",
+      "nationality",
+      "roomType",
+      "hotel",
+      "email",
+      "phone",
     ] as const;
 
     if (!requiredFields.includes(field)) return false;
 
-    if (typeof value === 'string') return value.trim() === '';
+    if (typeof value === "string") return value.trim() === "";
     if (Array.isArray(value)) return value.length === 0;
     return !value;
   };
 
   // 🎨 INPUT CLASS HELPER
-  const getInputClasses = (index: number, field: keyof Passenger, passenger: Passenger, customColor?: string) => {
+  const getInputClasses = (
+    index: number,
+    field: keyof Passenger,
+    passenger: Passenger,
+    customColor?: string
+  ) => {
     const error = getError(index, field);
     const isEmptyRequired = isRequiredFieldEmpty(passenger, field);
 
@@ -123,11 +149,14 @@ export default function PassengerForm({
   const handleNextClick = async () => {
     console.log("Passenger data before next:", passengers);
 
-    const passengerErrors = errors.filter((e) => e.field.startsWith("passenger_"));
+    const passengerErrors = errors.filter((e) =>
+      e.field?.startsWith("passenger_")
+    );
 
     if (passengerErrors.length > 0) {
       const firstError = passengerErrors[0];
-      const parts = firstError.field.split("_");
+      const parts = firstError.field?.split("_");
+      if (!parts || parts.length < 2) return;
       const passengerIndex = parseInt(parts[1]);
       const passenger = passengers[passengerIndex];
 
@@ -138,7 +167,10 @@ export default function PassengerForm({
           `Please fix validation errors for Passenger ${passenger.serial_no}`
         );
       } else {
-        showNotification("error", "Please fix the validation errors before proceeding");
+        showNotification(
+          "error",
+          "Please fix the validation errors before proceeding"
+        );
       }
       return;
     }
@@ -160,7 +192,7 @@ export default function PassengerForm({
   useEffect(() => {
     // Auto-calculate age for ALL passengers when any date_of_birth changes
     passengers.forEach((passenger, index) => {
-      if (passenger.date_of_birth && passenger.date_of_birth.trim() !== '') {
+      if (passenger.date_of_birth && passenger.date_of_birth.trim() !== "") {
         const age = calculateAge(passenger.date_of_birth);
         if (passenger.age !== age) {
           // Use setTimeout to avoid React batching issues
@@ -170,7 +202,7 @@ export default function PassengerForm({
         }
       }
     });
-  }, [passengers.map(p => p.date_of_birth).join(','), updatePassenger]); // ✅ Dep on all birthdates!
+  }, [passengers.map((p) => p.date_of_birth).join(","), updatePassenger]); // ✅ Dep on all birthdates!
 
   if (passengers.length === 0) {
     return (
@@ -185,19 +217,34 @@ export default function PassengerForm({
       {passengers.map((passenger, index) => {
         // FIXED: Type-safe required fields check
         const requiredFields: (keyof Passenger)[] = [
-          'first_name', 'last_name', 'date_of_birth', 'gender',
-          'passport_number', 'passport_expire', 'nationality',
-          'roomType', 'hotel', 'email', 'phone'
+          "first_name",
+          "last_name",
+          "date_of_birth",
+          "gender",
+          "passport_number",
+          "passport_expire",
+          "nationality",
+          "roomType",
+          "hotel",
+          "email",
+          "phone",
         ] as const;
 
-        const hasAnyError = errors.some((e) => e.field.startsWith(`passenger_${index}_`));
-        const hasEmptyRequired = requiredFields.some((field) => isRequiredFieldEmpty(passenger, field));
+        const hasAnyError = errors.some((e) =>
+          e.field?.startsWith(`passenger_${index}_`)
+        );
+        const hasEmptyRequired = requiredFields.some((field) =>
+          isRequiredFieldEmpty(passenger, field)
+        );
 
         return (
           <div
             key={passenger.id}
-            className={`bg-white rounded-lg shadow-sm border ${hasAnyError || hasEmptyRequired ? "border-red-300" : "border-gray-200"
-              }`}
+            className={`bg-white rounded-lg shadow-sm border ${
+              hasAnyError || hasEmptyRequired
+                ? "border-red-300"
+                : "border-gray-200"
+            }`}
             ref={index === passengers.length - 1 ? newPassengerRef : null}
           >
             {/* 🏷️ PASSENGER HEADER */}
@@ -205,8 +252,13 @@ export default function PassengerForm({
               className="flex items-center justify-between px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
               onClick={() => togglePassenger(passenger.id)}
             >
-              <h4 className={`text-sm font-medium flex items-center flex-wrap ${hasAnyError || hasEmptyRequired ? "text-red-700" : "text-gray-900"
-                }`}>
+              <h4
+                className={`text-sm font-medium flex items-center flex-wrap ${
+                  hasAnyError || hasEmptyRequired
+                    ? "text-red-700"
+                    : "text-gray-900"
+                }`}
+              >
                 Passenger {passenger.serial_no}
                 {passenger.first_name || passenger.last_name
                   ? ` - ${passenger.first_name} ${passenger.last_name}`
@@ -216,7 +268,6 @@ export default function PassengerForm({
                     {passenger.age} years old
                   </span>
                 )}
-
                 {(hasAnyError || hasEmptyRequired) && (
                   <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     {hasAnyError ? "! Fix errors" : "! Complete fields"}
@@ -225,21 +276,29 @@ export default function PassengerForm({
               </h4>
 
               <svg
-                className={`w-5 h-5 transition-transform duration-200 ${expandedPassengerId === passenger.id ? "rotate-180" : ""
-                  } ${hasAnyError || hasEmptyRequired ? "text-red-500" : "text-gray-600"}`}
+                className={`w-5 h-5 transition-transform duration-200 ${
+                  expandedPassengerId === passenger.id ? "rotate-180" : ""
+                } ${
+                  hasAnyError || hasEmptyRequired
+                    ? "text-red-500"
+                    : "text-gray-600"
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </div>
 
             {expandedPassengerId === passenger.id && (
               <div className="p-4 border-t border-gray-200 animate-in slide-in-from-top-2 duration-200">
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
                   {/* 👤 FIRST NAME */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -248,9 +307,18 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.first_name || ""}
-                      onChange={(e) => updatePassenger(index, "first_name", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "first_name", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "first_name",
+                          e.target.value.trim()
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "first_name",
+                        passenger
+                      )}`}
                       placeholder="First Name"
                     />
                     {getError(index, "first_name") && (
@@ -268,9 +336,18 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.last_name || ""}
-                      onChange={(e) => updatePassenger(index, "last_name", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "last_name", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "last_name",
+                          e.target.value.trim()
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "last_name",
+                        passenger
+                      )}`}
                       placeholder="Last Name"
                     />
                     {getError(index, "last_name") && (
@@ -288,9 +365,14 @@ export default function PassengerForm({
                     <input
                       type="date"
                       value={passenger.date_of_birth || ""}
-                      onChange={(e) => handleDateChange(index, "date_of_birth", e.target.value)} // ✅ CLEANED!
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "date_of_birth", passenger)
-                        }`}
+                      onChange={(e) =>
+                        handleDateChange(index, "date_of_birth", e.target.value)
+                      } // ✅ CLEANED!
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "date_of_birth",
+                        passenger
+                      )}`}
                     />
                     {getError(index, "date_of_birth") && (
                       <p className="text-sm text-red-600 mt-1">
@@ -314,8 +396,18 @@ export default function PassengerForm({
                     />
                     {passenger.date_of_birth && (
                       <p className="text-xs text-green-600 mt-1 flex items-center">
-                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
                         </svg>
                         Auto-calculated from birth date
                       </p>
@@ -329,9 +421,14 @@ export default function PassengerForm({
                     </label>
                     <select
                       value={passenger.gender || ""}
-                      onChange={(e) => updatePassenger(index, "gender", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "gender", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "gender", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "gender",
+                        passenger
+                      )}`}
                     >
                       <option value="">Select Gender</option>
                       <option value="Male">Male</option>
@@ -353,9 +450,18 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.passport_number || ""}
-                      onChange={(e) => updatePassenger(index, "passport_number", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "passport_number", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "passport_number",
+                          e.target.value.trim()
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "passport_number",
+                        passenger
+                      )}`}
                       placeholder="Passport Number"
                     />
                     {getError(index, "passport_number") && (
@@ -373,13 +479,22 @@ export default function PassengerForm({
                     <input
                       type="date"
                       value={passenger.passport_expire || ""}
-                      onChange={(e) => handleDateChange(index, "passport_expire", e.target.value)} // ✅ CLEANED!
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getError(index, "passport_expire")
-                        ? "border-red-500 bg-red-50"
-                        : isRequiredFieldEmpty(passenger, "passport_expire")
+                      onChange={(e) =>
+                        handleDateChange(
+                          index,
+                          "passport_expire",
+                          e.target.value
+                        )
+                      } // ✅ CLEANED!
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                        getError(index, "passport_expire")
                           ? "border-red-500 bg-red-50"
-                          : getPassportExpiryColor(passenger.passport_expire || "")
-                        }`}
+                          : isRequiredFieldEmpty(passenger, "passport_expire")
+                          ? "border-red-500 bg-red-50"
+                          : getPassportExpiryColor(
+                              passenger.passport_expire || ""
+                            )
+                      }`}
                     />
                     {getError(index, "passport_expire") && (
                       <p className="text-sm text-red-600 mt-1">
@@ -396,9 +511,18 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.nationality || ""}
-                      onChange={(e) => updatePassenger(index, "nationality", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "nationality", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "nationality",
+                          e.target.value.trim()
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "nationality",
+                        passenger
+                      )}`}
                       placeholder="Nationality"
                     />
                     {getError(index, "nationality") && (
@@ -416,9 +540,18 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.roomType || ""}
-                      onChange={(e) => updatePassenger(index, "roomType", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "roomType", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "roomType",
+                          e.target.value.trim()
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "roomType",
+                        passenger
+                      )}`}
                       placeholder="Single, Double, Triple, etc."
                     />
                     {getError(index, "roomType") && (
@@ -436,7 +569,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.room_allocation || ""}
-                      onChange={(e) => updatePassenger(index, "room_allocation", e.target.value.trim())}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "room_allocation",
+                          e.target.value.trim()
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Room number or allocation notes"
                     />
@@ -450,9 +589,14 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.hotel || ""}
-                      onChange={(e) => updatePassenger(index, "hotel", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "hotel", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "hotel", e.target.value.trim())
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "hotel",
+                        passenger
+                      )}`}
                       placeholder="Hotel Name"
                     />
                     {getError(index, "hotel") && (
@@ -470,7 +614,9 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.additional_services?.join(", ") || ""}
-                      onChange={(e) => handleServicesChange(index, e.target.value)}
+                      onChange={(e) =>
+                        handleServicesChange(index, e.target.value)
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Vegetarian meal, extra bed, airport transfer, etc. (comma-separated)"
                     />
@@ -484,7 +630,9 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.allergy || ""}
-                      onChange={(e) => updatePassenger(index, "allergy", e.target.value.trim())}
+                      onChange={(e) =>
+                        updatePassenger(index, "allergy", e.target.value.trim())
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Peanuts, gluten, medication allergies, etc."
                     />
@@ -498,9 +646,14 @@ export default function PassengerForm({
                     <input
                       type="email"
                       value={passenger.email || ""}
-                      onChange={(e) => updatePassenger(index, "email", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "email", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "email", e.target.value.trim())
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "email",
+                        passenger
+                      )}`}
                       placeholder="name@example.com"
                     />
                     {getError(index, "email") && (
@@ -518,9 +671,14 @@ export default function PassengerForm({
                     <input
                       type="tel"
                       value={passenger.phone || ""}
-                      onChange={(e) => updatePassenger(index, "phone", e.target.value.trim())}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(index, "phone", passenger)
-                        }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "phone", e.target.value.trim())
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "phone",
+                        passenger
+                      )}`}
                       placeholder="+1 (555) 123-4567"
                     />
                     {getError(index, "phone") && (
@@ -538,7 +696,13 @@ export default function PassengerForm({
                     <input
                       type="tel"
                       value={passenger.emergency_phone || ""}
-                      onChange={(e) => updatePassenger(index, "emergency_phone", e.target.value.trim())}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "emergency_phone",
+                          e.target.value.trim()
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Emergency contact number"
                     />
@@ -552,13 +716,29 @@ export default function PassengerForm({
                     <input
                       type="file"
                       accept="image/*,.pdf"
-                      onChange={(e) => updatePassenger(index, "passport_upload", e.target.files?.[0])}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "passport_upload",
+                          e.target.files?.[0]
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     />
                     {passenger.passport_upload && (
                       <p className="text-sm text-green-600 mt-1 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
                         </svg>
                         Passport uploaded successfully
                       </p>
@@ -582,14 +762,25 @@ export default function PassengerForm({
                       type="button"
                       onClick={handleNextClick}
                       disabled={hasEmptyRequired || hasAnyError}
-                      className={`inline-flex items-center px-6 py-2.5 text-white text-sm font-semibold rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 active:scale-95 ${hasEmptyRequired || hasAnyError
-                        ? "bg-gray-400 cursor-not-allowed shadow-none"
-                        : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 hover:shadow-lg"
-                        }`}
+                      className={`inline-flex items-center px-6 py-2.5 text-white text-sm font-semibold rounded-lg shadow-md transition-all duration-200 transform hover:scale-105 active:scale-95 ${
+                        hasEmptyRequired || hasAnyError
+                          ? "bg-gray-400 cursor-not-allowed shadow-none"
+                          : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 hover:shadow-lg"
+                      }`}
                     >
                       Next Step
-                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <svg
+                        className="w-4 h-4 ml-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
                       </svg>
                     </button>
                   )}

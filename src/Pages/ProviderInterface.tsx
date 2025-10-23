@@ -12,7 +12,6 @@ import BookingConfirmationTab from '../Pages/ProviderInterfaceComponents/Booking
 import AddTourTab from '../components/AddTourTab';
 import { Users, MapPin, CheckCircle, Settings } from 'lucide-react';
 
-// Cache to store schema check results
 const schemaCache = {
   tours: null as boolean | null,
   orders: null as boolean | null,
@@ -343,6 +342,8 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               }
             : null,
           passport_copy_url: null,
+          passengers: order.passengers ?? [],
+          room_allocation: "",
         }));
         setOrders(ordersWithTotals);
         return;
@@ -393,6 +394,8 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             }
           : null,
         passport_copy_url: null,
+        passengers: order.passengers ?? [],
+        room_allocation: "",
       }));
 
       setOrders(ordersWithTotals);

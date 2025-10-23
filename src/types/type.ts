@@ -30,6 +30,14 @@ export interface User {
   auth_user_id?: string;
 }
 
+// Minimal UserType for UserInterface.tsx
+export interface UserType {
+  id: string;
+  email: string;
+  role?: string;
+  username?: string;
+}
+
 export interface LeadPassenger {
   id: string;
   tour_id: string;
@@ -39,7 +47,7 @@ export interface LeadPassenger {
   first_name: string;
   phone: string;
   seat_count: number;
-  status: "pending" | "confirmed" | "declined";
+  status: "pending" | "confirmed" | "cancelled";
   created_at: string;
   expires_at: string;
   user_id: string;
@@ -48,18 +56,18 @@ export interface LeadPassenger {
 export interface PassengerInLead {
   id: string;
   tour_id: string;
-  departure_date: string;
-  last_name: string;
+  tour_title: string | null;
   first_name: string;
+  last_name: string;
   phone: string;
   seat_count: number;
-  status: "pending" | "confirmed" | "declined";
+  departure_date: string;
+  status: "pending" | "confirmed" | "cancelled";
   created_at: string;
   expires_at: string;
   user_id: string;
-  tour: { title: string } | null;
-  tour_title: string | null;
-  created_by: string | null;
+  created_by: string;
+  tour: { title: string };
 }
 
 export type UserRow = Omit<User, "createdAt" | "updatedAt" | "userId"> & {
@@ -155,20 +163,21 @@ export interface Order {
   passport_number: string | null;
   passport_expire: string | null;
   passport_copy: string | null;
+  passport_copy_url: string | null;
   commission: number | null;
   created_by: string | null;
+  createdBy: string | null;
   edited_by: string | null;
   edited_at: string | null;
   travel_choice: string;
   status: OrderStatus;
   hotel: string | null;
-  room_number: string | null;
+  room_number: string | null; // Removed room_allocation, kept room_number
   payment_method: string | null;
   created_at: string;
   updated_at: string;
   passenger_count: number;
   departureDate: string;
-  createdBy: string | null;
   total_price: number;
   total_amount: number;
   paid_amount: number;
@@ -183,7 +192,7 @@ export interface Order {
     updated_by: string | null;
     updated_at: string | null;
   } | null;
-  passport_copy_url: string | null;
+  passengers: Passenger[];
 }
 
 export interface BookingConfirmation {
@@ -195,33 +204,37 @@ export interface BookingConfirmation {
   updated_at: string | null;
 }
 
-export type OrderStatus =
-  | "pending"
-  | "Information given"
-  | "Need to give information"
-  | "Need to tell got a seat/in waiting"
-  | "Need to conclude a contract"
-  | "Concluded a contract"
-  | "Postponed the travel"
-  | "Interested in other travel"
-  | "cancelled"
-  | "Cancelled after confirmed"
-  | "Cancelled after ordered a seat"
-  | "Cancelled after take a information"
-  | "Paid the advance payment"
-  | "Need to meet"
-  | "Sent a claim"
-  | "Fam Tour"
-  | "Confirmed"
-  | "The travel is going"
-  | "Travel ended completely"
-  | "Has taken seat from another company"
-  | "Swapped seat with another company"
-  | "Gave seat to another company"
-  | "Cancelled and bought travel from another country"
-  | "Completed"
-  | "confirmed"
-  | "approved";
+export const VALID_ORDER_STATUSES = [
+  "approved",
+  "partially_approved",
+  "rejected",
+  "pending",
+  "confirmed",
+  "Information given",
+  "Need to give information",
+  "Need to tell got a seat/in waiting",
+  "Need to conclude a contract",
+  "Concluded a contract",
+  "Postponed the travel",
+  "Interested in other travel",
+  "Cancelled after confirmed",
+  "Cancelled after ordered a seat",
+  "Cancelled after take a information",
+  "Paid the advance payment",
+  "Need to meet",
+  "Sent a claim",
+  "Fam Tour",
+  "The travel is going",
+  "Has taken seat from another company",
+  "Swapped seat with another company",
+  "Gave seat to another company",
+  "Cancelled and bought travel from another country",
+  "Completed",
+  "Travel ended completely",
+  "cancelled",
+] as const;
+
+export type OrderStatus = (typeof VALID_ORDER_STATUSES)[number];
 
 export type PaymentMethod =
   | "Cash"
@@ -241,12 +254,12 @@ export interface Passenger {
   tour_title: string;
   tour_id: string;
   departure_date: string | null;
-  name: string;
+  name?: string;
   room_allocation: string;
   serial_no: string;
   last_name: string;
   first_name: string;
-  date_of_birth: string;
+  date_of_birth: string | null;
   age: number | null;
   gender: string | null;
   passport_number: string;
@@ -272,8 +285,12 @@ export interface Passenger {
     | "cancelled";
   is_blacklisted: boolean;
   blacklisted_date: string | null;
-  notes?: string | null;
+  notes: string;
   seat_count?: number | null;
+  main_passenger_id: string | null;
+  sub_passenger_count: number;
+  has_sub_passengers: boolean;
+  passenger_number: string;
 }
 
 export interface PassengerRequest {
@@ -358,6 +375,8 @@ export interface TourFormData {
 }
 
 export interface PassengerFormData {
+  tour_id: string;
+  departure_date: string;
   first_name: string;
   last_name: string;
   date_of_birth: string;
@@ -408,4 +427,49 @@ export interface Notification {
 export interface ErrorType {
   field: string;
   message: string;
+}
+
+export interface UseBookingReturn {
+  bookingPassengers: Passenger[];
+  activeStep: number;
+  setActiveStep: React.Dispatch<React.SetStateAction<number>>;
+  paymentMethod: string;
+  setPaymentMethod: React.Dispatch<React.SetStateAction<string>>;
+  loading: boolean;
+  showInProvider: boolean;
+  setShowInProvider: React.Dispatch<React.SetStateAction<boolean>>;
+  expandedPassengerId: string | null;
+  setExpandedPassengerId: React.Dispatch<React.SetStateAction<string | null>>;
+  fieldLoading: Record<string, boolean>;
+  canAdd: boolean;
+  showPassengerPrompt: boolean;
+  setShowPassengerPrompt: React.Dispatch<React.SetStateAction<boolean>>;
+  passengerCountInput: string;
+  setPassengerCountInput: React.Dispatch<React.SetStateAction<string>>;
+  availableHotels: string[];
+  newPassengerRef: React.MutableRefObject<HTMLDivElement | null>;
+  isPowerUser: boolean;
+  selectedTourData?: Tour;
+  remainingSeats?: number;
+  totalPrice: number;
+  addMultiplePassengers: (count: number) => void;
+  updatePassenger: (index: number, field: string, value: any) => Promise<void>;
+  removePassenger: (index: number) => void;
+  clearAllPassengers: () => void;
+  resetBookingForm: () => void;
+  handleDownloadCSV: () => void;
+  handleUploadCSV: (file: File) => Promise<void>;
+  handleNextStep: () => Promise<void>;
+  MAX_PASSENGERS: number;
+  notification: NotificationType | null;
+  setNotification: React.Dispatch<
+    React.SetStateAction<NotificationType | null>
+  >;
+  leadPassengerData: LeadPassenger | null;
+  setLeadPassengerData: React.Dispatch<
+    React.SetStateAction<LeadPassenger | null>
+  >;
+  passengerFormData: any;
+  setPassengerFormData: React.Dispatch<React.SetStateAction<any>>;
+  confirmLeadPassenger: () => void;
 }

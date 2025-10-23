@@ -6,7 +6,11 @@ interface PassengerFormProps {
   setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
   selectedTourData?: Tour;
   errors: ValidationError[];
-  updatePassenger: (index: number, field: keyof Passenger, value: any) => Promise<void>;
+  updatePassenger: (
+    index: number,
+    field: keyof Passenger,
+    value: any
+  ) => Promise<void>;
   removePassenger: (index: number) => void;
   downloadTemplate: () => void;
   handleUploadCSV: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -24,7 +28,7 @@ interface PassengerFormProps {
 
 const getPassportExpiryColor = (expiryDate: string): string => {
   if (!expiryDate) return "border-gray-300 bg-white";
-  
+
   const today = new Date();
   const expiry = new Date(expiryDate);
   const diffTime = expiry.getTime() - today.getTime();
@@ -59,32 +63,39 @@ export default function PassengerForm({
   };
 
   // 🎨 INPUT CLASS HELPER - SAME AS PASSENGERFORMUSER
-  const getInputClasses = (index: number, field: keyof Passenger, customColor?: string) => {
+  const getInputClasses = (
+    index: number,
+    field: keyof Passenger,
+    customColor?: string
+  ) => {
     const error = getError(index, field);
-    
+
     if (error) {
       return "border-red-500 bg-red-50";
     }
-    
+
     if (customColor) {
       return customColor;
     }
-    
+
     return "border-gray-300";
   };
 
   // 🚀 NEXT BUTTON HANDLER - SIMPLIFIED
   const handleNextClick = async () => {
     console.log("Passenger data before next:", passengers);
-    
-    const passengerErrors = errors.filter((e) => e.field.startsWith("passenger_"));
-    
+
+    const passengerErrors = errors.filter((e) =>
+      e.field?.startsWith("passenger_")
+    );
+
     if (passengerErrors.length > 0) {
       const firstError = passengerErrors[0];
-      const parts = firstError.field.split("_");
+      const parts = firstError.field?.split("_");
+      if (!parts || parts.length < 2) return;
       const passengerIndex = parseInt(parts[1]);
       const passenger = passengers[passengerIndex];
-      
+
       if (passenger) {
         setExpandedPassengerId(passenger.id);
         showNotification(
@@ -92,11 +103,14 @@ export default function PassengerForm({
           `Please fix validation errors for Passenger ${passenger.serial_no}`
         );
       } else {
-        showNotification("error", "Please fix the validation errors before proceeding");
+        showNotification(
+          "error",
+          "Please fix the validation errors before proceeding"
+        );
       }
       return;
     }
-    
+
     setActiveStep(3);
   };
 
@@ -106,7 +120,7 @@ export default function PassengerForm({
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    
+
     await updatePassenger(index, "additional_services", services);
   };
 
@@ -121,7 +135,9 @@ export default function PassengerForm({
   return (
     <div className="space-y-4">
       {passengers.map((passenger, index) => {
-        const hasAnyError = errors.some((e) => e.field.startsWith(`passenger_${index}_`));
+        const hasAnyError = errors.some((e) =>
+          e.field?.startsWith(`passenger_${index}_`)
+        );
 
         return (
           <div
@@ -136,21 +152,22 @@ export default function PassengerForm({
               className="flex items-center justify-between px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
               onClick={() => togglePassenger(passenger.id)}
             >
-              <h4 className={`text-sm font-medium flex items-center ${
-                hasAnyError ? "text-red-700" : "text-gray-900"
-              }`}>
+              <h4
+                className={`text-sm font-medium flex items-center ${
+                  hasAnyError ? "text-red-700" : "text-gray-900"
+                }`}
+              >
                 Passenger {passenger.serial_no}
                 {passenger.first_name || passenger.last_name
                   ? ` - ${passenger.first_name} ${passenger.last_name}`
                   : ""}
-                
                 {hasAnyError && (
                   <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     ! Fix errors
                   </span>
                 )}
               </h4>
-              
+
               <svg
                 className={`w-5 h-5 transition-transform duration-200 ${
                   expandedPassengerId === passenger.id ? "rotate-180" : ""
@@ -159,15 +176,18 @@ export default function PassengerForm({
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </div>
 
             {expandedPassengerId === passenger.id && (
               <div className="p-4 border-t border-gray-200 animate-in slide-in-from-top-2 duration-200">
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  
                   {/* 👤 FIRST NAME - SAME AS PASSENGERFORMUSER */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -176,10 +196,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.first_name || ""}
-                      onChange={(e) => updatePassenger(index, "first_name", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "first_name")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "first_name", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "first_name"
+                      )}`}
                       placeholder="First Name"
                     />
                     {getError(index, "first_name") && (
@@ -197,10 +220,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.last_name || ""}
-                      onChange={(e) => updatePassenger(index, "last_name", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "last_name")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "last_name", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "last_name"
+                      )}`}
                       placeholder="Last Name"
                     />
                     {getError(index, "last_name") && (
@@ -218,10 +244,13 @@ export default function PassengerForm({
                     <input
                       type="date"
                       value={passenger.date_of_birth || ""} // ✅ SIMPLE WORKING LOGIC
-                      onChange={(e) => updatePassenger(index, "date_of_birth", e.target.value)} // ✅ DIRECT UPDATE
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "date_of_birth")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "date_of_birth", e.target.value)
+                      } // ✅ DIRECT UPDATE
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "date_of_birth"
+                      )}`}
                     />
                     {getError(index, "date_of_birth") && (
                       <p className="text-sm text-red-600 mt-1">
@@ -237,10 +266,13 @@ export default function PassengerForm({
                     </label>
                     <select
                       value={passenger.gender || ""}
-                      onChange={(e) => updatePassenger(index, "gender", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "gender")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "gender", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "gender"
+                      )}`}
                     >
                       <option value="">Select Gender</option>
                       <option value="Male">Male</option>
@@ -262,10 +294,17 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.passport_number || ""}
-                      onChange={(e) => updatePassenger(index, "passport_number", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "passport_number")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "passport_number",
+                          e.target.value
+                        )
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "passport_number"
+                      )}`}
                       placeholder="Passport Number"
                     />
                     {getError(index, "passport_number") && (
@@ -283,11 +322,19 @@ export default function PassengerForm({
                     <input
                       type="date"
                       value={passenger.passport_expire || ""} // ✅ SIMPLE WORKING LOGIC
-                      onChange={(e) => updatePassenger(index, "passport_expire", e.target.value)} // ✅ DIRECT UPDATE
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "passport_expire",
+                          e.target.value
+                        )
+                      } // ✅ DIRECT UPDATE
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
                         getError(index, "passport_expire")
                           ? "border-red-500 bg-red-50"
-                          : getPassportExpiryColor(passenger.passport_expire || "")
+                          : getPassportExpiryColor(
+                              passenger.passport_expire || ""
+                            )
                       }`}
                     />
                     {getError(index, "passport_expire") && (
@@ -305,10 +352,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.nationality || ""}
-                      onChange={(e) => updatePassenger(index, "nationality", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "nationality")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "nationality", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "nationality"
+                      )}`}
                       placeholder="Nationality"
                     />
                     {getError(index, "nationality") && (
@@ -326,10 +376,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.roomType || ""}
-                      onChange={(e) => updatePassenger(index, "roomType", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "roomType")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "roomType", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "roomType"
+                      )}`}
                       placeholder="Single, Double, Triple, etc."
                     />
                     {getError(index, "roomType") && (
@@ -347,7 +400,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.room_allocation || ""}
-                      onChange={(e) => updatePassenger(index, "room_allocation", e.target.value)}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "room_allocation",
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Room number or allocation notes"
                     />
@@ -361,10 +420,13 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.hotel || ""}
-                      onChange={(e) => updatePassenger(index, "hotel", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "hotel")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "hotel", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "hotel"
+                      )}`}
                       placeholder="Hotel Name"
                     />
                     {getError(index, "hotel") && (
@@ -382,7 +444,9 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.additional_services?.join(", ") || ""}
-                      onChange={(e) => handleServicesChange(index, e.target.value)}
+                      onChange={(e) =>
+                        handleServicesChange(index, e.target.value)
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Vegetarian meal, extra bed, airport transfer, etc. (comma-separated)"
                     />
@@ -396,7 +460,9 @@ export default function PassengerForm({
                     <input
                       type="text"
                       value={passenger.allergy || ""}
-                      onChange={(e) => updatePassenger(index, "allergy", e.target.value)}
+                      onChange={(e) =>
+                        updatePassenger(index, "allergy", e.target.value)
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Peanuts, gluten, medication allergies, etc."
                     />
@@ -410,10 +476,13 @@ export default function PassengerForm({
                     <input
                       type="email"
                       value={passenger.email || ""}
-                      onChange={(e) => updatePassenger(index, "email", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "email")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "email", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "email"
+                      )}`}
                       placeholder="name@example.com"
                     />
                     {getError(index, "email") && (
@@ -431,10 +500,13 @@ export default function PassengerForm({
                     <input
                       type="tel"
                       value={passenger.phone || ""}
-                      onChange={(e) => updatePassenger(index, "phone", e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        getInputClasses(index, "phone")
-                      }`}
+                      onChange={(e) =>
+                        updatePassenger(index, "phone", e.target.value)
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
+                        index,
+                        "phone"
+                      )}`}
                       placeholder="+1 (555) 123-4567"
                     />
                     {getError(index, "phone") && (
@@ -452,7 +524,13 @@ export default function PassengerForm({
                     <input
                       type="tel"
                       value={passenger.emergency_phone || ""}
-                      onChange={(e) => updatePassenger(index, "emergency_phone", e.target.value)}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "emergency_phone",
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Emergency contact number"
                     />
@@ -466,13 +544,29 @@ export default function PassengerForm({
                     <input
                       type="file"
                       accept="image/*,.pdf"
-                      onChange={(e) => updatePassenger(index, "passport_upload", e.target.files?.[0])}
+                      onChange={(e) =>
+                        updatePassenger(
+                          index,
+                          "passport_upload",
+                          e.target.files?.[0]
+                        )
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     />
                     {passenger.passport_upload && (
                       <p className="text-sm text-green-600 mt-1 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
                         </svg>
                         Passport uploaded successfully
                       </p>
@@ -490,7 +584,7 @@ export default function PassengerForm({
                   >
                     Remove Passenger
                   </button>
-                  
+
                   {index === passengers.length - 1 && (
                     <button
                       type="button"
@@ -498,8 +592,18 @@ export default function PassengerForm({
                       className="inline-flex items-center px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed disabled:shadow-none"
                     >
                       Next Step
-                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <svg
+                        className="w-4 h-4 ml-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
                       </svg>
                     </button>
                   )}

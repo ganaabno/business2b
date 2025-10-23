@@ -8,7 +8,9 @@ export const cleanDateForDB = (dateValue: any): string | null => {
     dateValue === "" ||
     dateValue === " " ||
     (typeof dateValue === "string" && dateValue.trim() === "") ||
-    (typeof dateValue === "string" && !isNaN(Date.parse(dateValue)) && new Date(dateValue).toString() === "Invalid Date")
+    (typeof dateValue === "string" &&
+      !isNaN(Date.parse(dateValue)) &&
+      new Date(dateValue).toString() === "Invalid Date")
   ) {
     return null;
   }
@@ -24,7 +26,14 @@ export const cleanDateForDB = (dateValue: any): string | null => {
 };
 
 export const cleanValueForDB = (field: string, value: any): any => {
-  if (["date_of_birth", "passport_expire", "departure_date", "blacklisted_date"].includes(field)) {
+  if (
+    [
+      "date_of_birth",
+      "passport_expire",
+      "departure_date",
+      "blacklisted_date",
+    ].includes(field)
+  ) {
     return cleanDateForDB(value);
   }
   if (["created_at", "updated_at"].includes(field)) {
@@ -41,7 +50,7 @@ export const generatePassengerId = (): string => {
     return crypto.randomUUID();
   }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
+    const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
@@ -58,7 +67,10 @@ export const createNewPassenger = (
 
   const defaultRoomType = (() => {
     if (existingPassengers.length === 0) return "";
-    if (lastPassenger?.roomType === "Double" && existingPassengers.length % 2 === 1) {
+    if (
+      lastPassenger?.roomType === "Double" &&
+      existingPassengers.length % 2 === 1
+    ) {
       return "Double";
     }
     return "";
@@ -98,5 +110,10 @@ export const createNewPassenger = (
     is_blacklisted: false,
     blacklisted_date: null,
     notes: "",
+    tour_id: "",
+    passenger_number: "",
+    has_sub_passengers: false,
+    sub_passenger_count: 0,
+    main_passenger_id: "",
   };
 };

@@ -18,8 +18,12 @@ function formatDisplayDate(s: string | undefined): string {
   if (!s) return "N/A";
   const d = new Date(s);
   return !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-    : s;
+    ? d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "Invalid date";
 }
 
 export default function TourSelection({
@@ -40,7 +44,13 @@ export default function TourSelection({
         continue;
       }
       const normalizedTitle = tour.title.trim().toLowerCase();
-      const tourDates = tour.dates?.length ? tour.dates : tour.departure_date ? [tour.departure_date] : [];
+      // Normalize dates to string[], trusting useTours to provide valid dates
+      const tourDates =
+        Array.isArray(tour.dates) && tour.dates.length
+          ? tour.dates
+          : tour.departure_date
+          ? [tour.departure_date]
+          : [new Date().toISOString().split("T")[0]]; // Fallback to today
       if (!map.has(normalizedTitle)) {
         map.set(normalizedTitle, {
           ...tour,
@@ -58,13 +68,16 @@ export default function TourSelection({
       }
     }
     const result = Array.from(map.values());
-    console.log("Merged tours:", result.map(t => ({
-      id: t.id,
-      title: t.title,
-      seats: t.seats,
-      available_seats: t.available_seats,
-      dates: t.dates,
-    })));
+    console.log(
+      "Merged tours:",
+      result.map((t) => ({
+        id: t.id,
+        title: t.title,
+        seats: t.seats,
+        available_seats: t.available_seats,
+        dates: t.dates,
+      }))
+    );
     return result;
   }, [tours]);
 
@@ -72,29 +85,43 @@ export default function TourSelection({
     console.log("TourSelection rendered with props:", {
       selectedTour,
       departure_date,
-      tours: tours.map(t => ({
+      tours: tours.map((t) => ({
         id: t.id,
         title: t.title,
         seats: t.seats,
         available_seats: t.available_seats,
+        departure_date: t.departure_date,
+        dates: t.dates,
       })),
     });
-    console.log("Merged tours titles and seats:", mergedTours.map(tour => ({
-      title: tour.title,
-      seats: tour.seats,
-      available_seats: tour.available_seats,
-    })));
+    console.log(
+      "Merged tours titles and seats:",
+      mergedTours.map((tour) => ({
+        title: tour.title,
+        seats: tour.seats,
+        available_seats: tour.available_seats,
+        dates: tour.dates,
+      }))
+    );
   }, [tours, selectedTour, departure_date, mergedTours]);
 
   const selectedTourData = useMemo(() => {
-    const tour = mergedTours.find((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase());
-    console.log("Selected tour data:", tour ? {
-      id: tour.id,
-      title: tour.title,
-      seats: tour.seats,
-      available_seats: tour.available_seats,
-      dates: tour.dates,
-    } : null);
+    const tour = mergedTours.find(
+      (tour) =>
+        tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase()
+    );
+    console.log(
+      "Selected tour data:",
+      tour
+        ? {
+            id: tour.id,
+            title: tour.title,
+            seats: tour.seats,
+            available_seats: tour.available_seats,
+            dates: tour.dates,
+          }
+        : null
+    );
     return tour;
   }, [mergedTours, selectedTour]);
 
@@ -110,17 +137,23 @@ export default function TourSelection({
       </h3>
 
       {mergedTours.length === 0 ? (
-        <p className="text-red-500 text-sm mb-4">No tours available. Please contact support.</p>
+        <p className="text-red-500 text-sm mb-4">
+          No tours available. Please contact support to add tours.
+        </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
-            <label htmlFor="tourSelect" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="tourSelect"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Tour
             </label>
             <select
               id="tourSelect"
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${hasTourError ? "border-red-300" : "border-gray-300"
-                }`}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                hasTourError ? "border-red-300" : "border-gray-300"
+              }`}
               value={selectedTour}
               onChange={(e) => {
                 const newTour = e.target.value.trim();
@@ -139,7 +172,9 @@ export default function TourSelection({
                 <option key={`${tour.title}-${index}`} value={tour.title}>
                   {tour.title}{" "}
                   {showAvailableSeats
-                    ? `(${tour.available_seats ?? tour.seats ?? "No limit"} seats)`
+                    ? `(${
+                        tour.available_seats ?? tour.seats ?? "No limit"
+                      } seats)`
                     : ""}
                 </option>
               ))}
@@ -152,15 +187,19 @@ export default function TourSelection({
           </div>
 
           <div>
-            <label htmlFor="dateSelect" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="dateSelect"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Departure Date
             </label>
             <div className="relative">
               <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="dateSelect"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${hasDepartureError ? "border-red-300" : "border-gray-300"
-                  }`}
+                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  hasDepartureError ? "border-red-300" : "border-gray-300"
+                }`}
                 value={departure_date}
                 onChange={(e) => {
                   console.log("Departure date selected:", e.target.value);
@@ -168,19 +207,31 @@ export default function TourSelection({
                 }}
                 disabled={!selectedTour || !hasDates}
                 aria-invalid={hasDepartureError}
-                aria-describedby={hasDepartureError ? "departure-error" : undefined}
+                aria-describedby={
+                  hasDepartureError ? "departure-error" : undefined
+                }
               >
                 <option value="" disabled>
                   {selectedTour ? "Select a date" : "Select a tour first"}
                 </option>
                 {hasDates &&
                   selectedTourData!.dates
-                    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime()) // Sort dates chronologically
-                    .map((d, index) => (
-                      <option key={`${d}-${index}`} value={d}>
-                        {formatDisplayDate(d)}
-                      </option>
-                    ))}
+                    .sort(
+                      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+                    )
+                    .map((d, index) => {
+                      console.log(
+                        "Rendering date:",
+                        d,
+                        "Formatted:",
+                        formatDisplayDate(d)
+                      );
+                      return (
+                        <option key={`${d}-${index}`} value={d}>
+                          {formatDisplayDate(d)}
+                        </option>
+                      );
+                    })}
               </select>
             </div>
             {hasDepartureError && (
@@ -189,8 +240,9 @@ export default function TourSelection({
               </p>
             )}
             {selectedTour && !hasDates && (
-              <p className="text-red-500 text-xs mt-1">
-                No departure dates available for this tour. Contact support.
+              <p className="text-yellow-500 text-xs mt-1">
+                No valid departure dates for this tour. Please try another tour
+                or contact support to update tour dates.
               </p>
             )}
           </div>
@@ -199,25 +251,33 @@ export default function TourSelection({
 
       {selectedTourData && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h4 className="text-sm font-medium text-gray-900 mb-3">Tour Details</h4>
+          <h4 className="text-sm font-medium text-gray-900 mb-3">
+            Tour Details
+          </h4>
           <div className="space-y-2">
             <p className="text-sm text-gray-600">
-              <span className="font-medium">Title:</span> {selectedTourData.title}
+              <span className="font-medium">Title:</span>{" "}
+              {selectedTourData.title}
             </p>
-            {selectedTourData.name && selectedTourData.name !== selectedTourData.title && (
-              <p className="text-sm text-gray-600">
-                <span className="font-medium">Name:</span> {selectedTourData.name}
-              </p>
-            )}
+            {selectedTourData.name &&
+              selectedTourData.name !== selectedTourData.title && (
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Name:</span>{" "}
+                  {selectedTourData.name}
+                </p>
+              )}
             {selectedTourData.description && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Description:</span> {selectedTourData.description}
+                <span className="font-medium">Description:</span>{" "}
+                {selectedTourData.description}
               </p>
             )}
             {showAvailableSeats && (
               <p className="text-sm text-gray-600">
                 <span className="font-medium">Available Seats:</span>{" "}
-                {selectedTourData.available_seats ?? selectedTourData.seats ?? "No limit"}
+                {selectedTourData.available_seats ??
+                  selectedTourData.seats ??
+                  "No limit"}
               </p>
             )}
             {selectedTourData.hotels && selectedTourData.hotels.length > 0 && (
@@ -228,26 +288,29 @@ export default function TourSelection({
                 </div>
                 <ul className="ml-5 list-disc">
                   {selectedTourData.hotels.map((hotel, index) => (
-                    <li key={index} className="text-sm text-gray-600">{hotel}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {selectedTourData.services && selectedTourData.services.length > 0 && (
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center">
-                  <Package className="w-4 h-4 mr-1" />
-                  <span className="font-medium">Services:</span>
-                </div>
-                <ul className="ml-5 list-disc">
-                  {selectedTourData.services.map((service, index) => (
                     <li key={index} className="text-sm text-gray-600">
-                      {service.name} (${service.price})
+                      {hotel}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
+            {selectedTourData.services &&
+              selectedTourData.services.length > 0 && (
+                <div className="text-sm text-gray-600">
+                  <div className="flex items-center">
+                    <Package className="w-4 h-4 mr-1" />
+                    <span className="font-medium">Services:</span>
+                  </div>
+                  <ul className="ml-5 list-disc">
+                    {selectedTourData.services.map((service, index) => (
+                      <li key={index} className="text-sm text-gray-600">
+                        {service.name} (${service.price})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
           </div>
         </div>
       )}
@@ -255,7 +318,9 @@ export default function TourSelection({
       <div className="flex justify-end">
         <button
           onClick={() => setActiveStep(2)}
-          disabled={!selectedTour || !departure_date || mergedTours.length === 0}
+          disabled={
+            !selectedTour || !departure_date || mergedTours.length === 0
+          }
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >
           Continue to Passengers

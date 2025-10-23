@@ -1,7 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabaseClient";
-import type { Passenger, ValidationError, Tour } from "../types/type";
-import { CheckCircle, XCircle, ChevronRight, ChevronLeft, Users, AlertCircle } from "lucide-react";
+import type {
+  Passenger,
+  ValidationError,
+  Tour,
+  OrderStatus,
+} from "../types/type";
+import { VALID_ORDER_STATUSES } from "../types/type";
+import {
+  CheckCircle,
+  XCircle,
+  ChevronRight,
+  ChevronLeft,
+  Users,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 interface PassengerWithUser extends Passenger {
   registeredBy: string;
@@ -22,9 +37,11 @@ interface PassengerRequestsProps {
   showNotification: (type: "success" | "error", message: string) => void;
 }
 
-export default function PassengerRequests({ showNotification }: PassengerRequestsProps) {
+export default function PassengerRequests({
+  showNotification,
+}: PassengerRequestsProps) {
   const [passengers, setPassengers] = useState<PassengerWithUser[]>([]);
-  const [loading, setLoading] = useState(true); // Initialize as true to show loading initially
+  const [loading, setLoading] = useState(true);
   const [showConfirmModal, setShowConfirmModal] = useState<{
     action: "approve" | "reject" | null;
     passengerId: string | null;
@@ -32,21 +49,47 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
   } | null>(null);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedPassenger, setExpandedPassenger] = useState<string | null>(
+    null
+  );
   const itemsPerPage = 10;
-  const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null
+  );
 
   const formatDisplayDate = (s: string | undefined): string => {
-    if (!s) return "";
+    if (!s) return "Not provided";
     const d = new Date(s);
     return !Number.isNaN(d.getTime())
-      ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+      ? d.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
       : s;
+  };
+
+  const getPassportExpiryColor = (expiryDate: string | null): string => {
+    if (!expiryDate) return "text-gray-500";
+    const expiry = new Date(expiryDate);
+    const today = new Date();
+    const monthsRemaining =
+      (expiry.getFullYear() - today.getFullYear()) * 12 +
+      (expiry.getMonth() - today.getMonth());
+    if (monthsRemaining <= 0) return "text-red-600 bg-red-50 px-2 py-1 rounded";
+    if (monthsRemaining <= 1) return "text-red-500 bg-red-50 px-2 py-1 rounded";
+    if (monthsRemaining <= 3)
+      return "text-orange-500 bg-orange-50 px-2 py-1 rounded";
+    if (monthsRemaining <= 7)
+      return "text-yellow-500 bg-yellow-50 px-2 py-1 rounded";
+    return "text-green-600 bg-green-50 px-2 py-1 rounded";
   };
 
   const fetchPassengerRequests = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
       const userId = userData?.user?.id || "unknown";
       let userRole = userData?.user?.role || "authenticated";
 
@@ -56,7 +99,9 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
       });
 
       if (userError) {
-        console.error("fetchPassengerRequests: Failed to get user", { userError });
+        console.error("fetchPassengerRequests: Failed to get user", {
+          userError,
+        });
         showNotification("error", "Failed to authenticate user");
         setErrors([{ message: "Failed to authenticate user" }]);
         return;
@@ -69,18 +114,28 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
           .eq("id", userId)
           .single();
         if (customUserError) {
-          console.warn("fetchPassengerRequests: Failed to fetch custom user role", {
-            customUserError,
-          });
+          console.warn(
+            "fetchPassengerRequests: Failed to fetch custom user role",
+            {
+              customUserError,
+            }
+          );
         } else if (customUser?.role) {
           userRole = customUser.role;
-          console.log("fetchPassengerRequests: Using custom user role", { userRole });
+          console.log("fetchPassengerRequests: Using custom user role", {
+            userRole,
+          });
         }
       }
 
       if (!["manager", "admin", "superadmin"].includes(userRole)) {
-        console.warn("fetchPassengerRequests: User is not authorized", { userRole });
-        showNotification("error", "You are not authorized to view passenger requests");
+        console.warn("fetchPassengerRequests: User is not authorized", {
+          userRole,
+        });
+        showNotification(
+          "error",
+          "You are not authorized to view passenger requests"
+        );
         setErrors([{ message: "Unauthorized access to passenger requests" }]);
         return;
       }
@@ -92,14 +147,25 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         .order("created_at", { ascending: false });
 
       if (rawError) {
-        console.error("fetchPassengerRequests: Supabase error on raw fetch", { rawError });
-        showNotification("error", `Failed to fetch passenger requests: ${rawError.message}`);
-        setErrors([{ message: `Failed to fetch passenger requests: ${rawError.message}` }]);
+        console.error("fetchPassengerRequests: Supabase error on raw fetch", {
+          rawError,
+        });
+        showNotification(
+          "error",
+          `Failed to fetch passenger requests: ${rawError.message}`
+        );
+        setErrors([
+          {
+            message: `Failed to fetch passenger requests: ${rawError.message}`,
+          },
+        ]);
         return;
       }
 
       if (!rawData || rawData.length === 0) {
-        console.log("fetchPassengerRequests: No passenger requests found in table");
+        console.log(
+          "fetchPassengerRequests: No passenger requests found in table"
+        );
         setPassengers([]);
       } else {
         console.log("fetchPassengerRequests: Raw passenger_requests data", {
@@ -110,7 +176,8 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
 
       const { data, error } = await supabase
         .from("passenger_requests")
-        .select(`
+        .select(
+          `
           *,
           orders (
             id,
@@ -143,17 +210,26 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             email,
             username
           )
-        `)
+        `
+        )
         .in("status", ["pending", "rejected"])
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("fetchPassengerRequests: Supabase error on full fetch", { error });
-        showNotification("error", `Failed to fetch passenger requests with joins: ${error.message}`);
-        setErrors([{ message: `Failed to fetch passenger requests: ${error.message}` }]);
+        console.error("fetchPassengerRequests: Supabase error on full fetch", {
+          error,
+        });
+        showNotification(
+          "error",
+          `Failed to fetch passenger requests with joins: ${error.message}`
+        );
+        setErrors([
+          { message: `Failed to fetch passenger requests: ${error.message}` },
+        ]);
         const passengerData = rawData.map((p: any) => ({
           ...p,
-          registeredBy: p.users?.username || p.users?.email || p.user_id || "Unknown User",
+          registeredBy:
+            p.users?.username || p.users?.email || p.user_id || "Unknown User",
           orderDepartureDate: p.departure_date || "",
           orderTourTitle: p.tour_title || "Unknown Tour",
           orders: null,
@@ -166,7 +242,9 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
       }
 
       if (!data || data.length === 0) {
-        console.log("fetchPassengerRequests: No passenger requests found with joins");
+        console.log(
+          "fetchPassengerRequests: No passenger requests found with joins"
+        );
         setPassengers([]);
       } else {
         console.log("fetchPassengerRequests: Raw data with joins", {
@@ -177,38 +255,44 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
 
       const passengerData = data.map((p: any) => ({
         ...p,
-        registeredBy: p.orders?.createdBy || p.users?.username || p.users?.email || p.user_id || "Unknown User",
+        registeredBy:
+          p.orders?.createdBy ||
+          p.users?.username ||
+          p.users?.email ||
+          p.user_id ||
+          "Unknown User",
         orderDepartureDate: p.orders?.departureDate || p.departure_date || "",
-        orderTourTitle: p.orders?.tours?.title || p.tour_title || "Unknown Tour",
+        orderTourTitle:
+          p.orders?.tours?.title || p.tour_title || "Unknown Tour",
         orders: p.orders
           ? {
-            id: p.orders.id,
-            tour_id: p.orders.tour_id,
-            departureDate: p.orders.departureDate,
-            createdBy: p.orders.createdBy,
-            user_id: p.orders.user_id,
-            tours: p.orders.tours
-              ? {
-                id: p.orders.tours.id,
-                title: p.orders.tours.title,
-                available_seats: p.orders.tours.available_seats ?? 0,
-                departuredate: p.orders.tours.departuredate || "",
-                status: p.orders.tours.status,
-                show_in_provider: p.orders.tours.show_in_provider,
-                description: p.orders.tours.description || "",
-                creator_name: p.orders.tours.creator_name || "",
-                tour_number: p.orders.tours.tour_number || "",
-                name: p.orders.tours.name || p.orders.tours.title,
-                dates: p.orders.tours.dates || [],
-                hotels: p.orders.tours.hotels || [],
-                services: p.orders.tours.services || [],
-                created_by: p.orders.tours.created_by || "",
-                created_at: p.orders.tours.created_at || "",
-                updated_at: p.orders.tours.updated_at || "",
-                base_price: p.orders.tours.base_price ?? 0,
-              }
-              : null,
-          }
+              id: p.orders.id,
+              tour_id: p.orders.tour_id,
+              departureDate: p.orders.departureDate,
+              createdBy: p.orders.createdBy,
+              user_id: p.orders.user_id,
+              tours: p.orders.tours
+                ? {
+                    id: p.orders.tours.id,
+                    title: p.orders.tours.title,
+                    available_seats: p.orders.tours.available_seats ?? 0,
+                    departuredate: p.orders.tours.departuredate || "",
+                    status: p.orders.tours.status,
+                    show_in_provider: p.orders.tours.show_in_provider,
+                    description: p.orders.tours.description || "",
+                    creator_name: p.orders.tours.creator_name || "",
+                    tour_number: p.orders.tours.tour_number || "",
+                    name: p.orders.tours.name || p.orders.tours.title,
+                    dates: p.orders.tours.dates || [],
+                    hotels: p.orders.tours.hotels || [],
+                    services: p.orders.tours.services || [],
+                    created_by: p.orders.tours.created_by || "",
+                    created_at: p.orders.tours.created_at || "",
+                    updated_at: p.orders.tours.updated_at || "",
+                    base_price: p.orders.tours.base_price ?? 0,
+                  }
+                : null,
+            }
           : null,
       })) as PassengerWithUser[];
 
@@ -251,7 +335,11 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         }
       )
       .subscribe((status, error) => {
-        console.log("Passenger requests subscription status:", status, error ? `Error: ${error.message}` : "");
+        console.log(
+          "Passenger requests subscription status:",
+          status,
+          error ? `Error: ${error.message}` : ""
+        );
         if (error) {
           showNotification("error", `Subscription error: ${error.message}`);
           setErrors([{ message: `Subscription error: ${error.message}` }]);
@@ -267,47 +355,147 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
     };
   }, [fetchPassengerRequests]);
 
-  const updateOrderStatus = async (orderId: string) => {
+  const updateOrderStatus = async (orderId: string, currentUserId: string) => {
     if (!orderId) {
       showNotification("error", "Invalid order ID");
-      console.log("updateOrderStatus: Invalid order ID", { orderId });
+      console.error("updateOrderStatus: Invalid order ID", { orderId });
       return;
     }
 
-    const { data: passengers, error } = await supabase
+    // Check if order exists
+    const { data: orderCheck, error: orderCheckError } = await supabase
+      .from("orders")
+      .select("id, status")
+      .eq("id", orderId)
+      .single();
+    if (orderCheckError || !orderCheck) {
+      console.error("updateOrderStatus: Order not found or error", {
+        orderId,
+        orderCheckError,
+      });
+      showNotification("error", `Order ${orderId} not found`);
+      return;
+    }
+    console.log("updateOrderStatus: Order exists", { order: orderCheck });
+
+    const { data: passengers, error: passengerError } = await supabase
       .from("passenger_requests")
       .select("status")
       .eq("order_id", orderId);
-    if (error) {
-      console.error("updateOrderStatus: Failed to fetch passengers", { error });
-      showNotification("error", `Failed to fetch passengers: ${error.message}`);
+    if (passengerError) {
+      console.error("updateOrderStatus: Failed to fetch passengers", {
+        passengerError,
+        orderId,
+      });
+      showNotification(
+        "error",
+        `Failed to fetch passengers: ${passengerError.message}`
+      );
+      return;
+    }
+
+    if (!passengers.length) {
+      console.warn(
+        "updateOrderStatus: No passengers found, setting status to pending",
+        { orderId }
+      );
+      showNotification("error", "No passengers found for this order");
       return;
     }
 
     const statuses = passengers.map((p) => p.status);
-    const newStatus =
-      statuses.every((s) => s === "active") ? "approved" :
-        statuses.some((s) => s === "active") ? "partially_approved" :
-          statuses.every((s) => s === "rejected") ? "rejected" :
-            "pending";
+    console.log("updateOrderStatus: Passenger statuses", { orderId, statuses });
 
-    console.log("updateOrderStatus: Calculated status", { orderId, statuses, newStatus });
+    const newStatus: OrderStatus = statuses.every((s) => s === "active")
+      ? "approved"
+      : statuses.some((s) => s === "active")
+      ? "partially_approved"
+      : statuses.every((s) => s === "rejected")
+      ? "rejected"
+      : "pending";
+    console.log("updateOrderStatus: Calculated newStatus", {
+      orderId,
+      newStatus,
+    });
 
-    const { error: updateError } = await supabase
-      .from("orders")
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq("id", orderId);
-    if (updateError) {
-      console.error("updateOrderStatus: Failed to update order", { updateError });
-      showNotification("error", `Failed to update order status: ${updateError.message}`);
-    } else {
-      console.log("updateOrderStatus: Order updated", { orderId, newStatus });
+    if (!VALID_ORDER_STATUSES.includes(newStatus)) {
+      console.error("updateOrderStatus: Invalid status value", {
+        orderId,
+        newStatus,
+        validStatuses: VALID_ORDER_STATUSES,
+      });
+      showNotification(
+        "error",
+        `Invalid order status: ${newStatus}. Allowed statuses: ${VALID_ORDER_STATUSES.join(
+          ", "
+        )}`
+      );
+      return;
     }
+
+    const updateData = {
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+      edited_by: currentUserId,
+    };
+    console.log("updateOrderStatus: Attempting to update order", {
+      orderId,
+      updateData,
+    });
+
+    const { data, error: updateError } = await supabase
+      .from("orders")
+      .update(updateData)
+      .eq("id", orderId)
+      .select();
+    if (updateError) {
+      console.error("updateOrderStatus: Failed to update order", {
+        updateError,
+        details: updateError.details,
+        code: updateError.code,
+        message: updateError.message,
+        updateData,
+      });
+      if (updateError.code === "23514") {
+        showNotification(
+          "error",
+          `Invalid status "${newStatus}". Allowed statuses: ${VALID_ORDER_STATUSES.join(
+            ", "
+          )}`
+        );
+      } else {
+        showNotification(
+          "error",
+          `Failed to update order status: ${updateError.message}`
+        );
+      }
+      return;
+    }
+
+    console.log("updateOrderStatus: Order updated successfully", {
+      orderId,
+      newStatus,
+      data,
+    });
+    showNotification("success", `Order ${orderId} updated to ${newStatus}`);
+    return data;
   };
 
   const approvePassenger = async (passengerId: string) => {
     setLoading(true);
     try {
+      // Get current user
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+      const currentUserId = userData?.user?.id;
+      if (userError || !currentUserId) {
+        console.error("approvePassenger: Failed to get current user", {
+          userError,
+        });
+        showNotification("error", "Failed to authenticate user");
+        return;
+      }
+
       const passenger = passengers.find((p) => p.id === passengerId);
       if (!passenger) {
         showNotification("error", "Passenger not found");
@@ -324,19 +512,32 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("approvePassenger: Failed to fetch tour", { tourError });
-            showNotification("error", `Failed to fetch tour: ${tourError.message}`);
+            console.error("approvePassenger: Failed to fetch tour", {
+              tourError,
+            });
+            showNotification(
+              "error",
+              `Failed to fetch tour: ${tourError.message}`
+            );
             return;
           }
-          if (tourData.available_seats !== undefined && tourData.available_seats <= 0) {
-            showNotification("error", "Cannot approve passenger: No seats available");
-            console.log("approvePassenger: No seats available", { tourId, available_seats: tourData.available_seats });
+          if (
+            tourData.available_seats !== undefined &&
+            tourData.available_seats <= 0
+          ) {
+            showNotification(
+              "error",
+              "Cannot approve passenger: No seats available"
+            );
+            console.log("approvePassenger: No seats available", {
+              tourId,
+              available_seats: tourData.available_seats,
+            });
             return;
           }
         }
       }
 
-      // Clean passenger object to match passengers table schema
       const cleanedPassenger: Passenger = {
         id: passenger.id,
         order_id: passenger.order_id,
@@ -372,6 +573,10 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         notes: passenger.notes,
         seat_count: passenger.seat_count,
         ...(passenger.createdBy ? { createdBy: passenger.createdBy } : {}),
+        main_passenger_id: passenger.main_passenger_id,
+        sub_passenger_count: passenger.sub_passenger_count,
+        has_sub_passengers: passenger.has_sub_passengers,
+        passenger_number: "",
       };
 
       console.log("approvePassenger: Attempting to insert into passengers", {
@@ -389,7 +594,10 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
           details: insertError.details,
           code: insertError.code,
         });
-        showNotification("error", `Failed to approve passenger: ${insertError.message}`);
+        showNotification(
+          "error",
+          `Failed to approve passenger: ${insertError.message}`
+        );
         return;
       }
 
@@ -398,8 +606,16 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         .delete()
         .eq("id", passengerId);
       if (deleteError) {
-        console.error("approvePassenger: Failed to delete from passenger_requests", { deleteError });
-        showNotification("error", `Failed to remove passenger from requests: ${deleteError.message}`);
+        console.error(
+          "approvePassenger: Failed to delete from passenger_requests",
+          {
+            deleteError,
+          }
+        );
+        showNotification(
+          "error",
+          `Failed to remove passenger from requests: ${deleteError.message}`
+        );
         return;
       }
 
@@ -412,27 +628,52 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("approvePassenger: Failed to fetch tour", { tourError });
-            showNotification("error", `Failed to fetch tour: ${tourError.message}`);
+            console.error("approvePassenger: Failed to fetch tour", {
+              tourError,
+            });
+            showNotification(
+              "error",
+              `Failed to fetch tour: ${tourError.message}`
+            );
             return;
           }
-          if (tourData.available_seats !== undefined && tourData.available_seats > 0) {
+          if (
+            tourData.available_seats !== undefined &&
+            tourData.available_seats > 0
+          ) {
             const { error: updateError } = await supabase
               .from("tours")
-              .update({ available_seats: tourData.available_seats - 1, updated_at: new Date().toISOString() })
+              .update({
+                available_seats: tourData.available_seats - 1,
+                updated_at: new Date().toISOString(),
+              })
               .eq("id", tourId);
             if (updateError) {
-              console.error("approvePassenger: Failed to update tour seats", { updateError });
-              showNotification("error", `Failed to update seats: ${updateError.message}`);
+              console.error("approvePassenger: Failed to update tour seats", {
+                updateError,
+              });
+              showNotification(
+                "error",
+                `Failed to update seats: ${updateError.message}`
+              );
               return;
             }
-            console.log("approvePassenger: Tour seats updated", { tourId, new_seats: tourData.available_seats - 1 });
+            console.log("approvePassenger: Tour seats updated", {
+              tourId,
+              new_seats: tourData.available_seats - 1,
+            });
           }
         }
       }
 
-      await updateOrderStatus(String(passenger.orders?.id || passenger.order_id || ""));
-      showNotification("success", "Passenger approved and moved to passengers table");
+      await updateOrderStatus(
+        String(passenger.orders?.id || passenger.order_id || ""),
+        currentUserId
+      );
+      showNotification(
+        "success",
+        "Passenger approved and moved to passengers table"
+      );
       console.log("approvePassenger: Success", { passengerId });
       await fetchPassengerRequests();
     } catch (error) {
@@ -449,6 +690,18 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
   const rejectPassenger = async (passengerId: string) => {
     setLoading(true);
     try {
+      // Get current user
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+      const currentUserId = userData?.user?.id;
+      if (userError || !currentUserId) {
+        console.error("rejectPassenger: Failed to get current user", {
+          userError,
+        });
+        showNotification("error", "Failed to authenticate user");
+        return;
+      }
+
       const passenger = passengers.find((p) => p.id === passengerId);
       if (!passenger) {
         showNotification("error", "Passenger not found");
@@ -465,21 +718,37 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("rejectPassenger: Failed to fetch tour", { tourError });
-            showNotification("error", `Failed to fetch tour: ${tourError.message}`);
+            console.error("rejectPassenger: Failed to fetch tour", {
+              tourError,
+            });
+            showNotification(
+              "error",
+              `Failed to fetch tour: ${tourError.message}`
+            );
             return;
           }
           if (tourData.available_seats !== undefined) {
             const { error: updateError } = await supabase
               .from("tours")
-              .update({ available_seats: tourData.available_seats + 1, updated_at: new Date().toISOString() })
+              .update({
+                available_seats: tourData.available_seats + 1,
+                updated_at: new Date().toISOString(),
+              })
               .eq("id", tourId);
             if (updateError) {
-              console.error("rejectPassenger: Failed to update tour seats", { updateError });
-              showNotification("error", `Failed to update seats: ${updateError.message}`);
+              console.error("rejectPassenger: Failed to update tour seats", {
+                updateError,
+              });
+              showNotification(
+                "error",
+                `Failed to update seats: ${updateError.message}`
+              );
               return;
             }
-            console.log("rejectPassenger: Tour seats updated", { tourId, new_seats: tourData.available_seats + 1 });
+            console.log("rejectPassenger: Tour seats updated", {
+              tourId,
+              new_seats: tourData.available_seats + 1,
+            });
           }
         }
       }
@@ -495,11 +764,17 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
           details: error.details,
           code: error.code,
         });
-        showNotification("error", `Failed to reject passenger: ${error.message}`);
+        showNotification(
+          "error",
+          `Failed to reject passenger: ${error.message}`
+        );
         return;
       }
 
-      await updateOrderStatus(String(passenger.orders?.id || passenger.order_id || ""));
+      await updateOrderStatus(
+        String(passenger.orders?.id || passenger.order_id || ""),
+        currentUserId
+      );
       showNotification("success", "Passenger rejected successfully");
       console.log("rejectPassenger: Success", { passengerId });
       await fetchPassengerRequests();
@@ -525,6 +800,12 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
     setShowConfirmModal(null);
   };
 
+  const togglePassengerDetails = (passengerId: string) => {
+    setExpandedPassenger(
+      expandedPassenger === passengerId ? null : passengerId
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-5xl mx-auto">
@@ -532,9 +813,13 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <Users className="w-8 h-8 text-slate-700" />
-            <h1 className="text-3xl font-light text-slate-800">Passenger Requests</h1>
+            <h1 className="text-3xl font-light text-slate-800">
+              Passenger Requests
+            </h1>
           </div>
-          <p className="text-slate-500 text-sm ml-11">Manage and review passenger applications</p>
+          <p className="text-slate-500 text-sm ml-11">
+            Manage and review passenger applications
+          </p>
         </div>
 
         {/* Loading State */}
@@ -551,7 +836,10 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         {!loading && errors.length > 0 && (
           <div className="mb-6 space-y-2">
             {errors.map((error, idx) => (
-              <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+              <div
+                key={idx}
+                className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3"
+              >
                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <p className="text-red-700 text-sm">{error.message}</p>
               </div>
@@ -563,80 +851,362 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         {!loading && passengers.length === 0 && errors.length === 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-16 text-center">
             <Users className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-700 mb-2">Currently no requests here...</h3>
-            <p className="text-slate-500 text-sm">There are no pending or rejected passenger requests to review at the moment.</p>
+            <h3 className="text-lg font-medium text-slate-700 mb-2">
+              Currently no requests here...
+            </h3>
+            <p className="text-slate-500 text-sm">
+              There are no pending or rejected passenger requests to review at
+              the moment.
+            </p>
           </div>
         )}
 
         {/* Passenger Cards */}
         {!loading && passengers.length > 0 && (
           <div className="space-y-3 mb-6">
-            {passengers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((passenger) => (
-              <div
-                key={passenger.id}
-                className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-200"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-medium text-slate-800 mb-1">{passenger.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <span>{passenger.orderTourTitle}</span>
-                      <span className="text-slate-400">•</span>
-                      <span>{formatDisplayDate(passenger.orderDepartureDate)}</span>
+            {passengers
+              .slice(
+                (currentPage - 1) * itemsPerPage,
+                currentPage * itemsPerPage
+              )
+              .map((passenger) => (
+                <div
+                  key={passenger.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-200"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-medium text-slate-800">
+                          {passenger.name}
+                        </h3>
+                        <button
+                          onClick={() => togglePassengerDetails(passenger.id)}
+                          className="text-slate-500 hover:text-slate-700"
+                        >
+                          {expandedPassenger === passenger.id ? (
+                            <ChevronUp className="w-5 h-5" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <span>{passenger.orderTourTitle}</span>
+                        <span className="text-slate-400">•</span>
+                        <span>
+                          {formatDisplayDate(passenger.orderDepartureDate)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    {/* Status Badge */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500 uppercase tracking-wide">Status:</span>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${passenger.status === 'active'
-                            ? 'bg-green-100 text-green-700'
-                            : passenger.status === 'rejected'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-amber-100 text-amber-700'
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 uppercase tracking-wide">
+                          Status:
+                        </span>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            passenger.status === "active"
+                              ? "bg-green-100 text-green-700"
+                              : passenger.status === "rejected"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-amber-100 text-amber-700"
                           }`}
-                      >
-                        {passenger.status}
-                      </span>
-                    </div>
+                        >
+                          {passenger.status}
+                        </span>
+                      </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() =>
-                          setShowConfirmModal({
-                            action: "approve",
-                            passengerId: passenger.id,
-                            message: `Approve passenger ${passenger.name}?`,
-                          })
-                        }
-                        disabled={loading || passenger.status === "active"}
-                        className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
-                        title="Approve"
-                      >
-                        <CheckCircle className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() =>
-                          setShowConfirmModal({
-                            action: "reject",
-                            passengerId: passenger.id,
-                            message: `Reject passenger ${passenger.name}?`,
-                          })
-                        }
-                        disabled={loading || passenger.status === "rejected"}
-                        className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
-                        title="Reject"
-                      >
-                        <XCircle className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() =>
+                            setShowConfirmModal({
+                              action: "approve",
+                              passengerId: passenger.id,
+                              message: `Approve passenger ${passenger.name}?`,
+                            })
+                          }
+                          disabled={loading || passenger.status === "active"}
+                          className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                          title="Approve"
+                        >
+                          <CheckCircle className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setShowConfirmModal({
+                              action: "reject",
+                              passengerId: passenger.id,
+                              message: `Reject passenger ${passenger.name}?`,
+                            })
+                          }
+                          disabled={loading || passenger.status === "rejected"}
+                          className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                          title="Reject"
+                        >
+                          <XCircle className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Expanded Passenger Details */}
+                  {expandedPassenger === passenger.id && (
+                    <div className="mt-4 border-t border-slate-200 pt-4 space-y-4">
+                      {/* Sub-Passenger Information */}
+                      {!passenger.main_passenger_id && (
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">
+                            Sub-Passengers
+                          </h4>
+                          <p className="text-sm text-gray-600">
+                            Has Sub-Passengers:{" "}
+                            {passenger.has_sub_passengers ? "Yes" : "No"}
+                          </p>
+                          {passenger.has_sub_passengers && (
+                            <p className="text-sm text-gray-600">
+                              Number of Sub-Passengers:{" "}
+                              {passenger.sub_passenger_count || 0}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Personal Information */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Personal Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Serial No
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.serial_no || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              First Name
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.first_name || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Last Name
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.last_name || "Not provided"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contact Information */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Contact Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Email
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.email || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Phone
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.phone || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Emergency Phone
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.emergency_phone || "Not provided"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Demographics */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Personal
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Date of Birth
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {formatDisplayDate(
+                                passenger.date_of_birth ?? undefined
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Age
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.age != null
+                                ? passenger.age
+                                : "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Gender
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.gender || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Nationality
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.nationality || "Not provided"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Passport Information */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Passport Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Passport Number
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.passport_number || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Passport Expiry
+                            </p>
+                            <p
+                              className={`text-sm ${getPassportExpiryColor(
+                                passenger.passport_expire
+                              )}`}
+                            >
+                              {formatDisplayDate(
+                                passenger.passport_expire ?? undefined
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Passport Upload
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.passport_upload ? (
+                                <a
+                                  href={passenger.passport_upload}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  View Uploaded Passport
+                                </a>
+                              ) : (
+                                "Not uploaded"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accommodation Information */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Accommodation Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Room Type
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.roomType || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Room Allocation
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.room_allocation || "Auto-assigned"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Hotel
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.hotel || "Not provided"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Additional Information */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Additional Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Additional Services
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.additional_services?.length
+                                ? passenger.additional_services.join(", ")
+                                : "None"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-500">
+                              Allergies
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {passenger.allergy || "None"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          Notes
+                        </h4>
+                        <p className="text-sm text-gray-600">
+                          {passenger.notes || "No notes provided"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
 
@@ -644,7 +1214,9 @@ export default function PassengerRequests({ showNotification }: PassengerRequest
         {showConfirmModal && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all">
-              <h3 className="text-xl font-medium text-slate-800 mb-3">Confirm Action</h3>
+              <h3 className="text-xl font-medium text-slate-800 mb-3">
+                Confirm Action
+              </h3>
               <p className="text-slate-600 mb-6">{showConfirmModal.message}</p>
               <div className="flex gap-3 justify-end">
                 <button

@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { parse, isValid, format } from "date-fns"; // Add date-fns imports
 import { supabase } from "../supabaseClient";
 import type { Tour, Passenger, User as UserType, Order } from "../types/type";
 
@@ -16,9 +17,20 @@ interface SendRequestsHandlerProps {
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
 }
 
+// Utility function to generate a passenger ID
+const generatePassengerId = () => crypto.randomUUID(); // Define generatePassengerId
+
 const cleanDateForDB = (date: string | undefined | null): string | null => {
   if (!date || date.trim() === "") return null;
-  const formats = ["yyyy-MM-dd", "dd-MM-yyyy", "d-MM-yy", "dd-MM-yy", "MM/dd/yyyy", "M/d/yy", "MM/dd/yy"];
+  const formats = [
+    "yyyy-MM-dd",
+    "dd-MM-yyyy",
+    "d-MM-yy",
+    "dd-MM-yy",
+    "MM/dd/yyyy",
+    "M/d/yy",
+    "MM/dd/yy",
+  ];
   let parsedDate: Date | null = null;
   for (const fmt of formats) {
     try {
@@ -28,7 +40,9 @@ const cleanDateForDB = (date: string | undefined | null): string | null => {
       continue;
     }
   }
-  return parsedDate && isValid(parsedDate) ? format(parsedDate, "yyyy-MM-dd") : null;
+  return parsedDate && isValid(parsedDate)
+    ? format(parsedDate, "yyyy-MM-dd")
+    : null;
 };
 
 export function useSendRequestsHandler({
@@ -56,7 +70,10 @@ export function useSendRequestsHandler({
     });
 
     if (!selectedTour || !departureDate) {
-      setNotification({ type: "error", message: "Please select a tour and departure date" });
+      setNotification({
+        type: "error",
+        message: "Please select a tour and departure date",
+      });
       return;
     }
 
@@ -66,8 +83,11 @@ export function useSendRequestsHandler({
       return;
     }
 
-    if (!isPowerUser && tourData.available_seats !== undefined && tourData.available_seats < bookingPassengers.length) {
-      setNotification("error", "Cannot save booking. The tour is fully booked.");
+    if (
+      !isPowerUser &&
+      tourData.available_seats !== undefined &&
+      tourData.available_seats < bookingPassengers.length
+    ) {
       return;
     }
 
@@ -75,7 +95,10 @@ export function useSendRequestsHandler({
     try {
       if (isPowerUser) {
         // Manager: Insert directly to orders and passengers
-        const totalPrice = bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
+        const totalPrice = bookingPassengers.reduce(
+          (sum, p) => sum + (p.price || 0),
+          0
+        );
         const commission = totalPrice * 0.05;
         const firstPassenger = bookingPassengers[0];
 
@@ -121,11 +144,18 @@ export function useSendRequestsHandler({
         const orderId = String(orderResult.id);
         const uploadedPaths = await Promise.all(
           bookingPassengers.map(async (passenger) => {
-            if (passenger.passport_upload && typeof passenger.passport_upload !== "string") {
+            if (
+              passenger.passport_upload &&
+              typeof passenger.passport_upload !== "string"
+            ) {
               const file = passenger.passport_upload as File;
               const fileExt = file.name.split(".").pop();
-              const fileName = `passport_${orderId}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-              const { data, error } = await supabase.storage.from("passports").upload(fileName, file);
+              const fileName = `passport_${orderId}_${Date.now()}_${Math.random()
+                .toString(36)
+                .substring(2)}.${fileExt}`;
+              const { data, error } = await supabase.storage
+                .from("passports")
+                .upload(fileName, file);
               return error ? "" : data.path;
             }
             return passenger.passport_upload || "";
@@ -150,7 +180,9 @@ export function useSendRequestsHandler({
           nationality: passenger.nationality?.trim() || "Mongolia",
           roomType: passenger.roomType?.trim() || "",
           hotel: passenger.hotel?.trim() || "",
-          additional_services: Array.isArray(passenger.additional_services) ? passenger.additional_services : [],
+          additional_services: Array.isArray(passenger.additional_services)
+            ? passenger.additional_services
+            : [],
           price: passenger.price || 0,
           email: passenger.email?.trim() || "",
           phone: passenger.phone?.trim() || "",
@@ -164,16 +196,28 @@ export function useSendRequestsHandler({
           updated_at: new Date().toISOString(),
         }));
 
-        const { error: passengerError } = await supabase.from("passengers").insert(cleanedPassengers);
+        const { error: passengerError } = await supabase
+          .from("passengers")
+          .insert(cleanedPassengers);
         if (passengerError) throw new Error(passengerError.message);
 
         if (!isPowerUser && tourData.available_seats !== undefined) {
-          const newSeatCount = Math.max(0, tourData.available_seats - bookingPassengers.length);
+          const newSeatCount = Math.max(
+            0,
+            tourData.available_seats - bookingPassengers.length
+          );
           const { error: tourUpdateError } = await supabase
             .from("tours")
-            .update({ available_seats: newSeatCount, updated_at: new Date().toISOString() })
+            .update({
+              available_seats: newSeatCount,
+              updated_at: new Date().toISOString(),
+            })
             .eq("id", tourData.id);
-          if (tourUpdateError) console.warn("Failed to update tour seats:", tourUpdateError.message);
+          if (tourUpdateError)
+            console.warn(
+              "Failed to update tour seats:",
+              tourUpdateError.message
+            );
         }
 
         const newOrder: Order = {
@@ -208,18 +252,28 @@ export function useSendRequestsHandler({
           payment_method: paymentMethod || null,
           passengers: cleanedPassengers.map((p, index) => ({
             ...p,
-            id: generatePassengerId(),
+            id: generatePassengerId(), // Use the defined function
             passport_upload: uploadedPaths[index] || null,
           })) as Passenger[],
           edited_by: null,
           edited_at: null,
+          passport_copy_url: null,
+          passenger_count: 0,
+          booking_confirmation: null,
+          order_id: "",
         };
 
         setOrders((prev) => [...prev, newOrder]);
-        setNotification({ type: "success", message: `Booking saved successfully! Order ID: ${orderId}` });
+        setNotification({
+          type: "success",
+          message: `Booking saved successfully! Order ID: ${orderId}`,
+        });
       } else {
         // User: Insert to passenger_requests
-        const totalPrice = bookingPassengers.reduce((sum, p) => sum + (p.price || 0), 0);
+        const totalPrice = bookingPassengers.reduce(
+          (sum, p) => sum + (p.price || 0),
+          0
+        );
         const cleanedPassengers = bookingPassengers.map((passenger, index) => ({
           id: crypto.randomUUID(),
           user_id: currentUser.id,
@@ -239,7 +293,9 @@ export function useSendRequestsHandler({
           nationality: passenger.nationality?.trim() || "Mongolia",
           roomType: passenger.roomType?.trim() || "",
           hotel: passenger.hotel?.trim() || "",
-          additional_services: Array.isArray(passenger.additional_services) ? passenger.additional_services : [],
+          additional_services: Array.isArray(passenger.additional_services)
+            ? passenger.additional_services
+            : [],
           price: passenger.price || 0,
           email: passenger.email?.trim() || "",
           phone: passenger.phone?.trim() || "",
@@ -251,19 +307,41 @@ export function useSendRequestsHandler({
           updated_at: new Date().toISOString(),
         }));
 
-        const { error: requestError } = await supabase.from("passenger_requests").insert(cleanedPassengers);
+        const { error: requestError } = await supabase
+          .from("passenger_requests")
+          .insert(cleanedPassengers);
         if (requestError) throw new Error(requestError.message);
 
-        setNotification({ type: "success", message: "Booking request submitted successfully!" });
+        setNotification({
+          type: "success",
+          message: "Booking request submitted successfully!",
+        });
       }
 
       resetBookingForm();
     } catch (error) {
-      setNotification({ type: "error", message: `Error saving booking: ${error instanceof Error ? error.message : "Unknown error"}` });
+      setNotification({
+        type: "error",
+        message: `Error saving booking: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      });
     } finally {
       setLoading(false);
     }
-  }, [bookingPassengers, selectedTour, departureDate, paymentMethod, currentUser, tours, isPowerUser, showInProvider, setNotification, resetBookingForm, setOrders]);
+  }, [
+    bookingPassengers,
+    selectedTour,
+    departureDate,
+    paymentMethod,
+    currentUser,
+    tours,
+    isPowerUser,
+    showInProvider,
+    setNotification,
+    resetBookingForm,
+    setOrders,
+  ]);
 
   return { sendRequest, loading };
 }

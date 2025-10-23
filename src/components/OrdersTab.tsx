@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import type { Order, OrderStatus, User as UserType } from "../types/type";
+import type { Order, User as UserType } from "../types/type";
 import { formatDate } from "../utils/tourUtils";
 import { useNotifications } from "../hooks/useNotifications";
+import { VALID_ORDER_STATUSES, type OrderStatus } from "../types/type";
 
 const schemaCache = {
   orders: null as boolean | null,
@@ -14,17 +15,26 @@ interface OrdersTabProps {
   currentUser: UserType;
 }
 
-export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabProps) {
+export default function OrdersTab({
+  orders,
+  setOrders,
+  currentUser,
+}: OrdersTabProps) {
   const { showNotification } = useNotifications();
   const [customerNameFilter, setCustomerNameFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tourTitleFilter, setTourTitleFilter] = useState<string>("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+    null
+  );
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [showCompletedOnly, setShowCompletedOnly] = useState<boolean>(false);
-  const [hasShowInProvider, setHasShowInProvider] = useState<boolean | null>(null);
+  const [hasShowInProvider, setHasShowInProvider] = useState<boolean | null>(
+    null
+  );
   const [originalOrders, setOriginalOrders] = useState<Order[]>([]);
+  const [bypassRoleFilter, setBypassRoleFilter] = useState<boolean>(false);
   const ordersPerPage: number = 10;
 
   useEffect(() => {
@@ -40,38 +50,159 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   const checkOrdersSchema = async () => {
     if (schemaCache.orders !== null) {
       setHasShowInProvider(schemaCache.orders);
-      console.log("show_in_provider column exists in orders (cached):", schemaCache.orders);
+      console.log(
+        "checkOrdersSchema: show_in_provider column exists (cached):",
+        schemaCache.orders
+      );
       return;
     }
     let hasColumn = false;
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_table_columns', { table_name: 'orders' });
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "get_table_columns",
+        { table_name: "orders" }
+      );
       if (rpcError) throw rpcError;
-      hasColumn = Array.isArray(rpcData) && rpcData.some((col: any) => col.column_name === 'show_in_provider');
+      hasColumn =
+        Array.isArray(rpcData) &&
+        rpcData.some((col: any) => col.column_name === "show_in_provider");
     } catch (rpcError) {
-      console.warn("get_table_columns RPC failed for orders, falling back to information_schema:", rpcError);
+      console.warn(
+        "checkOrdersSchema: get_table_columns RPC failed, falling back to information_schema:",
+        rpcError
+      );
       try {
         const { data: schemaData, error: schemaError } = await supabase
-          .from('information_schema.columns')
-          .select('column_name')
-          .eq('table_schema', 'public')
-          .eq('table_name', 'orders')
-          .eq('column_name', 'show_in_provider');
+          .from("information_schema.columns")
+          .select("column_name")
+          .eq("table_schema", "public")
+          .eq("table_name", "orders")
+          .eq("column_name", "show_in_provider");
         if (schemaError) throw schemaError;
         hasColumn = schemaData.length > 0;
       } catch (schemaError) {
-        console.error("Error checking orders schema:", schemaError);
+        console.error(
+          "checkOrdersSchema: Error checking orders schema:",
+          schemaError
+        );
         showNotification("error", "Failed to verify orders schema.");
         return;
       }
     }
     schemaCache.orders = hasColumn;
     setHasShowInProvider(hasColumn);
-    console.log("show_in_provider column exists in orders:", hasColumn);
+    console.log(
+      "checkOrdersSchema: show_in_provider column exists:",
+      hasColumn
+    );
+  };
+
+  const fetchOrders = async () => {
+    try {
+      // Fetch orders and their associated passengers
+      const { data, error } = await supabase
+        .from("orders")
+        .select(
+          `
+          *,
+          created_by:users!created_by(id, email),
+          passenger_requests(status),
+          passengers(status)
+        `
+        )
+        .in("status", VALID_ORDER_STATUSES);
+      if (error) {
+        console.error("fetchOrders: Error fetching orders:", error);
+        showNotification("error", `Failed to fetch orders: ${error.message}`);
+        return;
+      }
+      console.log("fetchOrders: Fetched raw orders:", data);
+
+      // Filter orders to only include those with at least one active passenger
+      const validOrders = data.filter((order: any) => {
+        const hasActivePassenger =
+          (order.passengers &&
+            order.passengers.some((p: any) => p.status === "active")) ||
+          (order.passenger_requests &&
+            order.passenger_requests.some((p: any) => p.status === "active"));
+        const isValid = hasActivePassenger || order.status !== "pending";
+        console.log("fetchOrders: Order validation", {
+          orderId: order.id,
+          hasActivePassenger,
+          orderStatus: order.status,
+          isValid,
+        });
+        return isValid;
+      });
+
+      console.log(
+        "fetchOrders: Valid orders after passenger filter:",
+        validOrders
+      );
+
+      const mappedOrders = validOrders.map(
+        (order: any) =>
+          ({
+            id: String(order.id),
+            user_id: String(order.user_id),
+            tour_id: String(order.tour_id),
+            phone: order.phone ?? null,
+            last_name: order.last_name ?? null,
+            first_name: order.first_name ?? null,
+            email: order.email ?? null,
+            age: order.age ?? null,
+            gender: order.gender ?? null,
+            tour: order.tour ?? null,
+            passport_number: order.passport_number ?? null,
+            passport_expire: order.passport_expire ?? null,
+            passport_copy: order.passport_copy ?? null,
+            commission: order.commission ?? null,
+            created_by: order.created_by ? String(order.created_by.id) : null,
+            edited_by: order.edited_by ? String(order.edited_by) : null,
+            edited_at: order.edited_at ?? null,
+            travel_choice: order.travel_choice ?? "",
+            status: order.status as OrderStatus,
+            hotel: order.hotel ?? null,
+            room_number: order.room_number ?? null,
+            payment_method: order.payment_method ?? null,
+            created_at: order.created_at,
+            updated_at: order.updated_at,
+            departureDate: order.departure_date ?? order.departureDate ?? "",
+            createdBy: order.created_by?.email ?? order.createdBy ?? null,
+            total_price: order.total_price,
+            total_amount: order.total_amount,
+            paid_amount: order.paid_amount,
+            balance: order.balance,
+            order_id: String(order.id),
+            passenger_count:
+              (order.passengers?.length || 0) +
+              (order.passenger_requests?.length || 0),
+            booking_confirmation: order.booking_confirmations
+              ? {
+                  order_id: String(order.id),
+                  bus_number: order.booking_confirmations.bus_number ?? null,
+                  guide_name: order.booking_confirmations.guide_name ?? null,
+                  weather_emergency:
+                    order.booking_confirmations.weather_emergency ?? null,
+                  updated_by: order.booking_confirmations.updated_by ?? null,
+                  updated_at: order.booking_confirmations.updated_at ?? null,
+                }
+              : null,
+            passport_copy_url: null,
+            show_in_provider: order.show_in_provider ?? false,
+          } as Order)
+      );
+      setOrders(mappedOrders);
+      console.log("fetchOrders: Set orders state:", mappedOrders);
+    } catch (error) {
+      console.error("fetchOrders: Unexpected error:", error);
+      showNotification("error", "Unexpected error fetching orders");
+    }
   };
 
   useEffect(() => {
     checkOrdersSchema();
+    fetchOrders();
   }, []);
 
   useEffect(() => {
@@ -80,105 +211,191 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     const orderSubscription = supabase
       .channel(`orders_tab_${Math.random().toString(36).substring(2)}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-          filter: hasShowInProvider ? 'show_in_provider=eq.true' : undefined,
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: [
+            hasShowInProvider ? "show_in_provider=eq.true" : null,
+            `status=in.(${VALID_ORDER_STATUSES.join(",")})`,
+          ]
+            .filter(Boolean)
+            .join(" and "),
         },
-        (payload) => {
+        async (payload) => {
           console.log("Received orders subscription payload:", payload);
-          if (payload.eventType === 'UPDATE') {
-            setOrders((prev) =>
-              prev.map((order) =>
-                order.id === String(payload.new.id)
-                  ? {
-                    ...order,
-                    ...payload.new,
-                    id: String(payload.new.id),
-                    user_id: String(payload.new.user_id),
-                    tour_id: String(payload.new.tour_id),
-                    created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                    edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                    passengers: payload.new.passengers ?? order.passenger_count,
-                    total_price: payload.new.total_price,
-                    total_amount: payload.new.total_amount,
-                    paid_amount: payload.new.paid_amount,
-                    balance: payload.new.balance,
-                    show_in_provider: payload.new.show_in_provider ?? false,
-                    createdBy: payload.new.users?.email ?? payload.new.createdBy ?? null,
-                    departureDate: payload.new.departure_date ?? payload.new.departureDate ?? '',
-                    status: payload.new.status as OrderStatus,
-                  } as Order
-                  : order
-              )
-            );
-            console.log("Order updated:", payload.new);
-          } else if (payload.eventType === 'INSERT') {
-            if (payload.new.status === "approved" && !["admin", "manager", "superadmin"].includes(currentUser.role || "")) {
-              console.log("Skipping approved order for non-manager:", payload.new.id);
+
+          // For INSERT and UPDATE, check passenger status
+          if (
+            payload.eventType === "INSERT" ||
+            payload.eventType === "UPDATE"
+          ) {
+            // Fetch associated passengers to validate
+            const { data: passengersData, error: passengersError } =
+              await supabase
+                .from("passenger_requests")
+                .select("status")
+                .eq("order_id", payload.new.id);
+            const { data: activePassengersData, error: activePassengersError } =
+              await supabase
+                .from("passengers")
+                .select("status")
+                .eq("order_id", payload.new.id);
+
+            if (passengersError || activePassengersError) {
+              console.error("Order subscription: Error fetching passengers:", {
+                passengersError,
+                activePassengersError,
+              });
               return;
             }
-            setOrders((prev) => [
-              ...prev,
-              {
-                id: String(payload.new.id),
-                user_id: String(payload.new.user_id),
-                tour_id: String(payload.new.tour_id),
-                phone: payload.new.phone ?? null,
-                last_name: payload.new.last_name ?? null,
-                first_name: payload.new.first_name ?? null,
-                email: payload.new.email ?? null,
-                age: payload.new.age ?? null,
-                gender: payload.new.gender ?? null,
-                tour: payload.new.tour ?? null,
-                passport_number: payload.new.passport_number ?? null,
-                passport_expire: payload.new.passport_expire ?? null,
-                passport_copy: payload.new.passport_copy ?? null,
-                commission: payload.new.commission ?? null,
-                created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                edited_at: payload.new.edited_at ?? null,
-                travel_choice: payload.new.travel_choice ?? '',
-                status: payload.new.status as OrderStatus,
-                hotel: payload.new.hotel ?? null,
-                room_number: payload.new.room_number ?? null,
-                payment_method: payload.new.payment_method ?? null,
-                created_at: payload.new.created_at,
-                updated_at: payload.new.updated_at,
-                departureDate: payload.new.departureDate ?? '',
-                createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
-                total_price: payload.new.total_price,
-                total_amount: payload.new.total_amount,
-                paid_amount: payload.new.paid_amount,
-                balance: payload.new.balance,
-                order_id: String(payload.new.id),
-                passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
-                booking_confirmation: payload.new.booking_confirmations
-                  ? {
-                    order_id: String(payload.new.id),
-                    bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                    guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                    weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                    updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                    updated_at: payload.new.booking_confirmations.updated_at ?? null,
-                  }
-                  : null,
-                passport_copy_url: null,
-              } as Order,
-            ]);
-            console.log("Order inserted:", payload.new);
-          } else if (payload.eventType === 'DELETE') {
-            setOrders((prev) => prev.filter((order) => order.id !== String(payload.old.id)));
+
+            const hasActivePassenger =
+              (passengersData &&
+                passengersData.some((p: any) => p.status === "active")) ||
+              (activePassengersData &&
+                activePassengersData.some((p: any) => p.status === "active"));
+            const isValid =
+              hasActivePassenger || payload.new.status !== "pending";
+
+            if (!isValid) {
+              console.log("Skipping order due to no active passengers:", {
+                orderId: payload.new.id,
+                status: payload.new.status,
+              });
+              return;
+            }
+
+            if (!VALID_ORDER_STATUSES.includes(payload.new.status)) {
+              console.log(
+                "Skipping update for invalid status:",
+                payload.new.status
+              );
+              return;
+            }
+
+            if (payload.eventType === "UPDATE") {
+              setOrders((prev) =>
+                prev.map((order) =>
+                  order.id === String(payload.new.id)
+                    ? ({
+                        ...order,
+                        ...payload.new,
+                        id: String(payload.new.id),
+                        user_id: String(payload.new.user_id),
+                        tour_id: String(payload.new.tour_id),
+                        created_by: payload.new.created_by
+                          ? String(payload.new.created_by)
+                          : null,
+                        edited_by: payload.new.edited_by
+                          ? String(payload.new.edited_by)
+                          : null,
+                        passengers:
+                          payload.new.passengers ?? order.passenger_count,
+                        total_price: payload.new.total_price,
+                        total_amount: payload.new.total_amount,
+                        paid_amount: payload.new.paid_amount,
+                        balance: payload.new.balance,
+                        show_in_provider: payload.new.show_in_provider ?? false,
+                        createdBy:
+                          payload.new.created_by_email ??
+                          payload.new.createdBy ??
+                          null,
+                        departureDate:
+                          payload.new.departure_date ??
+                          payload.new.departureDate ??
+                          "",
+                        status: payload.new.status as OrderStatus,
+                      } as Order)
+                    : order
+                )
+              );
+              console.log("Order updated:", payload.new);
+            } else if (payload.eventType === "INSERT") {
+              setOrders((prev) => [
+                ...prev,
+                {
+                  id: String(payload.new.id),
+                  user_id: String(payload.new.user_id),
+                  tour_id: String(payload.new.tour_id),
+                  phone: payload.new.phone ?? null,
+                  last_name: payload.new.last_name ?? null,
+                  first_name: payload.new.first_name ?? null,
+                  email: payload.new.email ?? null,
+                  age: payload.new.age ?? null,
+                  gender: payload.new.gender ?? null,
+                  tour: payload.new.tour ?? null,
+                  passport_number: payload.new.passport_number ?? null,
+                  passport_expire: payload.new.passport_expire ?? null,
+                  commission: payload.new.commission ?? null,
+                  created_by: payload.new.created_by
+                    ? String(payload.new.created_by)
+                    : null,
+                  edited_by: payload.new.edited_by
+                    ? String(payload.new.edited_by)
+                    : null,
+                  edited_at: payload.new.edited_at ?? null,
+                  travel_choice: payload.new.travel_choice ?? "",
+                  status: payload.new.status as OrderStatus,
+                  hotel: payload.new.hotel ?? null,
+                  room_number: payload.new.room_number ?? null,
+                  payment_method: payload.new.payment_method ?? null,
+                  created_at: payload.new.created_at,
+                  updated_at: payload.new.updated_at,
+                  departureDate:
+                    payload.new.departure_date ??
+                    payload.new.departureDate ??
+                    "",
+                  createdBy:
+                    payload.new.created_by_email ??
+                    payload.new.createdBy ??
+                    null,
+                  total_price: payload.new.total_price,
+                  total_amount: payload.new.total_amount,
+                  paid_amount: payload.new.paid_amount,
+                  balance: payload.new.balance,
+                  order_id: String(payload.new.id),
+                  passenger_count:
+                    (payload.new.passengers?.length || 0) +
+                    (payload.new.passenger_requests?.length || 0),
+                  booking_confirmation: payload.new.booking_confirmations
+                    ? {
+                        order_id: String(payload.new.id),
+                        bus_number:
+                          payload.new.booking_confirmations.bus_number ?? null,
+                        guide_name:
+                          payload.new.booking_confirmations.guide_name ?? null,
+                        weather_emergency:
+                          payload.new.booking_confirmations.weather_emergency ??
+                          null,
+                        updated_by:
+                          payload.new.booking_confirmations.updated_by ?? null,
+                        updated_at:
+                          payload.new.booking_confirmations.updated_at ?? null,
+                      }
+                    : null,
+                  passport_copy_url: null,
+                  show_in_provider: payload.new.show_in_provider ?? false,
+                } as Order,
+              ]);
+              console.log("Order inserted:", payload.new);
+            }
+          } else if (payload.eventType === "DELETE") {
+            setOrders((prev) =>
+              prev.filter((order) => order.id !== String(payload.old.id))
+            );
             console.log("Order deleted:", payload.old.id);
           }
         }
       )
       .subscribe((status, error) => {
         if (error) {
-          console.error('Order subscription error:', error);
-          showNotification("error", `Real-time subscription failed: ${error.message}`);
+          console.error("Order subscription error:", error);
+          showNotification(
+            "error",
+            `Real-time subscription failed: ${error.message}`
+          );
         } else {
           console.log("Order subscription status:", status);
         }
@@ -187,16 +404,23 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     return () => {
       supabase.removeChannel(orderSubscription);
     };
-  }, [hasShowInProvider, setOrders, currentUser.role]);
+  }, [hasShowInProvider, setOrders]);
 
-  const fetchWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 1000) => {
+  const fetchWithRetry = async (
+    fn: () => Promise<any>,
+    retries = 3,
+    delay = 1000
+  ) => {
     for (let i = 0; i < retries; i++) {
       try {
         return await fn();
       } catch (error) {
         if (i < retries - 1) {
-          console.warn(`Retry ${i + 1}/${retries} after error:`, error);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          console.warn(
+            `fetchWithRetry: Retry ${i + 1}/${retries} after error:`,
+            error
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           throw error;
         }
@@ -204,7 +428,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     }
   };
 
-  const handleOrderChange = async (id: string, field: keyof Order, value: any) => {
+  const handleOrderChange = async (
+    id: string,
+    field: keyof Order,
+    value: any
+  ) => {
     const previousOrders = [...orders];
     setOrders((prevOrders) =>
       prevOrders.map((o) => {
@@ -220,7 +448,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     );
 
     if (field === "show_in_provider" && hasShowInProvider) {
-      console.log(`Toggling show_in_provider for order ${id} to ${value}`);
+      console.log(
+        `handleOrderChange: Toggling show_in_provider for order ${id} to ${value}`
+      );
       try {
         const updateData = {
           show_in_provider: value,
@@ -231,11 +461,57 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
           supabase.from("orders").update(updateData).eq("id", id)
         );
         if (error) throw error;
-        console.log(`Successfully updated show_in_provider to ${value} for order ${id}`);
+        console.log(
+          `handleOrderChange: Successfully updated show_in_provider to ${value} for order ${id}`
+        );
         showNotification("success", "Show in provider updated! 😎");
       } catch (error: any) {
-        console.error(`Error updating show_in_provider for order ${id}:`, error);
-        showNotification("error", `Failed to update show_in provider: ${error.message}`);
+        console.error(
+          `handleOrderChange: Error updating show_in_provider for order ${id}:`,
+          error
+        );
+        showNotification(
+          "error",
+          `Failed to update show_in_provider: ${error.message}`
+        );
+        setOrders(previousOrders);
+      }
+    } else if (field === "status") {
+      console.log(
+        `handleOrderChange: Updating status for order ${id} to ${value}`
+      );
+      try {
+        const updateData = {
+          status: value,
+          updated_at: new Date().toISOString(),
+          edited_by: currentUser.id,
+        };
+        const { error } = await fetchWithRetry(async () =>
+          supabase.from("orders").update(updateData).eq("id", id)
+        );
+        if (error) throw error;
+        console.log(
+          `handleOrderChange: Successfully updated status to ${value} for order ${id}`
+        );
+        showNotification("success", `Order status updated to ${value}! 😎`);
+      } catch (error: any) {
+        console.error(
+          `handleOrderChange: Error updating status for order ${id}:`,
+          error
+        );
+        if (error.code === "23514") {
+          showNotification(
+            "error",
+            `Invalid status "${value}". Allowed statuses: ${VALID_ORDER_STATUSES.join(
+              ", "
+            )}`
+          );
+        } else {
+          showNotification(
+            "error",
+            `Failed to update order status: ${error.message}`
+          );
+        }
         setOrders(previousOrders);
       }
     }
@@ -245,10 +521,10 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     const updatedOrders = showCompletedOnly
       ? orders
       : orders.filter(
-        (order) =>
-          order.status !== "Travel ended completely" &&
-          order.status !== "Completed"
-      );
+          (order) =>
+            order.status !== "Travel ended completely" &&
+            order.status !== "Completed"
+        );
 
     const previousOrders = [...orders];
 
@@ -264,6 +540,21 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
           delete updateData.show_in_provider;
         }
 
+        if (!VALID_ORDER_STATUSES.includes(updateData.status as OrderStatus)) {
+          console.error("handleSaveEdits: Invalid status for order", {
+            orderId: order.id,
+            status: updateData.status,
+            validStatuses: VALID_ORDER_STATUSES,
+          });
+          showNotification(
+            "error",
+            `Invalid status "${updateData.status}" for order ${
+              order.id
+            }. Allowed statuses: ${VALID_ORDER_STATUSES.join(", ")}`
+          );
+          continue;
+        }
+
         const { error } = await fetchWithRetry(async () =>
           supabase.from("orders").update(updateData).eq("id", order.id)
         );
@@ -274,11 +565,13 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       showNotification("success", "Saved completely! 😎");
       setIsEditMode(false);
     } catch (error: any) {
-      console.error("Error updating orders:", error);
+      console.error("handleSaveEdits: Error updating orders:", error);
       if (error.code === "23514") {
         showNotification(
           "error",
-          `Invalid status or value: ${error.message}. Choose from allowed statuses.`
+          `Invalid status or value: ${
+            error.message
+          }. Choose from allowed statuses: ${VALID_ORDER_STATUSES.join(", ")}`
         );
       } else {
         showNotification(
@@ -291,8 +584,16 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   };
 
   const handleCancelEdit = () => {
-    if (orders.some((order, index) => JSON.stringify(order) !== JSON.stringify(originalOrders[index]))) {
-      showNotification("success", "You have unsaved changes. Save or discard before exiting edit mode.");
+    if (
+      orders.some(
+        (order, index) =>
+          JSON.stringify(order) !== JSON.stringify(originalOrders[index])
+      )
+    ) {
+      showNotification(
+        "success",
+        "You have unsaved changes. Save or discard before exiting edit mode."
+      );
     } else {
       setIsEditMode(false);
       setOrders([...originalOrders]);
@@ -313,7 +614,7 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       showNotification("success", "Order deleted successfully");
       setShowDeleteConfirm(null);
     } catch (err: unknown) {
-      console.error("Error deleting order:", err);
+      console.error("handleDeleteOrder: Error deleting order:", err);
       if (err instanceof Error) {
         showNotification("error", `Failed to delete order: ${err.message}`);
       } else {
@@ -325,40 +626,91 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
   };
 
   const filteredOrders = useMemo(() => {
-    const validOrders = orders.filter(order => order && order.id); // Ensure no invalid orders
-    return validOrders
+    console.log("filteredOrders: Initial orders:", orders);
+    const validOrders = orders.filter(
+      (order) =>
+        order && order.id && VALID_ORDER_STATUSES.includes(order.status)
+    );
+    console.log("filteredOrders: After status filter:", validOrders);
+    const filtered = validOrders
       .sort((a, b) => {
         const dateA = a.departureDate ? new Date(a.departureDate) : new Date(0);
         const dateB = b.departureDate ? new Date(b.departureDate) : new Date(0);
         return dateA.getTime() - dateB.getTime();
       })
       .filter((order) => {
-        const customerName = `${order.first_name || ''} ${order.last_name || ''}`.toLowerCase();
-        const matchesCustomerName = customerName.includes(customerNameFilter.toLowerCase());
-        const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-        const matchesTourTitle = order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) || false;
-        const isCompleted = order.status === "Completed" || order.status === "Travel ended completely";
-        const isManager = ["admin", "manager", "superadmin"].includes(currentUser.role || "");
-        const matchesApproval = isManager || order.status !== "approved";
-        return matchesCustomerName && matchesStatus && matchesTourTitle && matchesApproval && (showCompletedOnly ? isCompleted : !isCompleted);
+        const customerName = `${order.first_name || ""} ${
+          order.last_name || ""
+        }`.toLowerCase();
+        const matchesCustomerName = customerName.includes(
+          customerNameFilter.toLowerCase()
+        );
+        const matchesStatus =
+          statusFilter === "all" || order.status === statusFilter;
+        const matchesTourTitle =
+          order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) ||
+          false;
+        const isCompleted =
+          order.status === "Completed" ||
+          order.status === "Travel ended completely";
+        const isManager = ["admin", "manager", "superadmin"].includes(
+          currentUser.role || ""
+        );
+        const matchesApproval =
+          bypassRoleFilter || isManager || order.status !== "approved";
+        const result =
+          matchesCustomerName &&
+          matchesStatus &&
+          matchesTourTitle &&
+          matchesApproval &&
+          (showCompletedOnly ? isCompleted : !isCompleted);
+        console.log("filteredOrders: Order filter result:", {
+          orderId: order.id,
+          status: order.status,
+          matchesCustomerName,
+          matchesStatus,
+          matchesTourTitle,
+          matchesApproval,
+          showCompletedOnly,
+          isCompleted,
+          result,
+        });
+        return result;
       });
-  }, [orders, customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly, currentUser.role]);
+    console.log("filteredOrders: Final filtered orders:", filtered);
+    return filtered;
+  }, [
+    orders,
+    customerNameFilter,
+    statusFilter,
+    tourTitleFilter,
+    showCompletedOnly,
+    currentUser.role,
+    bypassRoleFilter,
+  ]);
 
-  const totalPages: number = Math.ceil((filteredOrders?.length || 0) / ordersPerPage);
+  const totalPages: number = Math.ceil(
+    (filteredOrders?.length || 0) / ordersPerPage
+  );
   const paginatedOrders = useMemo(() => {
     const startIndex = (currentPage - 1) * ordersPerPage;
-    return filteredOrders.slice(startIndex, startIndex + ordersPerPage);
+    const paginated = filteredOrders.slice(
+      startIndex,
+      startIndex + ordersPerPage
+    );
+    console.log("paginatedOrders:", paginated);
+    return paginated;
   }, [filteredOrders, currentPage, ordersPerPage]);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
+      setCurrentPage((prev) => prev - 1);
     }
   };
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
+      setCurrentPage((prev) => prev + 1);
     }
   };
 
@@ -366,33 +718,46 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
     const statusConfig = {
       pending: "bg-amber-100 text-amber-800 border-amber-200",
       "Information given": "bg-blue-100 text-blue-800 border-blue-200",
-      "Need to give information": "bg-yellow-100 text-yellow-800 border-yellow-200",
-      "Need to tell got a seat/in waiting": "bg-purple-100 text-purple-800 border-purple-200",
-      "Need to conclude a contract": "bg-green-100 text-green-800 border-green-200",
+      "Need to give information":
+        "bg-yellow-100 text-yellow-800 border-yellow-200",
+      "Need to tell got a seat/in waiting":
+        "bg-purple-100 text-purple-800 border-purple-200",
+      "Need to conclude a contract":
+        "bg-green-100 text-green-800 border-green-200",
       "Concluded a contract": "bg-teal-100 text-teal-800 border-teal-200",
       "Postponed the travel": "bg-orange-100 text-orange-800 border-orange-200",
       "Interested in other travel": "bg-pink-100 text-pink-800 border-pink-200",
       cancelled: "bg-red-100 text-red-800 border-red-200",
       "Cancelled after confirmed": "bg-red-200 text-red-900 border-red-300",
-      "Cancelled after ordered a seat": "bg-red-300 text-red-900 border-red-400",
-      "Cancelled after take a information": "bg-red-400 text-red-900 border-red-500",
-      "Paid the advance payment": "bg-indigo-100 text-indigo-800 border-indigo-200",
+      "Cancelled after ordered a seat":
+        "bg-red-300 text-red-900 border-red-400",
+      "Cancelled after take a information":
+        "bg-red-400 text-red-900 border-red-500",
+      "Paid the advance payment":
+        "bg-indigo-100 text-indigo-800 border-indigo-200",
       "Need to meet": "bg-gray-100 text-gray-800 border-gray-200",
       "Sent a claim": "bg-red-100 text-red-800 border-red-200",
       "Fam Tour": "bg-violet-100 text-violet-800 border-violet-200",
       confirmed: "bg-emerald-100 text-emerald-800 border-emerald-200",
       "The travel is going": "bg-blue-200 text-blue-900 border-blue-300",
-      "Has taken seat from another company": "bg-orange-200 text-orange-900 border-orange-300",
-      "Swapped seat with another company": "bg-purple-200 text-purple-900 border-purple-300",
-      "Gave seat to another company": "bg-teal-200 text-teal-900 border-teal-300",
-      "Cancelled and bought travel from another country": "bg-red-500 text-white border-red-600",
+      "Has taken seat from another company":
+        "bg-orange-200 text-orange-900 border-orange-300",
+      "Swapped seat with another company":
+        "bg-purple-200 text-purple-900 border-purple-300",
+      "Gave seat to another company":
+        "bg-teal-200 text-teal-900 border-teal-300",
+      "Cancelled and bought travel from another country":
+        "bg-red-500 text-white border-red-600",
       Completed: "bg-gray-200 text-gray-900 border-gray-300",
       "Travel ended completely": "bg-gray-200 text-gray-900 border-gray-300",
       approved: "bg-green-100 text-green-800 border-green-200",
       partially_approved: "bg-yellow-100 text-yellow-800 border-yellow-200",
       rejected: "bg-red-100 text-red-800 border-red-200",
     };
-    return statusConfig[status as keyof typeof statusConfig] || "bg-gray-100 text-gray-800 border-gray-200";
+    return (
+      statusConfig[status as keyof typeof statusConfig] ||
+      "bg-gray-100 text-gray-800 border-gray-200"
+    );
   };
 
   return (
@@ -400,18 +765,33 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 border-b border-gray-100">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-2xl font-bold text-gray-900">Orders Management</h3>
-            <p className="text-gray-600 mt-1">Manage and track all tour orders</p>
+            <h3 className="text-2xl font-bold text-gray-900">
+              Orders Management
+            </h3>
+            <p className="text-gray-600 mt-1">
+              Manage and track all confirmed tour orders
+            </p>
           </div>
-          <div className="bg-white px-4 py-2 rounded-full shadow-sm border">
-            <span className="text-sm font-medium text-gray-600">
-              {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'}
-            </span>
+          <div className="flex items-center space-x-4">
+            <div className="bg-white px-4 py-2 rounded-full shadow-sm border">
+              <span className="text-sm font-medium text-gray-600">
+                {filteredOrders.length}{" "}
+                {filteredOrders.length === 1 ? "order" : "orders"}
+              </span>
+            </div>
+            <button
+              onClick={() => setBypassRoleFilter(!bypassRoleFilter)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-semibold"
+            >
+              {bypassRoleFilter ? "Enable Role Filter" : "Bypass Role Filter"}
+            </button>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">👤 Search by Customer Name</label>
+            <label className="block text-sm font-semibold text-gray-700">
+              👤 Search by Customer Name
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -421,14 +801,26 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 className="w-full px-4 py-3 pl-10 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                <svg
+                  className="h-5 w-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
                 </svg>
               </div>
             </div>
           </div>
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">🏷️ Tour Title</label>
+            <label className="block text-sm font-semibold text-gray-700">
+              🏷️ Tour Title
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -438,46 +830,37 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 className="w-full px-4 py-3 pl-10 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                <svg
+                  className="h-5 w-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                  />
                 </svg>
               </div>
             </div>
           </div>
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">📊 Status Filter</label>
+            <label className="block text-sm font-semibold text-gray-700">
+              📊 Status Filter
+            </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">⏳ Pending</option>
-              <option value="partially_approved">⏳ Partially Approved</option>
-              <option value="approved">✅ Approved</option>
-              <option value="confirmed">✅ Confirmed</option>
-              <option value="cancelled">❌ Cancelled</option>
-              <option value="Information given">ℹ️ Information given</option>
-              <option value="Need to give information">📝 Need to give information</option>
-              <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
-              <option value="Need to conclude a contract">📑 Need to conclude a contract</option>
-              <option value="Concluded a contract">✅ Concluded a contract</option>
-              <option value="Postponed the travel">⏳ Postponed the travel</option>
-              <option value="Interested in other travel">🌍 Interested in other travel</option>
-              <option value="Cancelled after confirmed">❌ Cancelled after confirmed</option>
-              <option value="Cancelled after ordered a seat">❌ Cancelled after ordered a seat</option>
-              <option value="Cancelled after take a information">❌ Cancelled after take a information</option>
-              <option value="Paid the advance payment">💸 Paid the advance payment</option>
-              <option value="Need to meet">🤝 Need to meet</option>
-              <option value="Sent a claim">⚠️ Sent a claim</option>
-              <option value="Fam Tour">👨‍👩‍👧 Fam Tour</option>
-              <option value="The travel is going">✈️ The travel is going</option>
-              <option value="Has taken seat from another company">🪑 Has taken seat from another company</option>
-              <option value="Swapped seat with another company">🔄 Swapped seat with another company</option>
-              <option value="Gave seat to another company">🎁 Gave seat to another company</option>
-              <option value="Cancelled and bought travel from another country">🌐 Cancelled and bought travel from another country</option>
-              <option value="Completed">🏁 Completed</option>
-              <option value="Travel ended completely">🏁 Travel ended completely</option>
+              {VALID_ORDER_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </select>
             <div className="mt-2 space-y-2">
               <button
@@ -504,11 +887,18 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 onClick={() => {
                   setShowCompletedOnly(!showCompletedOnly);
                   setStatusFilter("all");
-                  showNotification("success", showCompletedOnly ? "Back to all orders!" : "Showing completed orders!");
+                  showNotification(
+                    "success",
+                    showCompletedOnly
+                      ? "Back to all orders!"
+                      : "Showing completed orders!"
+                  );
                 }}
                 className="w-full px-4 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-all duration-200 font-semibold text-sm"
               >
-                {showCompletedOnly ? "Show All Orders" : "Show Completed Orders"}
+                {showCompletedOnly
+                  ? "Show All Orders"
+                  : "Show Completed Orders"}
               </button>
             </div>
           </div>
@@ -521,23 +911,48 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
                 Order ID
               </th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-24 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Tour</th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-68 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">Passenger</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Departure</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total Price</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Hotel</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Room</th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Payment</th>
-              <th className="px-28 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-24 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
+                Tour
+              </th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-68 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
+                Passenger
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Departure
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Total Price
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Hotel
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Room
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Payment
+              </th>
+              <th className="px-28 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Status
+              </th>
               {hasShowInProvider && (
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Show to Provider</th>
+                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Show to Provider
+                </th>
               )}
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
+              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-50">
             {paginatedOrders.map((order, index) => (
-              <tr key={order.id} className={`hover:bg-blue-25 transition-all duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}>
+              <tr
+                key={order.id}
+                className={`hover:bg-blue-25 transition-all duration-200 ${
+                  index % 2 === 0 ? "bg-white" : "bg-gray-25"
+                }`}
+              >
                 <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <div className="flex items-center">
                     <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
@@ -550,7 +965,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                   <input
                     type="text"
                     value={order.tour || ""}
-                    onChange={(e) => handleOrderChange(order.id, "tour", e.target.value)}
+                    onChange={(e) =>
+                      handleOrderChange(order.id, "tour", e.target.value)
+                    }
                     className="w-full min-w-[140px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                     disabled={!isEditMode}
                     placeholder="Tour title..."
@@ -559,10 +976,10 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 <td className="px-4 py-2 whitespace-nowrap sticky left-68 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-gray-900">
-                      {order.first_name || 'N/A'} {order.last_name || 'N/A'}
+                      {order.first_name || "N/A"} {order.last_name || "N/A"}
                     </div>
                     <div className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded-full inline-block">
-                      {order.email || 'N/A'}
+                      {order.email || "N/A"}
                     </div>
                   </div>
                 </td>
@@ -571,7 +988,13 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                     <input
                       type="date"
                       value={order.departureDate || ""}
-                      onChange={(e) => handleOrderChange(order.id, "departureDate", e.target.value)}
+                      onChange={(e) =>
+                        handleOrderChange(
+                          order.id,
+                          "departureDate",
+                          e.target.value
+                        )
+                      }
                       className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                       disabled={!isEditMode}
                     />
@@ -582,11 +1005,19 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 </td>
                 <td className="px-3 py-2">
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">$</span>
+                    <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                      $
+                    </span>
                     <input
                       type="number"
                       value={order.total_price || ""}
-                      onChange={(e) => handleOrderChange(order.id, "total_price", parseFloat(e.target.value) || 0)}
+                      onChange={(e) =>
+                        handleOrderChange(
+                          order.id,
+                          "total_price",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
                       className="w-full min-w-[100px] pl-6 pr-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                       disabled={!isEditMode}
                       placeholder="0.00"
@@ -599,7 +1030,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                   <input
                     type="text"
                     value={order.hotel || ""}
-                    onChange={(e) => handleOrderChange(order.id, "hotel", e.target.value)}
+                    onChange={(e) =>
+                      handleOrderChange(order.id, "hotel", e.target.value)
+                    }
                     className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                     disabled={!isEditMode}
                     placeholder="Hotel name..."
@@ -609,7 +1042,9 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                   <input
                     type="text"
                     value={order.room_number || ""}
-                    onChange={(e) => handleOrderChange(order.id, "room_number", e.target.value)}
+                    onChange={(e) =>
+                      handleOrderChange(order.id, "room_number", e.target.value)
+                    }
                     className="w-full min-w-[80px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                     disabled={!isEditMode}
                     placeholder="Room #..."
@@ -618,7 +1053,13 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 <td className="px-3 py-2">
                   <select
                     value={order.payment_method || ""}
-                    onChange={(e) => handleOrderChange(order.id, "payment_method", e.target.value)}
+                    onChange={(e) =>
+                      handleOrderChange(
+                        order.id,
+                        "payment_method",
+                        e.target.value
+                      )
+                    }
                     className="w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
                     disabled={!isEditMode}
                   >
@@ -631,36 +1072,19 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                 <td className="px-3 py-2">
                   <select
                     value={order.status || "pending"}
-                    onChange={(e) => handleOrderChange(order.id, "status", e.target.value)}
-                    className={`w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(order.status || "pending")}`}
+                    onChange={(e) =>
+                      handleOrderChange(order.id, "status", e.target.value)
+                    }
+                    className={`w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(
+                      order.status || "pending"
+                    )}`}
                     disabled={!isEditMode}
                   >
-                    <option value="pending">⏳ Pending</option>
-                    <option value="partially_approved">⏳ Partially Approved</option>
-                    <option value="approved">✅ Approved</option>
-                    <option value="confirmed">✅ Confirmed</option>
-                    <option value="cancelled">❌ Cancelled</option>
-                    <option value="Information given">ℹ️ Information given</option>
-                    <option value="Need to give information">📝 Need to give information</option>
-                    <option value="Need to tell got a seat/in waiting">🪑 Need to tell got a seat/in waiting</option>
-                    <option value="Need to conclude a contract">📑 Need to conclude a contract</option>
-                    <option value="Concluded a contract">✅ Concluded a contract</option>
-                    <option value="Postponed the travel">⏳ Postponed the travel</option>
-                    <option value="Interested in other travel">🌍 Interested in other travel</option>
-                    <option value="Cancelled after confirmed">❌ Cancelled after confirmed</option>
-                    <option value="Cancelled after ordered a seat">❌ Cancelled after ordered a seat</option>
-                    <option value="Cancelled after take a information">❌ Cancelled after take a information</option>
-                    <option value="Paid the advance payment">💸 Paid the advance payment</option>
-                    <option value="Need to meet">🤝 Need to meet</option>
-                    <option value="Sent a claim">⚠️ Sent a claim</option>
-                    <option value="Fam Tour">👨‍👩‍👧 Fam Tour</option>
-                    <option value="The travel is going">✈️ The travel is going</option>
-                    <option value="Has taken seat from another company">🪑 Has taken seat from another company</option>
-                    <option value="Swapped seat with another company">🔄 Swapped seat with another company</option>
-                    <option value="Gave seat to another company">🎁 Gave seat to another company</option>
-                    <option value="Cancelled and bought travel from another country">🌐 Cancelled and bought travel from another country</option>
-                    <option value="Completed">🏁 Completed</option>
-                    <option value="Travel ended completely">🏁 Travel ended completely</option>
+                    {VALID_ORDER_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
                   </select>
                 </td>
                 {hasShowInProvider && (
@@ -670,12 +1094,18 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                         <input
                           type="checkbox"
                           checked={order.show_in_provider || false}
-                          onChange={(e) => handleOrderChange(order.id, "show_in_provider", e.target.checked)}
+                          onChange={(e) =>
+                            handleOrderChange(
+                              order.id,
+                              "show_in_provider",
+                              e.target.checked
+                            )
+                          }
                           className="sr-only peer"
                         />
                         <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                         <span className="ml-2 text-sm font-medium text-gray-700">
-                          {order.show_in_provider ? '✅' : '❌'}
+                          {order.show_in_provider ? "✅" : "❌"}
                         </span>
                       </label>
                     </div>
@@ -703,8 +1133,18 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
                       className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all duration-200 group"
                       title="Delete order"
                     >
-                      <svg className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg
+                        className="w-4 h-4 group-hover:scale-110 transition-transform duration-200"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   )}
@@ -719,10 +1159,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <button
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${currentPage === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                  }`}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                  currentPage === 1
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                }`}
               >
                 Previous
               </button>
@@ -732,10 +1173,11 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
               <button
                 onClick={handleNextPage}
                 disabled={currentPage >= totalPages}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${currentPage >= totalPages
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                  }`}
+                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
+                  currentPage >= totalPages
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                }`}
               >
                 Next
               </button>
@@ -745,12 +1187,34 @@ export default function OrdersTab({ orders, setOrders, currentUser }: OrdersTabP
         {filteredOrders.length === 0 && (
           <div className="text-center py-16">
             <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              <svg
+                className="w-12 h-12 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No orders found</h3>
-            <p className="text-gray-500">Try adjusting your search filters to find what you're looking for.</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              No orders found
+            </h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              No orders match the current filters, or no passengers have been
+              approved yet. Check the Passenger Requests tab to approve or
+              reject passenger requests.
+            </p>
+            <button
+              onClick={() => fetchOrders()}
+              className="mt-4 px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm font-semibold"
+            >
+              Refresh Orders
+            </button>
           </div>
         )}
       </div>

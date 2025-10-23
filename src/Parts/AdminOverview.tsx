@@ -1,4 +1,12 @@
-import { FileText, Users, MapPin, DollarSign, Calendar, CheckCircle, Clock } from "lucide-react";
+import {
+  FileText,
+  Users,
+  MapPin,
+  DollarSign,
+  Calendar,
+  CheckCircle,
+  Clock,
+} from "lucide-react";
 import type { Order } from "../types/type";
 
 interface AdminOverviewProps {
@@ -12,37 +20,63 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Bookings</p>
-              <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
+              <p className="text-sm font-medium text-gray-600">
+                Total Bookings
+              </p>
+              <p className="text-2xl font-bold text-gray-900">
+                {orders.length}
+              </p>
             </div>
-            <div className="p-3 bg-blue-100 rounded-lg"><FileText className="w-6 h-6 text-blue-600" /></div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Passengers</p>
-              <p className="text-2xl font-bold text-gray-900">{orders.reduce((sum, order) => sum + (order.passengers?.length || 0), 0)}</p>
+              <p className="text-sm font-medium text-gray-600">
+                Total Passengers
+              </p>
+              <p className="text-2xl font-bold text-gray-900">
+                {orders.reduce(
+                  (sum, order) => sum + (order.passengers?.length || 0),
+                  0
+                )}
+              </p>
             </div>
-            <div className="p-3 bg-green-100 rounded-lg"><Users className="w-6 h-6 text-green-600" /></div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Users className="w-6 h-6 text-green-600" />
+            </div>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Active Tours</p>
-              <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {orders.length}
+              </p>
             </div>
-            <div className="p-3 bg-purple-100 rounded-lg"><MapPin className="w-6 h-6 text-purple-600" /></div>
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <MapPin className="w-6 h-6 text-purple-600" />
+            </div>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">${orders.reduce((sum, order) => sum + (order.total_price || 0), 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                $
+                {orders
+                  .reduce((sum, order) => sum + (order.total_price || 0), 0)
+                  .toLocaleString()}
+              </p>
             </div>
-            <div className="p-3 bg-orange-100 rounded-lg"><DollarSign className="w-6 h-6 text-orange-600" /></div>
+            <div className="p-3 bg-orange-100 rounded-lg">
+              <DollarSign className="w-6 h-6 text-orange-600" />
+            </div>
           </div>
         </div>
       </div>
@@ -63,13 +97,27 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passengers</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service Cost</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    #
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Booking Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tour
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Departure
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Passengers
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Service Cost
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -112,15 +160,20 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
                     {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === "Confirmed"
-                          ? "bg-green-100 text-green-800"
-                          : order.status === "pending"
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          order.status === "confirmed"
+                            ? "bg-green-100 text-green-800"
+                            : order.status === "pending"
                             ? "bg-yellow-100 text-yellow-800"
                             : "bg-gray-100 text-gray-800"
-                          }`}
+                        }`}
                       >
-                        {order.status === "Confirmed" && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {order.status === "pending" && <Clock className="w-3 h-3 mr-1" />}
+                        {order.status === "confirmed" && (
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                        )}
+                        {order.status === "pending" && (
+                          <Clock className="w-3 h-3 mr-1" />
+                        )}
                         {order.status.replace("_", " ").toUpperCase()}
                       </span>
                     </td>

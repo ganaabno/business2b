@@ -8,13 +8,13 @@ const prepareForDatabase = (passenger: Passenger): any => {
   const dbData: any = {
     order_id: passenger.order_id || null,
     user_id: passenger.user_id || null,
-    name: passenger.name.trim() || null,
+    name: passenger.name?.trim() || null,
     room_allocation: passenger.room_allocation.trim() || null,
     serial_no: passenger.serial_no,
     first_name: passenger.first_name.trim() || null,
     last_name: passenger.last_name.trim() || null,
     // ✅ Dates: empty string → null for DB, but keep as string in state
-    date_of_birth: passenger.date_of_birth.trim() === '' ? null : passenger.date_of_birth.trim(),
+    date_of_birth: passenger.date_of_birth?.trim() === '' ? null : passenger.date_of_birth?.trim(),
     age: passenger.age || null,
     gender: passenger.gender || null,
     passport_number: passenger.passport_number.trim() || null,
@@ -63,11 +63,11 @@ export const usePassengers = (
       serial_no: (initialPassengers.length + 1).toString(),
       last_name: "",
       first_name: "",
-      date_of_birth: "",           // ✅ Empty string
+      date_of_birth: "", // ✅ Empty string
       age: 0,
       gender: "",
       passport_number: "",
-      passport_expire: "",         // ✅ Empty string
+      passport_expire: "", // ✅ Empty string
       nationality: "Mongolia",
       roomType: initialPassengers.length > 0 && initialPassengers[initialPassengers.length - 1].roomType === "Double"
         ? initialPassengers[initialPassengers.length - 1].roomType
@@ -86,6 +86,11 @@ export const usePassengers = (
       is_blacklisted: false,
       blacklisted_date: "",
       notes: "",
+      tour_id: "",
+      passenger_number: "",
+      main_passenger_id: null,
+      sub_passenger_count: 0,
+      has_sub_passengers: false
     };
 
     setPassengers(prev => [...prev, newPassenger]);

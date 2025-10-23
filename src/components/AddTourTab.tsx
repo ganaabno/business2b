@@ -2,7 +2,19 @@ import { useState } from "react";
 import { supabase } from "../supabaseClient";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { Plus, Trash2, Eye, EyeOff, Clock, User, MapPin, Users, Bus, Calendar, CloudRain } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Clock,
+  User,
+  MapPin,
+  Users,
+  Bus,
+  Calendar,
+  CloudRain,
+} from "lucide-react";
 import type { Tour, User as UserType } from "../types/type";
 import { formatDate } from "../utils/tourUtils";
 import SanyaTemplate from "../Templates/SanyaTemplate";
@@ -18,7 +30,13 @@ interface AddTourTabProps {
   hideProviderColumn?: boolean;
 }
 
-export default function AddTourTab({ tours, setTours, currentUser, showNotification, hideProviderColumn = false }: AddTourTabProps) {
+export default function AddTourTab({
+  tours,
+  setTours,
+  currentUser,
+  showNotification,
+  hideProviderColumn = false,
+}: AddTourTabProps) {
   const { currentUser: authUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState<Tour["status"] | "">("");
   const userRole = authUser?.role || "user";
@@ -39,12 +57,15 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
     refreshTours,
   } = useTours({ userRole, tours, setTours });
 
-  console.log("Filtered Tours:", filteredTours.map(t => ({
-    id: t.id,
-    title: t.title,
-    departure_date: t.departure_date,
-    booking_confirmation: t.booking_confirmation,
-  })));
+  console.log(
+    "Filtered Tours:",
+    filteredTours.map((t) => ({
+      id: t.id,
+      title: t.title,
+      departure_date: t.departure_date,
+      booking_confirmation: t.booking_confirmation,
+    }))
+  );
 
   const [newTour, setNewTour] = useState({
     title: "",
@@ -62,7 +83,10 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       departure_date: "",
       seats: "",
     }));
-    showNotification("success", `Template ${templateData.title} loaded! Please set departure date and seats.`);
+    showNotification(
+      "success",
+      `Template ${templateData.title} loaded! Please set departure date and seats.`
+    );
   };
 
   const handleAddTour = async () => {
@@ -87,9 +111,17 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       departuredate: newTour.departure_date,
       seats: seatsValue,
       available_seats: seatsValue,
-      hotels: newTour.hotels.trim() ? newTour.hotels.trim().split(",").map((h) => h.trim()) : [],
+      hotels: newTour.hotels.trim()
+        ? newTour.hotels
+            .trim()
+            .split(",")
+            .map((h) => h.trim())
+        : [],
       services: newTour.services.trim()
-        ? newTour.services.trim().split(",").map((s) => ({ name: s.trim(), price: 0 }))
+        ? newTour.services
+            .trim()
+            .split(",")
+            .map((s) => ({ name: s.trim(), price: 0 }))
         : [],
       created_by: currentUser.id,
       created_at: new Date().toISOString(),
@@ -101,7 +133,11 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
     };
 
     try {
-      const { data, error } = await supabase.from("tours").insert([tourData]).select().single();
+      const { data, error } = await supabase
+        .from("tours")
+        .insert([tourData])
+        .select()
+        .single();
       if (error) {
         console.error("Supabase error:", error);
         showNotification("error", `Error adding tour: ${error.message}`);
@@ -139,7 +175,10 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       showNotification("success", "Tour added successfully!");
     } catch (error) {
       console.error("Error adding tour:", error);
-      showNotification("error", "An unexpected error occurred while adding the tour.");
+      showNotification(
+        "error",
+        "An unexpected error occurred while adding the tour."
+      );
     }
   };
 
@@ -158,7 +197,10 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       setShowDeleteConfirm(null);
     } catch (error) {
       console.error("Unexpected error deleting tour:", error);
-      showNotification("error", "An unexpected error occurred while deleting the tour.");
+      showNotification(
+        "error",
+        "An unexpected error occurred while deleting the tour."
+      );
       setTours(previousTours);
     }
   };
@@ -168,74 +210,108 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
       <ToastContainer />
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            className="w-5 h-5 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
               d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z"
             />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+            />
           </svg>
           Add New Tour
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title
+            </label>
             <input
               type="text"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={newTour.title}
-              onChange={(e) => setNewTour({ ...newTour, title: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, title: e.target.value })
+              }
               placeholder="Enter tour title..."
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Departure Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Departure Date`
+            </label>
             <input
               type="date"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               value={newTour.departure_date}
-              onChange={(e) => setNewTour({ ...newTour, departure_date: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, departure_date: e.target.value })
+              }
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Seats</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Seats
+            </label>
             <input
               type="number"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={newTour.seats}
-              onChange={(e) => setNewTour({ ...newTour, seats: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, seats: e.target.value })
+              }
               placeholder="Number of seats"
               min="0"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Hotels (comma-separated)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Hotels (comma-separated)
+            </label>
             <input
               type="text"
               placeholder="Hotel A, Hotel B, Hotel C"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={newTour.hotels}
-              onChange={(e) => setNewTour({ ...newTour, hotels: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, hotels: e.target.value })
+              }
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Services</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Services
+            </label>
             <input
               type="text"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={newTour.services}
-              onChange={(e) => setNewTour({ ...newTour, services: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, services: e.target.value })
+              }
               placeholder="Tour services..."
             />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
             <textarea
               className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
               value={newTour.description}
-              onChange={(e) => setNewTour({ ...newTour, description: e.target.value })}
+              onChange={(e) =>
+                setNewTour({ ...newTour, description: e.target.value })
+              }
               rows={3}
               placeholder="Tour description..."
             />
@@ -247,8 +323,18 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
             disabled={!newTour.title || !newTour.departure_date}
             className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed flex items-center shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <svg
+              className="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
             </svg>
             Add Tour
           </button>
@@ -279,14 +365,26 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                   onChange={(e) => setTitleFilter(e.target.value)}
                   className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 />
-                <svg className="w-5 h-5 text-gray-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                <svg
+                  className="w-5 h-5 text-gray-400 absolute left-3 top-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
                 </svg>
               </div>
 
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as Tour["status"] | "")}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as Tour["status"] | "")
+                }
                 className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All</option>
@@ -321,8 +419,12 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                 <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
                   <MapPin className="w-8 h-8 text-gray-400" />
                 </div>
-                <p className="text-gray-600 text-lg font-medium">No tours available yet</p>
-                <p className="text-sm text-gray-400 mt-2">Add your first tour using the form above</p>
+                <p className="text-gray-600 text-lg font-medium">
+                  No tours available yet
+                </p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Add your first tour using the form above
+                </p>
               </div>
             ) : (
               <table className="min-w-full divide-y divide-gray-200">
@@ -361,7 +463,10 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                   {filteredTours.map((tour) => (
-                    <tr key={tour.id} className="hover:bg-blue-50 transition-colors duration-150">
+                    <tr
+                      key={tour.id}
+                      className="hover:bg-blue-50 transition-colors duration-150"
+                    >
                       <td className="px-6 py-4 text-sm font-semibold text-gray-900">
                         #{tour.tour_number || tour.id}
                       </td>
@@ -369,7 +474,9 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                         <input
                           type="text"
                           value={tour.title}
-                          onChange={(e) => handleTourChange(tour.id, "title", e.target.value)}
+                          onChange={(e) =>
+                            handleTourChange(tour.id, "title", e.target.value)
+                          }
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                           placeholder="Tour title..."
                         />
@@ -378,7 +485,9 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                         <input
                           type="text"
                           value={tour.name || ""}
-                          onChange={(e) => handleTourChange(tour.id, "name", e.target.value)}
+                          onChange={(e) =>
+                            handleTourChange(tour.id, "name", e.target.value)
+                          }
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                           placeholder="Tour name..."
                         />
@@ -387,7 +496,13 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                         <input
                           type="date"
                           value={tour.departure_date || ""}
-                          onChange={(e) => handleTourChange(tour.id, "departure_date", e.target.value)}
+                          onChange={(e) =>
+                            handleTourChange(
+                              tour.id,
+                              "departure_date",
+                              e.target.value
+                            )
+                          }
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                         />
                         {tour.departure_date && (
@@ -402,7 +517,9 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                       <td className="px-6 py-4">
                         <select
                           value={tour.status || ""}
-                          onChange={(e) => handleTourChange(tour.id, "status", e.target.value)}
+                          onChange={(e) =>
+                            handleTourChange(tour.id, "status", e.target.value)
+                          }
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                         >
                           <option value="">Select Status</option>
@@ -414,12 +531,19 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                       </td>
                       {!hideProviderColumn && (
                         <td className="px-6 py-4">
-                          {tour.show_in_provider !== null && tour.show_in_provider !== undefined ? (
+                          {tour.show_in_provider !== null &&
+                          tour.show_in_provider !== undefined ? (
                             <label className="flex items-center space-x-2 cursor-pointer">
                               <input
                                 type="checkbox"
                                 checked={tour.show_in_provider}
-                                onChange={(e) => handleTourChange(tour.id, "show_in_provider", e.target.checked)}
+                                onChange={(e) =>
+                                  handleTourChange(
+                                    tour.id,
+                                    "show_in_provider",
+                                    e.target.checked
+                                  )
+                                }
                                 className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-all"
                               />
                               <span className="text-sm">
@@ -439,7 +563,13 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                         <input
                           type="number"
                           value={tour.seats || 0}
-                          onChange={(e) => handleTourChange(tour.id, "seats", Number(e.target.value))}
+                          onChange={(e) =>
+                            handleTourChange(
+                              tour.id,
+                              "seats",
+                              Number(e.target.value)
+                            )
+                          }
                           className="w-20 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                           placeholder="0"
                           min="0"
@@ -484,7 +614,12 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
           <div className="p-6 border-b border-gray-200">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold text-gray-800 flex items-center">
-                <svg className="w-6 h-6 mr-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  className="w-6 h-6 mr-3 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -494,15 +629,28 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                 </svg>
                 Confirmed Bookings
                 <span className="ml-3 px-3 py-1 bg-blue-600 text-white text-sm font-semibold rounded-full">
-                  {filteredTours.filter((tour) => tour.booking_confirmation).length}
+                  {
+                    filteredTours.filter((tour) => tour.booking_confirmation)
+                      .length
+                  }
                 </span>
               </h3>
               <button
                 onClick={refreshTours}
                 className="px-5 py-2.5 bg-sky-600 text-white font-medium rounded-xl hover:bg-sky-700 transition-all shadow-sm hover:shadow-md flex items-center space-x-2"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
                 </svg>
                 <span>Refresh</span>
               </button>
@@ -510,10 +658,16 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
           </div>
 
           <div className="p-6">
-            {filteredTours.filter((tour) => tour.booking_confirmation).length === 0 ? (
+            {filteredTours.filter((tour) => tour.booking_confirmation)
+              .length === 0 ? (
               <div className="text-center py-16">
                 <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg
+                    className="w-8 h-8 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -522,8 +676,12 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                     />
                   </svg>
                 </div>
-                <p className="text-gray-600 text-lg font-medium">No confirmed bookings yet</p>
-                <p className="text-sm text-gray-400 mt-2">Bookings will appear here once confirmed</p>
+                <p className="text-gray-600 text-lg font-medium">
+                  No confirmed bookings yet
+                </p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Bookings will appear here once confirmed
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -546,45 +704,62 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                         <div className="flex items-start space-x-3">
                           <Calendar className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 font-medium uppercase">Departure Date</p>
+                            <p className="text-xs text-gray-500 font-medium uppercase">
+                              Departure Date
+                            </p>
                             <p className="text-sm text-gray-900 font-semibold">
-                              {tour.departure_date ? formatDisplayDate(tour.departure_date) : "Not set"}
+                              {tour.departure_date
+                                ? formatDisplayDate(tour.departure_date)
+                                : "Not set"}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start space-x-3">
                           <Users className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 font-medium uppercase">Passengers</p>
+                            <p className="text-xs text-gray-500 font-medium uppercase">
+                              Passengers
+                            </p>
                             <p className="text-sm text-gray-900 font-semibold">
-                              {tour.booking_confirmation?.passenger_count ?? tour.seats ?? "N/A"}
+                              {tour.booking_confirmation?.passenger_count ??
+                                tour.seats ??
+                                "N/A"}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start space-x-3">
                           <Bus className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 font-medium uppercase">Bus Number</p>
+                            <p className="text-xs text-gray-500 font-medium uppercase">
+                              Bus Number
+                            </p>
                             <p className="text-sm text-gray-900 font-semibold">
-                              {tour.booking_confirmation?.bus_number || "Not assigned"}
+                              {tour.booking_confirmation?.bus_number ||
+                                "Not assigned"}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start space-x-3">
                           <User className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 font-medium uppercase">Guide Name</p>
+                            <p className="text-xs text-gray-500 font-medium uppercase">
+                              Guide Name
+                            </p>
                             <p className="text-sm text-gray-900 font-semibold truncate">
-                              {tour.booking_confirmation?.guide_name || "Not assigned"}
+                              {tour.booking_confirmation?.guide_name ||
+                                "Not assigned"}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start space-x-3">
                           <CloudRain className="w-5 h-5 text-cyan-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 font-medium uppercase">Weather/Emergency</p>
+                            <p className="text-xs text-gray-500 font-medium uppercase">
+                              Weather/Emergency
+                            </p>
                             <p className="text-sm text-gray-900 font-semibold">
-                              {tour.booking_confirmation?.weather_emergency || "Normal conditions"}
+                              {tour.booking_confirmation?.weather_emergency ||
+                                "Normal conditions"}
                             </p>
                           </div>
                         </div>
@@ -592,7 +767,9 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                           <div className="flex items-start space-x-3 mb-2">
                             <User className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-gray-500">Created by</p>
+                              <p className="text-xs text-gray-500">
+                                Created by
+                              </p>
                               <p className="text-sm text-gray-700 font-medium truncate">
                                 {tour.creator_name || "Unknown"}
                               </p>
@@ -601,20 +778,28 @@ export default function AddTourTab({ tours, setTours, currentUser, showNotificat
                           <div className="flex items-start space-x-3 mb-2">
                             <User className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-gray-500">Updated by</p>
+                              <p className="text-xs text-gray-500">
+                                Updated by
+                              </p>
                               <p className="text-sm text-gray-700 font-medium truncate">
-                                {tour.booking_confirmation?.updated_by_username ||
-                                  tour.booking_confirmation?.updated_by_email || "Unknown"}
+                                {tour.booking_confirmation
+                                  ?.updated_by_username ||
+                                  tour.booking_confirmation?.updated_by_email ||
+                                  "Unknown"}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-start space-x-3">
                             <Clock className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-gray-500">Last updated</p>
+                              <p className="text-xs text-gray-500">
+                                Last updated
+                              </p>
                               <p className="text-sm text-gray-700 font-medium">
                                 {tour.booking_confirmation?.updated_at
-                                  ? formatDisplayDate(tour.booking_confirmation.updated_at)
+                                  ? formatDisplayDate(
+                                      tour.booking_confirmation.updated_at
+                                    )
                                   : "Unknown"}
                               </p>
                             </div>

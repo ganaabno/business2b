@@ -10,6 +10,9 @@ import { checkSeatLimit } from "../utils/seatLimitChecks";
 import { useEffect, useState } from "react";
 
 interface SupabasePassenger {
+  subPassengerCount: number;
+  hasSubPassengers: boolean;
+  mainPassengerId: string | null;
   id: string;
   order_id: string;
   user_id: string | null;
@@ -123,6 +126,11 @@ export const createNewPassenger = (
     blacklisted_date: new Date().toISOString(),
     notes: "",
     seat_count: 0,
+    tour_id: "",
+    passenger_number: "",
+    main_passenger_id: null,
+    sub_passenger_count: 0,
+    has_sub_passengers: false,
   };
 };
 
@@ -314,6 +322,11 @@ export const usePassengerSubscriptions = ({
                     blacklisted_date: (p as any).blacklisted_date ?? null,
                     notes: (p as any).notes ?? null,
                     seat_count: (p as any).seat_count ?? 0,
+                    tour_id: p.tour_title,
+                    passenger_number: p.passport_number,
+                    main_passenger_id: p.mainPassengerId,
+                    has_sub_passengers: p.hasSubPassengers,
+                    sub_passenger_count: p.subPassengerCount,
                   })
                 )
                 .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
@@ -369,6 +382,7 @@ export const usePassengerSubscriptions = ({
             data.map(
               (o): Order => ({
                 id: o.id,
+                order_id: String(o.id), // ✅ ADD THIS
                 user_id: o.user_id,
                 tour_id: o.tour_id,
                 departureDate: o.departureDate,
@@ -400,6 +414,9 @@ export const usePassengerSubscriptions = ({
                 balance: o.balance,
                 commission: o.commission || 0,
                 passengers: passengers.filter((p) => p.order_id === o.id),
+                passport_copy_url: o.passport_copy_url,
+                passenger_count: o.passenger_count,
+                booking_confirmation: o.booking_confirmation || null,
               })
             )
           );
@@ -1210,6 +1227,11 @@ export const handleUploadCSV = ({
           blacklisted_date: new Date().toISOString(),
           notes: "",
           seat_count: 0,
+          tour_id: "",
+          passenger_number: "",
+          main_passenger_id: null,
+          sub_passenger_count: 0,
+          has_sub_passengers: false,
         };
         if (tourData && passenger.additional_services.length > 0) {
           passenger.price = calculateServicePrice(

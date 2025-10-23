@@ -59,6 +59,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
       base_price: 0,
       available_seats: 0,
       price_base: undefined,
+      booking_confirmation: null,
     };
 
     try {

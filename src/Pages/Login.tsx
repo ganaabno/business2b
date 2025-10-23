@@ -57,8 +57,8 @@ export default function Login() {
       <div className="relative w-full max-w-md">
         <div className="bg-white/80 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 transition-all duration-300 hover:shadow-3xl">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
-              <img src={Logo} alt="LogoPic" className="w-8 h-8" />
+            <div className="inline-flex items-center justify-center w-24 h-18 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
+              <img src={Logo} alt="LogoPic" className="w-16 h-8"/>
             </div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
               Welcome Back

@@ -139,25 +139,33 @@ export function useTours({
             order.departureDate === tour.departuredate
         );
         const confirmation = matchingOrder?.booking_confirmation || null;
+
+        // Ensure dates is always an array with at least one valid date
+        const tourDates = tour.dates?.length
+          ? tour.dates
+          : tour.departuredate
+          ? [tour.departuredate]
+          : [new Date().toISOString().split("T")[0]]; // Fallback to today's date
+
         return {
-          id: tour.id,
-          title: tour.title,
+          id: String(tour.id), // Ensure id is a string
+          title: tour.title || "Unnamed Tour", // Fallback for missing title
           seats: tour.seats ?? 0,
-          departure_date: tour.departuredate || "",
-          status: tour.status,
-          show_in_provider: tour.show_in_provider,
+          departure_date: tour.departuredate || tourDates[0], // Use first date if departuredate is missing
+          status: tour.status || "active", // Default to active
+          show_in_provider: tour.show_in_provider ?? true,
           description: tour.description || "",
           creator_name: tour.creator_name || "",
           tour_number: tour.tour_number || null,
-          name: tour.name || tour.title,
-          dates: tour.dates || [],
+          name: tour.name || tour.title || "Unnamed Tour",
+          dates: tourDates, // Ensure non-empty dates array
           hotels: tour.hotels || [],
           services: tour.services || [],
           created_by: tour.created_by || "",
           created_at: tour.created_at || "",
           updated_at: tour.updated_at || "",
           base_price: tour.base_price ?? 0,
-          available_seats: tour.available_seats ?? 0,
+          available_seats: tour.available_seats ?? tour.seats ?? 0,
           booking_confirmation: confirmation
             ? {
                 order_id: confirmation.order_id,
@@ -166,7 +174,7 @@ export function useTours({
                 weather_emergency: confirmation.weather_emergency,
                 updated_by: confirmation.updated_by,
                 updated_at: confirmation.updated_at,
-                passenger_count: matchingOrder?.passenger, // Map orders.passenger to passenger_count
+                passenger_count: matchingOrder?.passenger,
                 updated_by_email: confirmation.updated_by,
               }
             : null,
@@ -315,7 +323,20 @@ export function useTours({
   ) => {
     const previousTours = [...tours];
     const updatedTours = tours.map((t) =>
-      t.id === tourId ? { ...t, [field]: value } : t
+      t.id === tourId
+        ? {
+            ...t,
+            [field]: value,
+            // Update dates array if departure_date is changed
+            ...(field === "departure_date" && {
+              dates: value
+                ? [value]
+                : t.dates?.length
+                ? t.dates
+                : [new Date().toISOString().split("T")[0]],
+            }),
+          }
+        : t
     );
     setTours(updatedTours);
 

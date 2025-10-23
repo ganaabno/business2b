@@ -1,283 +1,197 @@
-/**
- * Booking Utilities
- * Common utility functions for booking operations
- */
+import type { UserType, Passenger, Tour } from "../types/type";
+import { parse, isValid } from "date-fns";
 
-import type { Passenger } from "../types/type";
-
-/**
- * Calculate age from date of birth
- * @param dateOfBirth - Date of birth in YYYY-MM-DD format
- * @returns Calculated age in years
- */
-export const calculateAge = (dateOfBirth: string): number => {
-  if (!dateOfBirth || isNaN(new Date(dateOfBirth).getTime())) return 0;
-  
-  const dob = new Date(dateOfBirth);
-  const today = new Date();
-  
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  
-  // Adjust age if birthday hasn't occurred this year
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age--;
+export const cleanDateForDB = (dateValue: any): string | null => {
+  if (
+    dateValue === null ||
+    dateValue === undefined ||
+    dateValue === "" ||
+    dateValue === " " ||
+    (typeof dateValue === "string" && dateValue.trim() === "") ||
+    (typeof dateValue === "string" &&
+      !isNaN(Date.parse(dateValue)) &&
+      new Date(dateValue).toString() === "Invalid Date")
+  ) {
+    return null;
   }
-  
-  return Math.max(0, age);
-};
-
-/**
- * Format currency for display
- * @param amount - Amount in dollars
- * @returns Formatted currency string
- */
-export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
-
-/**
- * Validate email address
- * @param email - Email string to validate
- * @returns True if valid email format
- */
-export const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-/**
- * Validate phone number
- * @param phone - Phone number string
- * @returns True if valid phone format (8+ digits)
- */
-export const isValidPhone = (phone: string): boolean => {
-  const digitsOnly = phone.replace(/\D/g, '');
-  return digitsOnly.length >= 8;
-};
-
-/**
- * Clean and format passenger name
- * @param firstName - First name
- * @param lastName - Last name
- * @returns Full name string
- */
-export const formatPassengerName = (firstName: string, lastName: string): string => {
-  const first = (firstName || '').trim();
-  const last = (lastName || '').trim();
-  return `${first} ${last}`.trim();
-};
-
-/**
- * Get passenger status badge class
- * @param status - Passenger status
- * @returns Tailwind CSS classes for status badge
- */
-export const getStatusBadgeClass = (status: string): string => {
-  switch (status?.toLowerCase()) {
-    case 'active':
-      return 'bg-green-100 text-green-800 border-green-200';
-    case 'pending':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    case 'cancelled':
-      return 'bg-red-100 text-red-800 border-red-200';
-    case 'confirmed':
-      return 'bg-blue-100 text-blue-800 border-blue-200';
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
+  const cleaned = String(dateValue).trim();
+  const parsedDate = new Date(cleaned);
+  if (!isNaN(parsedDate.getTime())) {
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+    const day = String(parsedDate.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
+  return null;
 };
-/**
- * Check if passenger form is complete
- * @param passenger - Passenger object
- * @returns Boolean indicating if required fields are filled
- */
-export const isPassengerComplete = (passenger: Partial<Passenger>): boolean => {
-  const requiredFields = [
-    'first_name',
-    'last_name', 
-    'email',
-    'phone',
-    'gender',
-    'passport_number',
-    'passport_expire',
-    'nationality',
-    'hotel'
-  ];
 
-  return requiredFields.every(field => {
-    const value = passenger[field as keyof Passenger];
-    return value && String(value).trim().length > 0;
+export const cleanValueForDB = (field: string, value: any): any => {
+  if (
+    [
+      "date_of_birth",
+      "passport_expire",
+      "departure_date",
+      "blacklisted_date",
+    ].includes(field)
+  ) {
+    return cleanDateForDB(value);
+  }
+  if (["created_at", "updated_at"].includes(field)) {
+    return value ? new Date(value).toISOString() : null;
+  }
+  if (field === "departureDate") {
+    return cleanDateForDB(value);
+  }
+  return typeof value === "string" ? value.trim() : value;
+};
+
+export const generatePassengerId = (): string => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
   });
 };
 
-/**
- * Get completion percentage for passenger
- * @param passenger - Passenger object
- * @returns Percentage of completed required fields (0-100)
- */
-export const getPassengerCompletion = (passenger: Partial<Passenger>): number => {
-  const requiredFields = [
-    'first_name',
-    'last_name', 
-    'email',
-    'phone',
-    'gender',
-    'passport_number',
-    'passport_expire',
-    'nationality',
-    'hotel'
-  ];
+export const createNewPassenger = (
+  currentUser: UserType,
+  existingPassengers: Passenger[],
+  selectedTourData?: Tour,
+  hotels: string[] = [],
+  prefill: {
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    main_passenger_id?: string | null;
+  } = {}
+): Passenger => {
+  const isPowerUser = ["admin", "manager", "superadmin"].includes(
+    currentUser.role || "user"
+  );
+  const serialNo = (existingPassengers.length + 1).toString();
+  const lastPassenger = existingPassengers[existingPassengers.length - 1];
 
-  const completed = requiredFields.filter(field => {
-    const value = passenger[field as keyof Passenger];
-    return value && String(value).trim().length > 0;
-  }).length;
-
-  return Math.round((completed / requiredFields.length) * 100);
-};
-
-/**
- * Generate room allocation display text
- * @param allocation - Room allocation code
- * @param roomType - Room type
- * @returns User-friendly room allocation text
- */
-export const formatRoomAllocation = (allocation: string, roomType: string): string => {
-  if (!allocation) return 'Not assigned';
-  
-  switch (roomType) {
-    case 'Single':
-    case 'King':
-      return `Single Room ${allocation}`;
-    case 'Double':
-      return `Double Room ${allocation}`;
-    case 'Twin':
-      return `Twin Room ${allocation}`;
-    case 'Family':
-      return `Family Room ${allocation}`;
-    default:
-      return allocation;
-  }
-};
-
-/**
- * Check if passport is expiring soon
- * @param expiryDate - Passport expiry date string
- * @param departureDate - Departure date string
- * @returns Object with expiry status and months remaining
- */
-export const checkPassportExpiry = (expiryDate: string, departureDate?: string): {
-  isValid: boolean;
-  monthsRemaining: number;
-  warningLevel: 'none' | 'warning' | 'urgent' | 'expired';
-} => {
-  if (!expiryDate) {
-    return { isValid: false, monthsRemaining: 0, warningLevel: 'expired' };
-  }
-
-  const expiry = new Date(expiryDate);
-  const today = new Date();
-  const monthsRemaining = (expiry.getFullYear() - today.getFullYear()) * 12 + 
-                         (expiry.getMonth() - today.getMonth());
-
-  if (monthsRemaining <= 0) {
-    return { isValid: false, monthsRemaining, warningLevel: 'expired' };
-  }
-
-  if (departureDate) {
-    const minDate = new Date(departureDate);
-    minDate.setMonth(minDate.getMonth() + 6);
-    if (expiry < minDate) {
-      return { isValid: false, monthsRemaining, warningLevel: 'urgent' };
+  const defaultRoomType = (() => {
+    if (existingPassengers.length === 0) return "";
+    if (
+      lastPassenger?.roomType === "Double" &&
+      existingPassengers.length % 2 === 1
+    ) {
+      return "Double";
     }
-  }
+    return "";
+  })();
 
-  if (monthsRemaining <= 1) {
-    return { isValid: true, monthsRemaining, warningLevel: 'urgent' };
-  }
-  
-  if (monthsRemaining <= 3) {
-    return { isValid: true, monthsRemaining, warningLevel: 'warning' };
-  }
+  const defaultHotel = hotels.length > 0 ? hotels[0] : "";
 
-  return { isValid: true, monthsRemaining, warningLevel: 'none' };
-};
-
-/**
- * Get passport expiry color class
- * @param expiryDate - Passport expiry date string
- * @returns Tailwind CSS border and background classes
- */
-export const getPassportExpiryColor = (expiryDate: string): string => {
-  if (!expiryDate) return "border-gray-300 bg-white";
-  
-  const { warningLevel } = checkPassportExpiry(expiryDate);
-  
-  switch (warningLevel) {
-    case 'expired':
-      return "border-red-500 bg-red-50";
-    case 'urgent':
-      return "border-red-400 bg-red-50";
-    case 'warning':
-      return "border-orange-400 bg-orange-50";
-    default:
-      return "border-green-400 bg-green-50";
-  }
-};
-
-/**
- * Format date for display
- * @param dateString - Date string
- * @param format - Display format ('short', 'medium', 'long')
- * @returns Formatted date string
- */
-export const formatDateForDisplay = (dateString: string, format: 'short' | 'medium' | 'long' = 'medium'): string => {
-  if (!dateString) return '';
-  
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
-  
-  const options: Intl.DateTimeFormatOptions = {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
+  return {
+    id: generatePassengerId(),
+    order_id: "",
+    user_id: currentUser.id || null,
+    tour_id: selectedTourData?.id || "",
+    tour_title: selectedTourData?.title || "",
+    departure_date: null,
+    name:
+      prefill.first_name && prefill.last_name
+        ? `${prefill.first_name} ${prefill.last_name}`.trim()
+        : undefined,
+    room_allocation: "",
+    serial_no: serialNo,
+    passenger_number: `PAX-${serialNo}`,
+    last_name: prefill.last_name || "",
+    first_name: prefill.first_name || "",
+    date_of_birth: "",
+    age: null,
+    gender: null,
+    passport_number: "",
+    passport_expire: null,
+    nationality: "Mongolia",
+    roomType: defaultRoomType,
+    hotel: defaultHotel,
+    additional_services: [],
+    price: selectedTourData?.base_price || 0,
+    email: "",
+    phone: prefill.phone || "",
+    passport_upload: null,
+    allergy: "",
+    emergency_phone: "",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: isPowerUser ? "active" : "pending",
+    is_blacklisted: false,
+    blacklisted_date: null,
+    notes: "",
+    seat_count: 1,
+    main_passenger_id: prefill.main_passenger_id || null,
+    sub_passenger_count: 0,
+    has_sub_passengers: false,
   };
-
-  if (format === 'short') {
-    options.month = 'short';
-    options.day = 'numeric';
-  } else if (format === 'long') {
-    options.weekday = 'long';
-    options.month = 'long';
-    options.day = 'numeric';
-  }
-
-  return new Intl.DateTimeFormat('en-US', options).format(date);
 };
 
-/**
- * Get room type badge color
- * @param roomType - Room type string
- * @returns Tailwind CSS classes for room type badge
- */
-export const getRoomTypeBadgeClass = (roomType: string): string => {
-  switch (roomType) {
-    case 'Single':
-    case 'King':
-      return 'bg-green-100 text-green-800 border border-green-200';
-    case 'Double':
-      return 'bg-blue-100 text-blue-800 border border-blue-200';
-    case 'Twin':
-      return 'bg-indigo-100 text-indigo-800 border border-indigo-200';
-    case 'Family':
-      return 'bg-purple-100 text-purple-800 border border-purple-200';
-    default:
-      return 'bg-gray-100 text-gray-600 border border-gray-200';
-  }
-};
+export function createNewPassengerLocal(
+  user: UserType,
+  passengers: Passenger[],
+  tourData: Tour | undefined,
+  hotels: string[],
+  extraFields: {
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    main_passenger_id?: string | null;
+    roomType?: string;
+    room_allocation?: string;
+    serial_no?: string;
+  } = {}
+): Passenger {
+  const isPowerUser = ["admin", "manager", "superadmin"].includes(
+    user.role || "user"
+  );
+  const baseSerial = (passengers.length + 1).toString();
+  const defaultHotel = hotels.length > 0 ? hotels[0] : "";
+
+  return {
+    id: generatePassengerId(),
+    order_id: "",
+    user_id: user.id || null,
+    tour_id: tourData?.id || "",
+    tour_title: tourData?.title || "",
+    departure_date: null,
+    name:
+      extraFields.first_name && extraFields.last_name
+        ? `${extraFields.first_name} ${extraFields.last_name}`.trim()
+        : undefined,
+    room_allocation: extraFields.room_allocation || "",
+    serial_no: extraFields.serial_no || baseSerial,
+    passenger_number: `PAX-${baseSerial}`,
+    last_name: extraFields.last_name || "",
+    first_name: extraFields.first_name || "",
+    date_of_birth: "",
+    age: null,
+    gender: null,
+    passport_number: "",
+    passport_expire: null,
+    nationality: "Mongolia",
+    roomType: extraFields.roomType || "",
+    hotel: defaultHotel,
+    additional_services: [],
+    price: tourData?.base_price || 0,
+    email: "",
+    phone: extraFields.phone || "",
+    passport_upload: null,
+    allergy: "",
+    emergency_phone: "",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: isPowerUser ? "active" : "pending",
+    is_blacklisted: false,
+    blacklisted_date: null,
+    notes: "",
+    seat_count: 1,
+    main_passenger_id: extraFields.main_passenger_id || null,
+    sub_passenger_count: 0,
+    has_sub_passengers: false,
+  };
+}
