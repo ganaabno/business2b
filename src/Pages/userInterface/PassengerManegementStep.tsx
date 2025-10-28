@@ -106,6 +106,7 @@ const createNewPassenger = (
     main_passenger_id: "", // <-- added
     sub_passenger_count: 0, // <-- added
     has_sub_passengers: false, // <-- added
+    booking_number: 0,
   };
 };
 
@@ -662,6 +663,7 @@ export default function PassengerManagementStep({
             main_passenger_id: "", // <-- added
             sub_passenger_count: 0, // <-- added
             has_sub_passengers: false, // <-- added
+            booking_number: 0,
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(

@@ -114,7 +114,7 @@ export interface Tour {
   departure_date: string;
   seats: number;
   available_seats?: number;
-  hotels: string[];
+  hotels?: string | string[];
   services: { name: string; price: number }[];
   price_base?: number;
   base_price: number;
@@ -152,6 +152,7 @@ export interface PendingUser {
 export interface Order {
   id: string;
   user_id: string;
+  tour_title?: string;
   tour_id: string;
   phone: string | null;
   last_name: string | null;
@@ -177,7 +178,7 @@ export interface Order {
   created_at: string;
   updated_at: string;
   passenger_count: number;
-  departureDate: string;
+  departureDate?: string;
   total_price: number;
   total_amount: number;
   paid_amount: number;
@@ -193,6 +194,7 @@ export interface Order {
     updated_at: string | null;
   } | null;
   passengers: Passenger[];
+  room_allocation: string;
 }
 
 export interface BookingConfirmation {
@@ -249,11 +251,11 @@ export type PaymentMethod =
 
 export interface Passenger {
   id: string;
-  order_id: string;
+  order_id?: string | null;
   user_id: string | null;
   tour_title: string;
-  tour_id: string;
-  departure_date: string | null;
+  tour_id?: string;
+  departure_date?: string | null;
   name?: string;
   room_allocation: string;
   serial_no: string;
@@ -262,20 +264,20 @@ export interface Passenger {
   date_of_birth: string | null;
   age: number | null;
   gender: string | null;
-  passport_number: string;
+  passport_number: string | null;
   passport_expire: string | null;
-  nationality: string;
-  roomType: string;
-  hotel: string;
+  nationality: string | null;
+  roomType: string | null;
+  hotel: string | null;
   additional_services: string[];
-  price: number;
-  email: string;
-  phone: string;
+  price: number | null;
+  email: string | null;
+  phone: string | null;
   passport_upload: string | null;
-  allergy: string;
-  emergency_phone: string;
-  created_at: string;
-  updated_at: string;
+  allergy: string | null;
+  emergency_phone: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   status:
     | "pending"
     | "approved"
@@ -285,12 +287,14 @@ export interface Passenger {
     | "cancelled";
   is_blacklisted: boolean;
   blacklisted_date: string | null;
-  notes: string;
+  notes: string | null;
   seat_count?: number | null;
   main_passenger_id: string | null;
   sub_passenger_count: number;
   has_sub_passengers: boolean;
   passenger_number: string;
+  booking_number: string | null;
+  pax_type?: "Adult" | "Child";
 }
 
 export interface PassengerRequest {

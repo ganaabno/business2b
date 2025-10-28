@@ -1,16 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import { supabase } from '../supabaseClient';
-import type { Order, Tour, User as UserType, Passenger, OrderStatus } from '../types/type';
-import { useTranslation } from 'react-i18next';
-import DashboardHeader from '../Pages/ProviderInterfaceComponents/Dashboardheader';
-import StatsCards from './ProviderInterfaceComponents/StatsCards';
-import OrdersTable from '../Pages/ProviderInterfaceComponents/Orderstable';
-import ToursGrid from './ProviderInterfaceComponents/ToursGrid';
-import BookingConfirmationTab from '../Pages/ProviderInterfaceComponents/BookingConfirmation';
-import AddTourTab from '../components/AddTourTab';
-import { Users, MapPin, CheckCircle, Settings } from 'lucide-react';
+import { useState, useEffect, useRef } from "react";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { supabase } from "../supabaseClient";
+import type {
+  Order,
+  Tour,
+  User as UserType,
+  Passenger,
+  OrderStatus,
+} from "../types/type";
+import { useTranslation } from "react-i18next";
+import DashboardHeader from "../Pages/ProviderInterfaceComponents/Dashboardheader";
+import StatsCards from "./ProviderInterfaceComponents/StatsCards";
+import OrdersTable from "../Pages/ProviderInterfaceComponents/Orderstable";
+import ToursGrid from "./ProviderInterfaceComponents/ToursGrid";
+import BookingConfirmationTab from "../Pages/ProviderInterfaceComponents/BookingConfirmation";
+import AddTourTab from "../components/AddTourTab";
+import { Users, MapPin, CheckCircle, Settings, Edit } from "lucide-react";
+import PassengerTable from "../components/PassengerTable";
 
 const schemaCache = {
   tours: null as boolean | null,
@@ -68,24 +75,34 @@ interface RawOrder {
   } | null;
 }
 
-function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfaceProps) {
+function ProviderInterface({
+  tours,
+  setTours,
+  currentUser,
+}: ProviderInterfaceProps) {
   const { t, i18n } = useTranslation();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasShowInProviderTours, setHasShowInProviderTours] = useState<boolean | null>(null);
-  const [hasShowInProviderOrders, setHasShowInProviderOrders] = useState<boolean | null>(null);
+  const [hasShowInProviderTours, setHasShowInProviderTours] = useState<
+    boolean | null
+  >(null);
+  const [hasShowInProviderOrders, setHasShowInProviderOrders] = useState<
+    boolean | null
+  >(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [ordersPerPage] = useState(10);
   const [exportLoading, setExportLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'orders' | 'tours' | 'booking' | 'addTour'>('orders');
+  const [activeTab, setActiveTab] = useState<
+    "orders" | "tours" | "booking" | "addTour" | "passengers"
+  >("orders");
   const hasFetchedRef = useRef(false);
   const subscriptionRef = useRef<any>(null);
 
   // Language toggle
   const toggleLanguage = () => {
-    i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
+    i18n.changeLanguage(i18n.language === "en" ? "zh" : "en");
   };
 
   useEffect(() => {
@@ -93,14 +110,18 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   }, [selectedDate, searchTerm]);
 
   // Fetch with retry logic
-  const fetchWithRetry = async (fn: () => Promise<any>, retries = 3, delay = 1000) => {
+  const fetchWithRetry = async (
+    fn: () => Promise<any>,
+    retries = 3,
+    delay = 1000
+  ) => {
     for (let i = 0; i < retries; i++) {
       try {
         return await fn();
       } catch (error) {
         if (i < retries - 1) {
           console.warn(`Retry ${i + 1}/${retries} after error:`, error);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           throw error;
         }
@@ -108,12 +129,12 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     }
   };
 
-  // Refresh Supabase session to handle JWT expiration
+  // Refresh Supabase session
   const refreshSession = async () => {
     const { data, error } = await supabase.auth.refreshSession();
     if (error) {
-      console.error('Error refreshing session:', error);
-      toast.error(t('failedToRefreshSession'));
+      console.error("Error refreshing session:", error);
+      toast.error(t("failedToRefreshSchema"));
     }
     return data.session;
   };
@@ -125,29 +146,35 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     }
     let hasColumn = false;
     try {
-      const { data: rpcData, error: rpcError } = await fetchWithRetry(async () =>
-        supabase.rpc('get_table_columns', { table_name: 'orders' })
+      const { data: rpcData, error: rpcError } = await fetchWithRetry(
+        async () => supabase.rpc("get_table_columns", { table_name: "orders" })
       );
       if (rpcError) throw rpcError;
-      console.log('Orders schema RPC data:', rpcData);
-      hasColumn = Array.isArray(rpcData) && rpcData.some((col: any) => col.column_name === 'show_in_provider');
+      console.log("Orders schema RPC data:", rpcData);
+      hasColumn =
+        Array.isArray(rpcData) &&
+        rpcData.some((col: any) => col.column_name === "show_in_provider");
     } catch (rpcError) {
-      console.warn("get_table_columns RPC failed for orders, falling back to information_schema:", rpcError);
+      console.warn(
+        "get_table_columns RPC failed for orders, falling back to information_schema:",
+        rpcError
+      );
       try {
-        const { data: schemaData, error: schemaError } = await fetchWithRetry(async () =>
-          supabase
-            .from('information_schema.columns')
-            .select('column_name')
-            .eq('table_schema', 'public')
-            .eq('table_name', 'orders')
-            .eq('column_name', 'show_in_provider')
+        const { data: schemaData, error: schemaError } = await fetchWithRetry(
+          async () =>
+            supabase
+              .from("information_schema.columns")
+              .select("column_name")
+              .eq("table_schema", "public")
+              .eq("table_name", "orders")
+              .eq("column_name", "show_in_provider")
         );
         if (schemaError) throw schemaError;
-        console.log('Orders schema information_schema data:', schemaData);
+        console.log("Orders schema information_schema data:", schemaData);
         hasColumn = schemaData.length > 0;
       } catch (schemaError) {
         console.error("Error checking orders schema:", schemaError);
-        toast.error(t('failedToVerifyOrdersSchema'));
+        toast.error(t("failedToVerifyOrdersSchema"));
         return;
       }
     }
@@ -162,29 +189,35 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     }
     let hasColumn = false;
     try {
-      const { data: rpcData, error: rpcError } = await fetchWithRetry(async () =>
-        supabase.rpc('get_table_columns', { table_name: 'tours' })
+      const { data: rpcData, error: rpcError } = await fetchWithRetry(
+        async () => supabase.rpc("get_table_columns", { table_name: "tours" })
       );
       if (rpcError) throw rpcError;
-      console.log('Tours schema RPC data:', rpcData);
-      hasColumn = Array.isArray(rpcData) && rpcData.some((col: any) => col.column_name === 'show_in_provider');
+      console.log("Tours schema RPC data:", rpcData);
+      hasColumn =
+        Array.isArray(rpcData) &&
+        rpcData.some((col: any) => col.column_name === "show_in_provider");
     } catch (rpcError) {
-      console.warn("get_table_columns RPC failed for tours, falling back to information_schema:", rpcError);
+      console.warn(
+        "get_table_columns RPC failed for tours, falling back to information_schema:",
+        rpcError
+      );
       try {
-        const { data: schemaData, error: schemaError } = await fetchWithRetry(async () =>
-          supabase
-            .from('information_schema.columns')
-            .select('column_name')
-            .eq('table_schema', 'public')
-            .eq('table_name', 'tours')
-            .eq('column_name', 'show_in_provider')
+        const { data: schemaData, error: schemaError } = await fetchWithRetry(
+          async () =>
+            supabase
+              .from("information_schema.columns")
+              .select("column_name")
+              .eq("table_schema", "public")
+              .eq("table_name", "tours")
+              .eq("column_name", "show_in_provider")
         );
         if (schemaError) throw schemaError;
-        console.log('Tours schema information_schema data:', schemaData);
+        console.log("Tours schema information_schema data:", schemaData);
         hasColumn = schemaData.length > 0;
       } catch (schemaError) {
         console.error("Error checking tours schema:", schemaError);
-        toast.error(t('failedToVerifyToursSchema'));
+        toast.error(t("failedToVerifyToursSchema"));
         return;
       }
     }
@@ -195,11 +228,15 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   const fetchOrders = async () => {
     if (hasShowInProviderOrders === null) return;
     setLoading(true);
-    console.log('fetchOrders: hasShowInProviderOrders =', hasShowInProviderOrders);
+    console.log(
+      "fetchOrders: hasShowInProviderOrders =",
+      hasShowInProviderOrders
+    );
 
     let initialQuery = supabase
-      .from('orders')
-      .select(`
+      .from("orders")
+      .select(
+        `
         id,
         user_id,
         tour_id,
@@ -231,29 +268,36 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
         balance,
         show_in_provider,
         createdBy,
-        passengers!order_id(id,name,age,gender,passport_number,passport_expire),
+        passengers!order_id(id,first_name,last_name,age,date_of_birth,gender,passport_number,passport_expire,nationality,notes,booking_number,roomType,room_allocation),
         users!created_by(email),
         booking_confirmations(id,bus_number,guide_name,weather_emergency,updated_by,updated_at)
-      `)
-      .in('status', ['confirmed', 'pending']);
+      `
+      )
+      .in("status", ["confirmed", "pending"]);
 
     if (hasShowInProviderOrders) {
-      initialQuery = initialQuery.eq('show_in_provider', true);
+      initialQuery = initialQuery.eq("show_in_provider", true);
     }
 
     try {
-      const { data, error } = await fetchWithRetry(async () => await initialQuery);
+      const { data, error } = await fetchWithRetry(
+        async () => await initialQuery
+      );
       if (error) {
-        console.error('fetchOrders error details:', JSON.stringify(error, null, 2));
+        console.error(
+          "fetchOrders error details:",
+          JSON.stringify(error, null, 2)
+        );
         throw error;
       }
 
       if (!data || data.length === 0) {
-        console.warn('No data from initial query, trying without joins');
-        toast.warn(t('failedToFetchOrders'));
+        console.warn("No data from initial query, trying without joins");
+        toast.warn(t("failedToFetchOrders"));
         let fallbackQuery = supabase
-          .from('orders')
-          .select(`
+          .from("orders")
+          .select(
+            `
             id,
             user_id,
             tour_id,
@@ -285,19 +329,96 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             balance,
             show_in_provider,
             createdBy,
+            passengers!order_id(id,first_name,last_name,age,date_of_birth,gender,passport_number,passport_expire,nationality,notes,booking_number,roomType,room_allocation),
             booking_confirmations(id,bus_number,guide_name,weather_emergency,updated_by,updated_at)
-          `)
-          .in('status', ['confirmed', 'pending']);
+          `
+          )
+          .in("status", ["confirmed", "pending"]);
         if (hasShowInProviderOrders) {
-          fallbackQuery = fallbackQuery.eq('show_in_provider', true);
+          fallbackQuery = fallbackQuery.eq("show_in_provider", true);
         }
-        const { data: fallbackData, error: fallbackError } = await fetchWithRetry(async () => await fallbackQuery);
+        const { data: fallbackData, error: fallbackError } =
+          await fetchWithRetry(async () => await fallbackQuery);
         if (fallbackError) {
-          console.error('fetchOrders fallback error details:', JSON.stringify(fallbackError, null, 2));
+          console.error(
+            "fetchOrders fallback error details:",
+            JSON.stringify(fallbackError, null, 2)
+          );
           throw fallbackError;
         }
-        console.log('fetchOrders: Fallback query succeeded, data:', fallbackData);
-        const ordersWithTotals: Order[] = (fallbackData as RawOrder[]).map((order: RawOrder) => ({
+        console.log(
+          "fetchOrders: Fallback query succeeded, data:",
+          fallbackData
+        );
+        const ordersWithTotals: Order[] = (fallbackData as RawOrder[]).map(
+          (order: RawOrder) => ({
+            id: String(order.id),
+            user_id: String(order.user_id),
+            tour_id: String(order.tour_id),
+            phone: order.phone ?? null,
+            last_name: order.last_name ?? null,
+            first_name: order.first_name ?? null,
+            email: order.email ?? null,
+            age: order.age ?? null,
+            gender: order.gender ?? null,
+            tour: order.tour ?? null,
+            passport_number: order.passport_number ?? null,
+            passport_expire: order.passport_expire ?? null,
+            passport_copy: order.passport_copy ?? null,
+            commission: order.commission ?? null,
+            created_by: order.created_by ? String(order.created_by) : null,
+            edited_by: order.edited_by ? String(order.edited_by) : null,
+            edited_at: order.edited_at ?? null,
+            travel_choice: order.travel_choice ?? "",
+            status: order.status as OrderStatus,
+            hotel: order.hotel ?? null,
+            room_number: order.room_number ?? null,
+            payment_method: order.payment_method ?? null,
+            created_at: order.created_at,
+            updated_at: order.updated_at,
+            departureDate: order.departureDate ?? "",
+            createdBy:
+              order.createdBy ??
+              (order.created_by ? String(order.created_by) : null),
+            total_price: order.total_price,
+            total_amount: order.total_amount,
+            paid_amount: order.paid_amount,
+            balance: order.balance,
+            show_in_provider: hasShowInProviderOrders
+              ? order.show_in_provider ?? true
+              : true,
+            order_id: String(order.id),
+            passenger_count:
+              order.passengers?.length || (order.first_name ? 1 : 0),
+            booking_confirmation: order.booking_confirmations
+              ? {
+                  order_id: String(order.id),
+                  bus_number: order.booking_confirmations.bus_number ?? null,
+                  guide_name: order.booking_confirmations.guide_name ?? null,
+                  weather_emergency:
+                    order.booking_confirmations.weather_emergency ?? null,
+                  updated_by: order.booking_confirmations.updated_by ?? null,
+                  updated_at: order.booking_confirmations.updated_at ?? null,
+                }
+              : null,
+            passport_copy_url: null,
+            passengers:
+              order.passengers?.map((p) => ({
+                ...p,
+                date_of_birth: p.date_of_birth || null,
+                booking_number: p.booking_number
+                  ? String(p.booking_number)
+                  : null,
+              })) ?? [],
+            room_allocation: order.room_number ?? "",
+          })
+        );
+        setOrders(ordersWithTotals);
+        return;
+      }
+
+      const ordersWithTotals: Order[] = (data as RawOrder[]).map(
+        (order: RawOrder) => ({
           id: String(order.id),
           user_id: String(order.user_id),
           tour_id: String(order.tour_id),
@@ -315,93 +436,57 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           created_by: order.created_by ? String(order.created_by) : null,
           edited_by: order.edited_by ? String(order.edited_by) : null,
           edited_at: order.edited_at ?? null,
-          travel_choice: order.travel_choice ?? '',
+          travel_choice: order.travel_choice ?? "",
           status: order.status as OrderStatus,
           hotel: order.hotel ?? null,
           room_number: order.room_number ?? null,
           payment_method: order.payment_method ?? null,
           created_at: order.created_at,
           updated_at: order.updated_at,
-          departureDate: order.departureDate ?? '',
-          createdBy: order.createdBy ?? (order.created_by ? String(order.created_by) : null),
+          departureDate: order.departureDate ?? "",
+          createdBy:
+            order.users?.email ??
+            order.createdBy ??
+            (order.created_by ? String(order.created_by) : null),
           total_price: order.total_price,
           total_amount: order.total_amount,
           paid_amount: order.paid_amount,
           balance: order.balance,
-          show_in_provider: hasShowInProviderOrders ? (order.show_in_provider ?? true) : true,
+          show_in_provider: hasShowInProviderOrders
+            ? order.show_in_provider ?? true
+            : true,
           order_id: String(order.id),
-          passenger_count: order.first_name ? 1 : 0,
+          passenger_count:
+            order.passengers?.length || (order.first_name ? 1 : 0),
           booking_confirmation: order.booking_confirmations
             ? {
                 order_id: String(order.id),
                 bus_number: order.booking_confirmations.bus_number ?? null,
                 guide_name: order.booking_confirmations.guide_name ?? null,
-                weather_emergency: order.booking_confirmations.weather_emergency ?? null,
+                weather_emergency:
+                  order.booking_confirmations.weather_emergency ?? null,
                 updated_by: order.booking_confirmations.updated_by ?? null,
                 updated_at: order.booking_confirmations.updated_at ?? null,
               }
             : null,
           passport_copy_url: null,
-          passengers: order.passengers ?? [],
-          room_allocation: "",
-        }));
-        setOrders(ordersWithTotals);
-        return;
-      }
-
-      const ordersWithTotals: Order[] = (data as RawOrder[]).map((order: RawOrder) => ({
-        id: String(order.id),
-        user_id: String(order.user_id),
-        tour_id: String(order.tour_id),
-        phone: order.phone ?? null,
-        last_name: order.last_name ?? null,
-        first_name: order.first_name ?? null,
-        email: order.email ?? null,
-        age: order.age ?? null,
-        gender: order.gender ?? null,
-        tour: order.tour ?? null,
-        passport_number: order.passport_number ?? null,
-        passport_expire: order.passport_expire ?? null,
-        passport_copy: order.passport_copy ?? null,
-        commission: order.commission ?? null,
-        created_by: order.created_by ? String(order.created_by) : null,
-        edited_by: order.edited_by ? String(order.edited_by) : null,
-        edited_at: order.edited_at ?? null,
-        travel_choice: order.travel_choice ?? '',
-        status: order.status as OrderStatus,
-        hotel: order.hotel ?? null,
-        room_number: order.room_number ?? null,
-        payment_method: order.payment_method ?? null,
-        created_at: order.created_at,
-        updated_at: order.updated_at,
-        departureDate: order.departureDate ?? '',
-        createdBy: order.users?.email ?? (order.createdBy ?? (order.created_by ? String(order.created_by) : null)),
-        total_price: order.total_price,
-        total_amount: order.total_amount,
-        paid_amount: order.paid_amount,
-        balance: order.balance,
-        show_in_provider: hasShowInProviderOrders ? (order.show_in_provider ?? true) : true,
-        order_id: String(order.id),
-        passenger_count: order.passengers?.length || (order.first_name ? 1 : 0),
-        booking_confirmation: order.booking_confirmations
-          ? {
-              order_id: String(order.id),
-              bus_number: order.booking_confirmations.bus_number ?? null,
-              guide_name: order.booking_confirmations.guide_name ?? null,
-              weather_emergency: order.booking_confirmations.weather_emergency ?? null,
-              updated_by: order.booking_confirmations.updated_by ?? null,
-              updated_at: order.booking_confirmations.updated_at ?? null,
-            }
-          : null,
-        passport_copy_url: null,
-        passengers: order.passengers ?? [],
-        room_allocation: "",
-      }));
+          passengers:
+            order.passengers?.map((p) => ({
+              ...p,
+              date_of_birth: p.date_of_birth || null,
+              booking_number: p.booking_number
+                ? String(p.booking_number)
+                : null,
+            })) ?? [],
+          room_allocation: order.room_number ?? "",
+        })
+      );
 
       setOrders(ordersWithTotals);
+      console.log("Fetched orders with passengers:", ordersWithTotals);
     } catch (error) {
-      console.error('Error fetching orders:', JSON.stringify(error, null, 2));
-      toast.error(t('failedToFetchOrders'));
+      console.error("Error fetching orders:", JSON.stringify(error, null, 2));
+      toast.error(t("failedToFetchOrders"));
     } finally {
       setLoading(false);
     }
@@ -414,14 +499,16 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           if (tour.created_by && !tour.creator_name) {
             const { data, error } = await fetchWithRetry(async () =>
               supabase
-                .from('users')
-                .select('email')
-                .eq('id', tour.created_by)
+                .from("users")
+                .select("email")
+                .eq("id", tour.created_by)
                 .single()
             );
             return {
               ...tour,
-              creator_name: error ? 'Unknown Creator' : data.email || 'Unknown Creator',
+              creator_name: error
+                ? "Unknown Creator"
+                : data.email || "Unknown Creator",
             };
           }
           return tour;
@@ -429,8 +516,8 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       );
       setTours(toursWithEmails);
     } catch (error) {
-      console.error('Error fetching creator emails:', error);
-      toast.error(t('failedToFetchCreatorEmails'));
+      console.error("Error fetching creator emails:", error);
+      toast.error(t("failedToFetchCreatorEmails"));
     }
   };
 
@@ -441,7 +528,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     const initialize = async () => {
       await Promise.all([checkOrdersSchema(), checkToursSchema()]);
       await fetchOrders();
-      if (tours.some(tour => !tour.creator_name)) {
+      if (tours.some((tour) => !tour.creator_name)) {
         await fetchCreatorEmails();
       }
     };
@@ -449,7 +536,7 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     initialize();
   }, []);
 
-  // Periodically refresh session to prevent JWT expiration
+  // Periodically refresh session
   useEffect(() => {
     const interval = setInterval(async () => {
       await refreshSession();
@@ -460,26 +547,35 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
   // Check session on mount
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
-        console.error('No active session found. Real-time subscriptions may fail.');
-        toast.error(t('loginForRealTime'));
+        console.error(
+          "No active session found. Real-time subscriptions may fail."
+        );
+        toast.error(t("loginForRealTime"));
       }
     };
     checkSession();
   }, []);
 
   useEffect(() => {
-    if (hasShowInProviderOrders !== null && hasShowInProviderOrders && orders.length === 0) {
+    if (
+      hasShowInProviderOrders !== null &&
+      hasShowInProviderOrders &&
+      orders.length === 0
+    ) {
       fetchOrders();
     }
   }, [hasShowInProviderOrders]);
 
   useEffect(() => {
-    if (hasShowInProviderOrders === null || hasShowInProviderTours === null) return;
+    if (hasShowInProviderOrders === null || hasShowInProviderTours === null)
+      return;
 
     const setupSubscriptions = () => {
-      const statuses = ['confirmed', 'pending'];
+      const statuses = ["confirmed", "pending"];
       const channels: any[] = [];
 
       statuses.forEach((status) => {
@@ -487,13 +583,17 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           ? `status=eq.${status},show_in_provider=eq.true`
           : `status=eq.${status}`;
         const channel = supabase
-          .channel(`provider_orders_${status}_${Math.random().toString(36).substring(2)}`)
+          .channel(
+            `provider_orders_${status}_${Math.random()
+              .toString(36)
+              .substring(2)}`
+          )
           .on(
-            'postgres_changes' as any,
+            "postgres_changes" as any, // Bypass type error
             {
-              event: '*',
-              schema: 'public',
-              table: 'orders',
+              event: "*",
+              schema: "public",
+              table: "orders",
               select: `
                 id,
                 user_id,
@@ -526,57 +626,94 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                 balance,
                 show_in_provider,
                 createdBy,
-                passengers!order_id(id,name,age,gender,passport_number,passport_expire),
+                passengers!order_id(id,first_name,last_name,age,date_of_birth,gender,passport_number,passport_expire,nationality,notes,booking_number,roomType,room_allocation),
                 users!created_by(email),
                 booking_confirmations(id,bus_number,guide_name,weather_emergency,updated_by,updated_at)
               `,
               filter,
             },
             (payload) => {
-              if (payload.eventType === 'UPDATE') {
-                if (hasShowInProviderOrders && payload.new.show_in_provider === false) {
-                  setOrders((prev) => prev.filter((order) => order.id !== String(payload.new.id)));
+              if (payload.eventType === "UPDATE") {
+                if (
+                  hasShowInProviderOrders &&
+                  payload.new.show_in_provider === false
+                ) {
+                  setOrders((prev) =>
+                    prev.filter((order) => order.id !== String(payload.new.id))
+                  );
                 } else {
                   setOrders((prev) => {
                     const updatedOrders = prev.map((order) =>
                       order.id === String(payload.new.id)
-                        ? {
+                        ? ({
                             ...order,
                             ...payload.new,
                             id: String(payload.new.id),
                             user_id: String(payload.new.user_id),
                             tour_id: String(payload.new.tour_id),
-                            created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                            edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
-                            passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
+                            created_by: payload.new.created_by
+                              ? String(payload.new.created_by)
+                              : null,
+                            edited_by: payload.new.edited_by
+                              ? String(payload.new.edited_by)
+                              : null,
+                            passenger_count:
+                              payload.new.passengers?.length ||
+                              (payload.new.first_name ? 1 : 0),
                             total_amount: payload.new.total_amount,
                             total_price: payload.new.total_price,
                             paid_amount: payload.new.paid_amount,
                             balance: payload.new.balance,
-                            show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
-                            createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
-                            departureDate: payload.new.departureDate ?? '',
+                            show_in_provider: hasShowInProviderOrders
+                              ? payload.new.show_in_provider ?? true
+                              : true,
+                            createdBy:
+                              payload.new.users?.email ??
+                              payload.new.createdBy ??
+                              (payload.new.created_by
+                                ? String(payload.new.created_by)
+                                : null),
+                            departureDate: payload.new.departureDate ?? "",
                             order_id: String(payload.new.id),
-                            booking_confirmation: payload.new.booking_confirmations
+                            booking_confirmation: payload.new
+                              .booking_confirmations
                               ? {
                                   order_id: String(payload.new.id),
-                                  bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                                  guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                                  weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                                  updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                                  updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                                  bus_number:
+                                    payload.new.booking_confirmations
+                                      .bus_number ?? null,
+                                  guide_name:
+                                    payload.new.booking_confirmations
+                                      .guide_name ?? null,
+                                  weather_emergency:
+                                    payload.new.booking_confirmations
+                                      .weather_emergency ?? null,
+                                  updated_by:
+                                    payload.new.booking_confirmations
+                                      .updated_by ?? null,
+                                  updated_at:
+                                    payload.new.booking_confirmations
+                                      .updated_at ?? null,
                                 }
                               : null,
                             passport_copy_url: null,
-                          } as Order
+                            passengers:
+                              payload.new.passengers?.map((p: any) => ({
+                                ...p,
+                                date_of_birth: p.date_of_birth || null,
+                                booking_number: p.booking_number
+                                  ? String(p.booking_number)
+                                  : null,
+                              })) ?? [],
+                          } as Order)
                         : order
                     );
                     return updatedOrders;
                   });
                 }
-              } else if (payload.eventType === 'INSERT') {
+              } else if (payload.eventType === "INSERT") {
                 if (
-                  ['confirmed', 'pending'].includes(payload.new.status) &&
+                  ["confirmed", "pending"].includes(payload.new.status) &&
                   (!hasShowInProviderOrders || payload.new.show_in_provider)
                 ) {
                   setOrders((prev) => [
@@ -596,48 +733,84 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                       passport_expire: payload.new.passport_expire ?? null,
                       passport_copy: payload.new.passport_copy ?? null,
                       commission: payload.new.commission ?? null,
-                      created_by: payload.new.created_by ? String(payload.new.created_by) : null,
-                      edited_by: payload.new.edited_by ? String(payload.new.edited_by) : null,
+                      created_by: payload.new.created_by
+                        ? String(payload.new.created_by)
+                        : null,
+                      edited_by: payload.new.edited_by
+                        ? String(payload.new.edited_by)
+                        : null,
                       edited_at: payload.new.edited_at ?? null,
-                      travel_choice: payload.new.travel_choice ?? '',
+                      travel_choice: payload.new.travel_choice ?? "",
                       status: payload.new.status as OrderStatus,
                       hotel: payload.new.hotel ?? null,
                       room_number: payload.new.room_number ?? null,
                       payment_method: payload.new.payment_method ?? null,
                       created_at: payload.new.created_at,
                       updated_at: payload.new.updated_at,
-                      departureDate: payload.new.departureDate ?? '',
-                      createdBy: payload.new.users?.email ?? (payload.new.createdBy ?? (payload.new.created_by ? String(payload.new.created_by) : null)),
+                      departureDate: payload.new.departureDate ?? "",
+                      createdBy:
+                        payload.new.users?.email ??
+                        payload.new.createdBy ??
+                        (payload.new.created_by
+                          ? String(payload.new.created_by)
+                          : null),
                       total_price: payload.new.total_price,
                       total_amount: payload.new.total_amount,
                       paid_amount: payload.new.paid_amount,
                       balance: payload.new.balance,
-                      show_in_provider: hasShowInProviderOrders ? (payload.new.show_in_provider ?? true) : true,
+                      show_in_provider: hasShowInProviderOrders
+                        ? payload.new.show_in_provider ?? true
+                        : true,
                       order_id: String(payload.new.id),
-                      passenger_count: payload.new.passengers?.length || (payload.new.first_name ? 1 : 0),
+                      passenger_count:
+                        payload.new.passengers?.length ||
+                        (payload.new.first_name ? 1 : 0),
                       booking_confirmation: payload.new.booking_confirmations
                         ? {
                             order_id: String(payload.new.id),
-                            bus_number: payload.new.booking_confirmations.bus_number ?? null,
-                            guide_name: payload.new.booking_confirmations.guide_name ?? null,
-                            weather_emergency: payload.new.booking_confirmations.weather_emergency ?? null,
-                            updated_by: payload.new.booking_confirmations.updated_by ?? null,
-                            updated_at: payload.new.booking_confirmations.updated_at ?? null,
+                            bus_number:
+                              payload.new.booking_confirmations.bus_number ??
+                              null,
+                            guide_name:
+                              payload.new.booking_confirmations.guide_name ??
+                              null,
+                            weather_emergency:
+                              payload.new.booking_confirmations
+                                .weather_emergency ?? null,
+                            updated_by:
+                              payload.new.booking_confirmations.updated_by ??
+                              null,
+                            updated_at:
+                              payload.new.booking_confirmations.updated_at ??
+                              null,
                           }
                         : null,
                       passport_copy_url: null,
+                      passengers:
+                        payload.new.passengers?.map((p: any) => ({
+                          ...p,
+                          date_of_birth: p.date_of_birth || null,
+                          booking_number: p.booking_number
+                            ? String(p.booking_number)
+                            : null,
+                        })) ?? [],
                     } as Order,
                   ]);
                 }
-              } else if (payload.eventType === 'DELETE') {
-                setOrders((prev) => prev.filter((order) => order.id !== String(payload.old.id)));
+              } else if (payload.eventType === "DELETE") {
+                setOrders((prev) =>
+                  prev.filter((order) => order.id !== String(payload.old.id))
+                );
               }
             }
           )
           .subscribe((status, error) => {
             if (error) {
-              console.error(`Order subscription error (status=${status}):`, error);
-              toast.error(t('loginForRealTime'));
+              console.error(
+                `Order subscription error (status=${status}):`,
+                error
+              );
+              toast.error(t("loginForRealTime"));
               refreshSession();
             }
           });
@@ -647,11 +820,11 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
       const tourSubscription = supabase
         .channel(`provider_tours_${Math.random().toString(36).substring(2)}`)
         .on(
-          'postgres_changes' as any,
+          "postgres_changes" as any,
           {
-            event: '*',
-            schema: 'public',
-            table: 'tours',
+            event: "*",
+            schema: "public",
+            table: "tours",
             select: `
               id,
               title,
@@ -673,21 +846,26 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               price_base,
               tour_number
             `,
-            filter: hasShowInProviderTours ? 'show_in_provider=eq.true' : undefined,
+            filter: hasShowInProviderTours
+              ? "show_in_provider=eq.true"
+              : undefined,
           },
           (payload) => {
             const mapToTour = (data: any): Tour => ({
               id: String(data.id),
-              title: data.title || 'Untitled Tour',
-              name: data.name || 'Unknown Tour',
-              departure_date: data.departure_date || data.departureDate || '1970-01-01',
-              created_by: data.created_by || 'system',
-              description: data.description || '',
+              title: data.title || "Untitled Tour",
+              name: data.name || "Unknown Tour",
+              departure_date:
+                data.departure_date || data.departureDate || "1970-01-01",
+              created_by: data.created_by || "system",
+              description: data.description || "",
               hotels: data.hotels || [],
               dates: data.dates || [],
               seats: Number(data.seats) || 0,
-              status: data.status || 'active',
-              show_in_provider: hasShowInProviderTours ? (data.show_in_provider ?? true) : null,
+              status: data.status || "active",
+              show_in_provider: hasShowInProviderTours
+                ? data.show_in_provider ?? true
+                : null,
               services: data.services || [],
               base_price: data.base_price || 0,
               created_at: data.created_at || undefined,
@@ -695,31 +873,39 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               available_seats: data.available_seats || 0,
               price_base: data.price_base || undefined,
               creator_name:
-                typeof data.creator_name === 'object'
-                  ? data.creator_name?.email || 'Unknown Creator'
-                  : data.creator_name || 'Unknown Creator',
-              tour_number: data.tour_number || '0',
+                typeof data.creator_name === "object"
+                  ? data.creator_name?.email || "Unknown Creator"
+                  : data.creator_name || "Unknown Creator",
+              tour_number: data.tour_number || "0",
               booking_confirmation: data.booking_confirmation
                 ? {
-                    order_id: data.booking_confirmation.order_id || '',
+                    order_id: data.booking_confirmation.order_id || "",
                     bus_number: data.booking_confirmation.bus_number ?? null,
                     guide_name: data.booking_confirmation.guide_name ?? null,
-                    weather_emergency: data.booking_confirmation.weather_emergency ?? null,
+                    weather_emergency:
+                      data.booking_confirmation.weather_emergency ?? null,
                     updated_by: data.booking_confirmation.updated_by ?? null,
                     updated_at: data.booking_confirmation.updated_at ?? null,
                   }
                 : null,
             });
 
-            if (payload.eventType === 'UPDATE') {
-              if (hasShowInProviderTours && payload.new.show_in_provider === false) {
-                setTours((prev) => prev.filter((tour) => tour.id !== payload.new.id));
+            if (payload.eventType === "UPDATE") {
+              if (
+                hasShowInProviderTours &&
+                payload.new.show_in_provider === false
+              ) {
+                setTours((prev) =>
+                  prev.filter((tour) => tour.id !== payload.new.id)
+                );
               } else {
-                setTours((prev) => prev.map((tour) =>
-                  tour.id === payload.new.id ? mapToTour(payload.new) : tour
-                ));
+                setTours((prev) =>
+                  prev.map((tour) =>
+                    tour.id === payload.new.id ? mapToTour(payload.new) : tour
+                  )
+                );
               }
-            } else if (payload.eventType === 'INSERT') {
+            } else if (payload.eventType === "INSERT") {
               if (
                 (!hasShowInProviderTours || payload.new?.show_in_provider) &&
                 payload.new?.id &&
@@ -730,19 +916,47 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
               ) {
                 setTours((prev) => [...prev, mapToTour(payload.new)]);
               }
-            } else if (payload.eventType === 'DELETE') {
-              setTours((prev) => prev.filter((tour) => tour.id !== String(payload.old.id)));
+            } else if (payload.eventType === "DELETE") {
+              setTours((prev) =>
+                prev.filter((tour) => tour.id !== String(payload.old.id))
+              );
             }
           }
         )
         .subscribe((status, error) => {
           if (error) {
-            console.error('Tour subscription error:', error);
-            toast.error(t('loginForRealTime'));
+            console.error("Tour subscription error:", error);
+            toast.error(t("loginForRealTime"));
             refreshSession();
           }
         });
       channels.push(tourSubscription);
+
+      // Add passengers subscription
+      const passengerSubscription = supabase
+        .channel(`passengers_${Math.random().toString(36).substring(2)}`)
+        .on(
+          "postgres_changes" as any,
+          {
+            event: "*",
+            schema: "public",
+            table: "passengers",
+            select:
+              "id,first_name,last_name,age,date_of_birth,gender,passport_number,passport_expire,nationality,notes,booking_number,roomType,room_allocation",
+          },
+          (payload) => {
+            console.log("Passenger subscription payload:", payload);
+            fetchOrders(); // Refresh orders to update passengers
+          }
+        )
+        .subscribe((status, error) => {
+          if (error) {
+            console.error("Passenger subscription error:", error);
+            toast.error(t("loginForRealTime"));
+            refreshSession();
+          }
+        });
+      channels.push(passengerSubscription);
 
       subscriptionRef.current = channels;
     };
@@ -751,82 +965,104 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
 
     return () => {
       if (subscriptionRef.current) {
-        subscriptionRef.current.forEach((channel: any) => supabase.removeChannel(channel));
+        subscriptionRef.current.forEach((channel: any) =>
+          supabase.removeChannel(channel)
+        );
       }
     };
   }, [hasShowInProviderOrders, hasShowInProviderTours, setTours]);
 
+  // Refresh on tab switch
+  useEffect(() => {
+    if (activeTab === "passengers") {
+      fetchOrders();
+    }
+  }, [activeTab]);
+
   const exportOrdersToCSV = async () => {
     if (filteredOrders.length === 0) {
-      toast.warn(t('noOrdersToExport'));
+      toast.warn(t("noOrdersToExport"));
       return;
     }
     setExportLoading(true);
     try {
       const headers = [
-        t('orderId'),
-        t('tour'),
-        t('departureDate'),
-        t('passengers'),
-        t('status'),
-        t('totalAmount'),
-        t('createdBy'),
-        'Edited At',
-        'Payment Method',
-        'Phone',
-        'First Name',
-        'Last Name',
-        'Email',
-        'Age',
-        'Gender',
-        'Commission',
-        'Hotel',
-        'Room Number',
-        'Bus Number',
-        'Guide Name',
-        'Weather/Emergency',
+        t("orderId"),
+        t("tour"),
+        t("departureDate"),
+        t("passengers"),
+        t("status"),
+        t("totalAmount"),
+        t("createdBy"),
+        "Edited At",
+        "Payment Method",
+        "Phone",
+        "First Name",
+        "Last Name",
+        "Email",
+        "Age",
+        "Gender",
+        "Commission",
+        "Hotel",
+        "Room Number",
+        "Bus Number",
+        "Guide Name",
+        "Weather/Emergency",
       ];
-      const csvRows = filteredOrders.map(order => [
+      const csvRows = filteredOrders.map((order) => [
         order.id,
-        order.tour || 'N/A',
-        order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet'),
+        order.tour || "N/A",
+        order.departureDate
+          ? new Date(order.departureDate).toLocaleDateString(
+              i18n.language === "zh" ? "zh-CN" : "en-US"
+            )
+          : t("notSet"),
         order.passenger_count,
         t(order.status),
-        `${order.total_amount?.toFixed(2) || '0.00'}`,
-        order.createdBy || order.created_by || 'N/A',
-        order.edited_at ? new Date(order.edited_at).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : 'N/A',
-        order.payment_method || 'N/A',
-        order.phone || 'N/A',
-        order.first_name || 'N/A',
-        order.last_name || 'N/A',
-        order.email || 'N/A',
-        order.age || 'N/A',
-        order.gender || 'N/A',
-        order.commission ? `${order.commission.toFixed(2)}` : 'N/A',
-        order.hotel || 'N/A',
-        order.room_number || 'N/A',
-        order.booking_confirmation?.bus_number || 'N/A',
-        order.booking_confirmation?.guide_name || 'N/A',
-        order.booking_confirmation?.weather_emergency || 'N/A',
+        `${order.total_amount?.toFixed(2) || "0.00"}`,
+        order.createdBy || order.created_by || "N/A",
+        order.edited_at
+          ? new Date(order.edited_at).toLocaleDateString(
+              i18n.language === "zh" ? "zh-CN" : "en-US"
+            )
+          : "N/A",
+        order.payment_method || "N/A",
+        order.phone || "N/A",
+        order.first_name || "N/A",
+        order.last_name || "N/A",
+        order.email || "N/A",
+        order.age || "N/A",
+        order.gender || "N/A",
+        order.commission ? `${order.commission.toFixed(2)}` : "N/A",
+        order.hotel || "N/A",
+        order.room_number || "N/A",
+        order.booking_confirmation?.bus_number || "N/A",
+        order.booking_confirmation?.guide_name || "N/A",
+        order.booking_confirmation?.weather_emergency || "N/A",
       ]);
       const csvContent = [
-        headers.join(','),
-        ...csvRows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')),
-      ].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
+        headers.join(","),
+        ...csvRows.map((row) =>
+          row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(",")
+        ),
+      ].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `provider-orders-${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
+      link.setAttribute("href", url);
+      link.setAttribute(
+        "download",
+        `provider-orders-${new Date().toISOString().split("T")[0]}.csv`
+      );
+      link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast.success(t('exportSuccess', { count: filteredOrders.length }));
+      toast.success(t("exportSuccess", { count: filteredOrders.length }));
     } catch (error) {
-      console.error('Error exporting orders:', error);
-      toast.error(t('exportFailed'));
+      console.error("Error exporting orders:", error);
+      toast.error(t("exportFailed"));
     } finally {
       setExportLoading(false);
     }
@@ -836,102 +1072,158 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
     const previousOrders = [...orders];
     const updatedOrders = orders.map((o) =>
       o.id === orderId
-        ? { ...o, status, edited_by: currentUser.id, edited_at: new Date().toISOString() }
+        ? {
+            ...o,
+            status,
+            edited_by: currentUser.id,
+            edited_at: new Date().toISOString(),
+          }
         : o
     );
     setOrders(updatedOrders);
     try {
       const { error } = await fetchWithRetry(async () =>
         supabase
-          .from('orders')
-          .update({ status, edited_by: currentUser.id, edited_at: new Date().toISOString() })
-          .eq('id', orderId)
+          .from("orders")
+          .update({
+            status,
+            edited_by: currentUser.id,
+            edited_at: new Date().toISOString(),
+          })
+          .eq("id", orderId)
       );
       if (error) throw error;
-      toast.success(t('orderStatusUpdated'));
+      toast.success(t("orderStatusUpdated"));
     } catch (error) {
-      console.error('Error updating status:', error);
-      toast.error(t('orderStatusUpdateFailed'));
+      console.error("Error updating status:", error);
+      toast.error(t("orderStatusUpdateFailed"));
       setOrders(previousOrders);
     }
   };
 
   const confirmedOrders = orders.filter((order) => {
-    const include = ['confirmed', 'pending'].includes(order.status) && (!hasShowInProviderOrders || order.show_in_provider === true);
+    const include =
+      ["confirmed", "pending"].includes(order.status) &&
+      (!hasShowInProviderOrders || order.show_in_provider === true);
     return include;
   });
 
   const uniqueDates = Array.from(
-    new Set(confirmedOrders.map((order) => (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')))
-  )).sort();
+    new Set(
+      confirmedOrders.map((order) =>
+        order.departureDate
+          ? new Date(order.departureDate).toLocaleDateString(
+              i18n.language === "zh" ? "zh-CN" : "en-US"
+            )
+          : t("notSet")
+      )
+    )
+  ).sort();
 
   const filteredOrders = confirmedOrders.filter((order) => {
     const lowerTerm = searchTerm.toLowerCase();
     return (
       (selectedDate
-        ? (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')) === selectedDate
+        ? (order.departureDate
+            ? new Date(order.departureDate).toLocaleDateString(
+                i18n.language === "zh" ? "zh-CN" : "en-US"
+              )
+            : t("notSet")) === selectedDate
         : true) &&
-      ((order.phone?.toLowerCase().includes(lowerTerm) || false) ||
-        (order.first_name?.toLowerCase().includes(lowerTerm) || false) ||
-        (order.last_name?.toLowerCase().includes(lowerTerm) || false) ||
-        (order.departureDate ? new Date(order.departureDate).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US') : t('notSet')).includes(lowerTerm))
+      (order.phone?.toLowerCase().includes(lowerTerm) ||
+        order.first_name?.toLowerCase().includes(lowerTerm) ||
+        order.last_name?.toLowerCase().includes(lowerTerm) ||
+        (order.departureDate
+          ? new Date(order.departureDate).toLocaleDateString(
+              i18n.language === "zh" ? "zh-CN" : "en-US"
+            )
+          : t("notSet")
+        ).includes(lowerTerm))
     );
   });
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return t('notSet');
+    if (!dateString) return t("notSet");
     try {
-      return new Date(dateString).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
+      return new Date(dateString).toLocaleDateString(
+        i18n.language === "zh" ? "zh-CN" : "en-US",
+        {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }
+      );
     } catch {
-      return t('invalidDate');
+      return t("invalidDate");
     }
   };
 
-  const showNotification = (type: 'success' | 'error', message: string) => {
+  const showNotification = (type: "success" | "error", message: string) => {
     toast[type](message);
   };
 
-  // Enhanced Tab Navigation
   const tabs = [
+    { id: "orders" as const, label: t("orders"), icon: Users, color: "blue" },
+    { id: "tours" as const, label: t("tours"), icon: MapPin, color: "blue" },
     {
-      id: 'orders' as const,
-      label: t('orders'),
-      icon: Users,
-      color: 'blue'
-    },
-    {
-      id: 'tours' as const,
-      label: t('tours'),
-      icon: MapPin,
-      color: 'blue'
-    },
-    {
-      id: 'booking' as const,
-      label: t('bookingConfirmation'),
+      id: "booking" as const,
+      label: t("bookingConfirmation"),
       icon: CheckCircle,
-      color: 'blue'
+      color: "blue",
     },
     {
-      id: 'addTour' as const,
-      label: t('tourManagement'),
+      id: "addTour" as const,
+      label: t("tourManagement"),
       icon: Settings,
-      color: 'blue'
-    }
+      color: "blue",
+    },
+    {
+      id: "passengers" as const,
+      label: t("passengers"),
+      icon: Edit,
+      color: "blue",
+    },
   ];
 
   const getColorClasses = (color: string, isActive: boolean) => {
     const colors: Record<string, { active: string; inactive: string }> = {
       blue: {
-        active: 'border-blue-600 text-blue-600 bg-blue-50',
-        inactive: 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+        active: "border-blue-600 text-blue-600 bg-blue-50",
+        inactive: "text-gray-600 hover:text-blue-600 hover:bg-blue-50",
       },
     };
     return isActive ? colors[color].active : colors[color].inactive;
   };
+
+  const allPassengers = confirmedOrders.flatMap(
+    (order) =>
+      order.passengers?.map((passenger) => {
+        console.log("Mapping passenger:", passenger);
+        return {
+          id: passenger.id,
+          first_name: passenger.first_name || "N/A",
+          last_name: passenger.last_name || null,
+          age: passenger.age || null,
+          date_of_birth: passenger.date_of_birth || null,
+          gender: passenger.gender || null,
+          passport_number: passenger.passport_number || null,
+          passport_expire: passenger.passport_expire || null,
+          nationality: passenger.nationality || null,
+          notes: passenger.notes || null,
+          orderId: order.id,
+          tour: order.tour || null,
+          departureDate: order.departureDate || null,
+          room_allocation: passenger.room_allocation || null,
+          booking_number: passenger.booking_number
+            ? String(passenger.booking_number)
+            : null,
+          hotel: order.hotel || null,
+          pax: order.passenger_count || 1,
+          roomType: passenger.roomType || null,
+        };
+      }) || []
+  );
+  console.log("All Passengers Data:", allPassengers);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -942,21 +1234,19 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             onClick={toggleLanguage}
             className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-sm border border-gray-200 text-sm font-semibold text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200"
           >
-            <span>{t('switchLanguage')}</span>
-            <span>{i18n.language === 'en' ? 'EN' : 'ZH'}</span>
+            <span>{t("switchLanguage")}</span>
+            <span>{i18n.language === "en" ? "EN" : "ZH"}</span>
           </button>
         </div>
       </div>
       <DashboardHeader />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Enhanced Tab Navigation */}
         <div className="mb-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
             <div className="flex flex-wrap gap-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
-                
                 return (
                   <button
                     key={tab.id}
@@ -964,7 +1254,11 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
                     className={`
                       flex items-center gap-2 py-3 px-5 rounded-lg text-sm font-semibold
                       transition-all duration-200 ease-in-out
-                      ${isActive ? 'border-2 shadow-md transform scale-105' : 'border-2 border-transparent'}
+                      ${
+                        isActive
+                          ? "border-2 shadow-md transform scale-105"
+                          : "border-2 border-transparent"
+                      }
                       ${getColorClasses(tab.color, isActive)}
                     `}
                   >
@@ -977,9 +1271,14 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
           </div>
         </div>
 
-        {activeTab === 'orders' && (
+        {activeTab === "orders" && (
           <>
-            <StatsCards orders={confirmedOrders} tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} />
+            <StatsCards
+              orders={confirmedOrders}
+              tours={tours.filter(
+                (t) => !hasShowInProviderTours || t.show_in_provider
+              )}
+            />
             <OrdersTable
               orders={filteredOrders}
               selectedDate={selectedDate}
@@ -998,10 +1297,15 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             />
           </>
         )}
-        {activeTab === 'tours' && (
-          <ToursGrid tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)} formatDate={formatDate} />
+        {activeTab === "tours" && (
+          <ToursGrid
+            tours={tours.filter(
+              (t) => !hasShowInProviderTours || t.show_in_provider
+            )}
+            formatDate={formatDate}
+          />
         )}
-        {activeTab === 'booking' && (
+        {activeTab === "booking" && (
           <BookingConfirmationTab
             orders={filteredOrders}
             currentUser={currentUser}
@@ -1009,14 +1313,19 @@ function ProviderInterface({ tours, setTours, currentUser }: ProviderInterfacePr
             formatDate={formatDate}
           />
         )}
-        {activeTab === 'addTour' && (
+        {activeTab === "addTour" && (
           <AddTourTab
-            tours={tours.filter(t => !hasShowInProviderTours || t.show_in_provider)}
+            tours={tours.filter(
+              (t) => !hasShowInProviderTours || t.show_in_provider
+            )}
             setTours={setTours}
             currentUser={currentUser}
             showNotification={showNotification}
             hideProviderColumn={true}
           />
+        )}
+        {activeTab === "passengers" && (
+          <PassengerTable passengers={allPassengers} selectedDate="" />
         )}
       </div>
     </div>

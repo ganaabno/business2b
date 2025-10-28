@@ -627,7 +627,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
           </div>
 
           <div className="group">
-            <label className="block text-sm font-medium text-white/90 mb-2 flex items-center">
+            <label className="block text-sm font-medium text-white/90 mb-2 items-center">
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
               </svg>
@@ -643,7 +643,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
           </div>
 
           <div className="group">
-            <label className="block text-sm font-medium text-white/90 mb-2 flex items-center">
+            <label className="block text-sm font-medium text-white/90 mb-2 items-center">
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4m4 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-4z" />
               </svg>
@@ -658,7 +658,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
           </div>
 
           <div className="group">
-            <label className="block text-sm font-medium text-white/90 mb-2 flex items-center">
+            <label className="block text-sm font-medium text-white/90 mb-2 items-center">
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -819,7 +819,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-12 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <select
                         value={passenger.tour_title || ""}
@@ -872,13 +872,13 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-12 py-4 text-sm text-gray-900">
                     <span className="inline-flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full text-sm font-semibold text-gray-800">
                       {passenger.age || "N/A"}
                     </span>
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-12 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <select
@@ -928,7 +928,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-10 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <input
@@ -949,7 +949,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-12 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <select
@@ -976,7 +976,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-10 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <input
@@ -999,7 +999,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-8 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <input
                         type="text"
@@ -1015,7 +1015,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-24 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <textarea
@@ -1038,7 +1038,7 @@ export default function PassengersTab({ passengers, setPassengers, currentUser, 
                     )}
                   </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-900">
+                  <td className="px-14 py-4 text-sm text-gray-900">
                     {isEditMode ? (
                       <div className="space-y-1">
                         <select

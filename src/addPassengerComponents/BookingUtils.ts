@@ -26,14 +26,15 @@ export const cleanDateForDB = (dateValue: any): string | null => {
 };
 
 export const cleanValueForDB = (field: string, value: any): any => {
-  if (
-    [
-      "date_of_birth",
-      "passport_expire",
-      "departure_date",
-      "blacklisted_date",
-    ].includes(field)
-  ) {
+  const dateFields = [
+    "date_of_birth",
+    "passport_expire",
+    "departure_date", // ← passengers table
+    "departureDate", // ← orders table
+    "departuredate", // ← tours table
+    "blacklisted_date",
+  ];
+  if (dateFields.includes(field)) {
     return cleanDateForDB(value);
   }
   if (["created_at", "updated_at"].includes(field)) {
@@ -128,6 +129,8 @@ export const createNewPassenger = (
     main_passenger_id: prefill.main_passenger_id || null,
     sub_passenger_count: 0,
     has_sub_passengers: false,
+    booking_number: null,
+    pax_type: "Adult",
   };
 };
 
@@ -193,5 +196,7 @@ export function createNewPassengerLocal(
     main_passenger_id: extraFields.main_passenger_id || null,
     sub_passenger_count: 0,
     has_sub_passengers: false,
+    booking_number: null,
+    pax_type: "Adult",
   };
 }

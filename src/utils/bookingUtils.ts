@@ -1,5 +1,6 @@
+// utils/bookingUtils.ts
 import type { UserType, Passenger, Tour } from "../types/type";
-import { parse, isValid } from "date-fns";
+import { isValid } from "date-fns";
 
 export const cleanDateForDB = (dateValue: any): string | null => {
   if (
@@ -7,40 +8,36 @@ export const cleanDateForDB = (dateValue: any): string | null => {
     dateValue === undefined ||
     dateValue === "" ||
     dateValue === " " ||
-    (typeof dateValue === "string" && dateValue.trim() === "") ||
-    (typeof dateValue === "string" &&
-      !isNaN(Date.parse(dateValue)) &&
-      new Date(dateValue).toString() === "Invalid Date")
+    (typeof dateValue === "string" && dateValue.trim() === "")
   ) {
     return null;
   }
+
   const cleaned = String(dateValue).trim();
   const parsedDate = new Date(cleaned);
-  if (!isNaN(parsedDate.getTime())) {
-    const year = parsedDate.getFullYear();
-    const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
-    const day = String(parsedDate.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+
+  if (isNaN(parsedDate.getTime())) {
+    return null;
   }
-  return null;
+
+  const year = parsedDate.getFullYear();
+  const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
+  const day = String(parsedDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 export const cleanValueForDB = (field: string, value: any): any => {
-  if (
-    [
-      "date_of_birth",
-      "passport_expire",
-      "departure_date",
-      "blacklisted_date",
-    ].includes(field)
-  ) {
+  const dateFields = [
+    "date_of_birth",
+    "passport_expire",
+    "departureDate",
+    "blacklisted_date",
+  ];
+  if (dateFields.includes(field)) {
     return cleanDateForDB(value);
   }
   if (["created_at", "updated_at"].includes(field)) {
     return value ? new Date(value).toISOString() : null;
-  }
-  if (field === "departureDate") {
-    return cleanDateForDB(value);
   }
   return typeof value === "string" ? value.trim() : value;
 };
@@ -66,12 +63,13 @@ export const createNewPassenger = (
     last_name?: string;
     phone?: string;
     main_passenger_id?: string | null;
-  } = {}
+  } = {},
+  effectiveDepartureDate?: string
 ): Passenger => {
+  const now = new Date().toISOString();
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
     currentUser.role || "user"
   );
-  // Count only main passengers for serial_no
   const mainPassengerCount =
     existingPassengers.filter((p) => !p.main_passenger_id).length + 1;
   const serialNo = prefill.main_passenger_id
@@ -82,16 +80,16 @@ export const createNewPassenger = (
 
   return {
     id: generatePassengerId(),
-    order_id: "",
+    order_id: null,
     user_id: currentUser.id || null,
     tour_id: selectedTourData?.id || "",
     tour_title: selectedTourData?.title || "",
-    departure_date: null,
+    departure_date: effectiveDepartureDate || null,
     name:
       prefill.first_name && prefill.last_name
         ? `${prefill.first_name} ${prefill.last_name}`.trim()
         : undefined,
-    room_allocation: "", // Will be set by assignRoomAllocation
+    room_allocation: "",
     serial_no: serialNo,
     passenger_number: `PAX-${serialNo}`,
     last_name: prefill.last_name || "",
@@ -111,8 +109,8 @@ export const createNewPassenger = (
     passport_upload: null,
     allergy: "",
     emergency_phone: "",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
     status: isPowerUser ? "active" : "pending",
     is_blacklisted: false,
     blacklisted_date: null,
@@ -121,6 +119,8 @@ export const createNewPassenger = (
     main_passenger_id: prefill.main_passenger_id || null,
     sub_passenger_count: 0,
     has_sub_passengers: false,
+    booking_number: null,
+    pax_type: "Adult",
   };
 };
 
@@ -137,12 +137,13 @@ export function createNewPassengerLocal(
     roomType?: string;
     room_allocation?: string;
     serial_no?: string;
+    departureDate?: string;
   } = {}
 ): Passenger {
+  const now = new Date().toISOString();
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
     user.role || "user"
   );
-  // Use provided serial_no for sub-passengers, or count main passengers
   const mainPassengerCount =
     passengers.filter((p) => !p.main_passenger_id).length + 1;
   const serialNo = extraFields.main_passenger_id
@@ -155,11 +156,11 @@ export function createNewPassengerLocal(
 
   return {
     id: generatePassengerId(),
-    order_id: "",
+    order_id: null,
     user_id: user.id || null,
     tour_id: tourData?.id || "",
     tour_title: tourData?.title || "",
-    departure_date: null,
+    departure_date: extraFields.departureDate || "",
     name:
       extraFields.first_name && extraFields.last_name
         ? `${extraFields.first_name} ${extraFields.last_name}`.trim()
@@ -184,8 +185,8 @@ export function createNewPassengerLocal(
     passport_upload: null,
     allergy: "",
     emergency_phone: "",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
     status: isPowerUser ? "active" : "pending",
     is_blacklisted: false,
     blacklisted_date: null,
@@ -194,5 +195,7 @@ export function createNewPassengerLocal(
     main_passenger_id: extraFields.main_passenger_id || null,
     sub_passenger_count: 0,
     has_sub_passengers: false,
+    booking_number: null,
+    pax_type: "Adult",
   };
 }

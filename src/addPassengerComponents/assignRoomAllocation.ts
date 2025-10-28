@@ -1,110 +1,59 @@
 import type { Passenger } from "../types/type";
 
-interface RoomConfig {
-  maxOccupancy: number;
-}
-
-/**
- * Room type configuration with maximum occupancy
- */
-const ROOM_CONFIG: Record<string, RoomConfig> = {
-  Single: { maxOccupancy: 1 },
-  King: { maxOccupancy: 1 },
-  Double: { maxOccupancy: 2 },
-  Twin: { maxOccupancy: 2 },
-  Family: { maxOccupancy: 4 },
+const ROOM_CAPACITY: Record<string, number> = {
+  Single: 1,
+  Double: 2,
+  Twin: 2,
+  Triple: 3,
+  Quad: 4,
+  Family: 5,
+  "": 5,
 };
 
-/**
- * Assign room allocation for a passenger, respecting room capacity
- * @param passengers - Array of passengers
- * @param index - Index of the passenger to assign
- * @param roomType - Selected room type
- * @param reassignSubsequent - Whether to reassign subsequent passengers (e.g., for Family rooms)
- * @returns Room allocation string or empty string if invalid
- */
 export const assignRoomAllocation = (
-  passengers: Passenger[],
-  index: number,
-  roomType: string,
-  reassignSubsequent: boolean = false
+  allPassengers: Passenger[],
+  currentPassenger: Passenger,
+  departureDate: string
 ): string => {
-  if (!roomType || !ROOM_CONFIG[roomType]) return "";
+  const sameDatePax = allPassengers.filter(
+    (p) => p.departure_date === departureDate
+  );
 
-  // Count existing allocations for the room type
-  const roomCounts: Record<string, number> = {};
-  passengers.forEach((p, i) => {
-    if (i < index && p.room_allocation && p.roomType === roomType) {
-      roomCounts[p.room_allocation] = (roomCounts[p.room_allocation] || 0) + 1;
-    }
-  });
+  const groupId = currentPassenger.main_passenger_id
+    ? allPassengers.find((p) => p.id === currentPassenger.main_passenger_id)
+        ?.serial_no
+    : currentPassenger.serial_no;
 
-  // Find the next available room number
-  let roomNumber = 1;
-  while (
-    roomCounts[`${roomType}-${roomNumber}`] >=
-    ROOM_CONFIG[roomType].maxOccupancy
-  ) {
-    roomNumber++;
-  }
+  if (!groupId) return "M1";
 
-  const allocation = `${roomType}-${roomNumber}`;
+  // === 1. Try to extend current group's room ===
+  const mainInGroup = sameDatePax.find(
+    (p) => p.serial_no === groupId && !p.main_passenger_id
+  );
 
-  // If reassignSubsequent is true (e.g., Family room), assign the same room to subsequent passengers
-  if (reassignSubsequent && roomType === "Family") {
-    const maxToAssign = Math.min(
-      index + ROOM_CONFIG.Family.maxOccupancy - 1,
-      passengers.length
+  if (mainInGroup?.room_allocation) {
+    const paxInRoom = sameDatePax.filter(
+      (p) => p.room_allocation === mainInGroup.room_allocation
     );
-    for (let i = index + 1; i < maxToAssign; i++) {
-      if (passengers[i]) {
-        passengers[i].room_allocation = allocation;
-        passengers[i].roomType = roomType;
-      }
+    const capacity = ROOM_CAPACITY[paxInRoom[0]?.roomType || ""] || 5;
+    if (paxInRoom.length < capacity) {
+      return mainInGroup.room_allocation;
     }
   }
 
-  return allocation;
-};
+  // === 2. Reuse any empty room (from deleted groups) ===
+  const usedRooms = [
+    ...new Set(sameDatePax.map((p) => p.room_allocation).filter(Boolean)),
+  ];
+  for (const room of usedRooms) {
+    const count = sameDatePax.filter((p) => p.room_allocation === room).length;
+    if (count === 0) return room;
+  }
 
-/**
- * Validate room allocation for all passengers
- * @param passengers - Array of passengers
- * @returns Array of validation errors
- */
-export const validateRoomAllocations = (
-  passengers: Passenger[]
-): { index: number; message: string }[] => {
-  const errors: { index: number; message: string }[] = [];
-  const roomCounts: Record<string, number> = {};
-
-  passengers.forEach((p, index) => {
-    if (!p.roomType || !ROOM_CONFIG[p.roomType]) {
-      errors.push({
-        index,
-        message: `Passenger ${index + 1}: Invalid room type`,
-      });
-      return;
-    }
-
-    if (!p.room_allocation) {
-      errors.push({
-        index,
-        message: `Passenger ${index + 1}: Room allocation missing`,
-      });
-      return;
-    }
-
-    roomCounts[p.room_allocation] = (roomCounts[p.room_allocation] || 0) + 1;
-    if (roomCounts[p.room_allocation] > ROOM_CONFIG[p.roomType].maxOccupancy) {
-      errors.push({
-        index,
-        message: `Passenger ${index + 1}: Room ${
-          p.room_allocation
-        } exceeds capacity (${ROOM_CONFIG[p.roomType].maxOccupancy})`,
-      });
-    }
-  });
-
-  return errors;
+  // === 3. Create next room number ===
+  const numbers = usedRooms
+    .map((r) => parseInt(r.replace("M", ""), 10))
+    .filter((n) => !isNaN(n));
+  const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+  return `M${nextNum}`;
 };

@@ -10,34 +10,38 @@ import type {
 import { checkSeatLimit } from "../../utils/seatLimitChecks";
 
 interface SupabasePassenger {
+  blacklisted_date: null;
+  seat_count: number;
   id: string;
   order_id: string;
   user_id: string | null;
   tour_title: string;
-  departure_date: string;
+  departure_date: string | null;
   name: string;
-  room_number: string; // Changed from room_allocation to match database
+  room_number: string;
   serial_no: string;
   last_name: string;
   first_name: string;
-  date_of_birth: string;
-  age: number;
-  gender: string;
-  passport_number: string;
-  passport_expiry: string;
-  nationality: string;
-  roomType: string;
-  hotel: string;
-  additional_services: string[];
-  price: number;
-  email: string;
-  phone: string;
-  passport_upload: string;
-  allergy: string;
-  emergency_phone: string;
-  created_at: string;
-  updated_at: string;
+  date_of_birth: string | null;
+  age: number | null;
+  gender: string | null;
+  passport_number: string | null;
+  passport_expiry: string | null;
+  nationality: string | null;
+  roomType: string | null;
+  hotel: string | null;
+  additional_services: string[] | null;
+  price: number | null;
+  email: string | null;
+  phone: string | null;
+  passport_upload: string | null;
+  allergy: string | null;
+  emergency_phone: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   is_blacklisted?: boolean;
+  notes?: string | null;
+  booking_number: string | null;
   status:
     | "pending"
     | "approved"
@@ -48,7 +52,7 @@ interface SupabasePassenger {
   orders?: {
     id: string;
     tour_id: string;
-    departureDate: string;
+    departureDate: string | null;
     tours?: {
       id: string;
       title: string;
@@ -82,17 +86,22 @@ export default function useRealTimeSubscriptions({
   useEffect(() => {
     const selectedTourData = tours.find((t: Tour) => t.title === selectedTour);
 
+    // Passenger subscription
     const passengerSubscription = supabase
-      .channel("passengers_channel")
+      .channel(`passengers_channel_${Math.random().toString(36).substring(2)}`) // Unique channel name
       .on(
-        "postgres_changes",
+        "postgres_changes" as any, // Workaround for older supabase-js versions
         {
           event: "*",
           schema: "public",
           table: "passengers",
           filter: `user_id=eq.${currentUser.userId}`,
         },
-        async (payload) => {
+        async (payload: any) => {
+          console.log(
+            "Passenger subscription payload:",
+            JSON.stringify(payload, null, 2)
+          );
           try {
             const { data, error } = await supabase
               .from("passengers")
@@ -112,13 +121,25 @@ export default function useRealTimeSubscriptions({
               )
               .eq("user_id", currentUser.userId);
             if (error) {
-              console.error("Error fetching updated passengers:", error);
+              console.error(
+                "Error fetching updated passengers:",
+                JSON.stringify(error, null, 2)
+              );
               wrappedShowNotification(
                 "error",
                 `Failed to refresh passengers: ${error.message}`
               );
               return;
             }
+            console.log(
+              "Fetched passenger data:",
+              data.map((p: SupabasePassenger) => ({
+                id: p.id,
+                date_of_birth: p.date_of_birth || "Missing date_of_birth",
+                notes: p.notes || "No notes",
+                booking_number: p.booking_number || "No booking_number",
+              }))
+            );
             setPassengers((prev) => {
               const existingIds = new Set(prev.map((p) => p.id));
               return [
@@ -129,44 +150,44 @@ export default function useRealTimeSubscriptions({
                       id: p.id,
                       order_id: p.order_id,
                       user_id: p.user_id,
-                      tour_title:
-                        p.orders?.tours?.title ||
+                      tour_title: p.orders?.tours?.title ||
                         p.tour_title ||
                         "Unknown Tour",
-                      departure_date:
-                        p.orders?.departureDate || p.departure_date || "",
+                      departure_date: p.orders?.departureDate || p.departure_date || null,
                       tour_id: p.orders?.tour_id || "",
                       passenger_number: p.serial_no || "",
                       name: p.name,
-                      room_allocation: p.room_number, // Changed to room_number
+                      room_allocation: p.room_number || "",
                       serial_no: p.serial_no,
-                      last_name: p.last_name,
-                      first_name: p.first_name,
-                      date_of_birth: p.date_of_birth,
-                      age: p.age,
-                      gender: p.gender,
-                      passport_number: p.passport_number,
-                      passport_expire: p.passport_expiry,
-                      nationality: p.nationality,
-                      roomType: p.roomType,
-                      hotel: p.hotel,
-                      additional_services: p.additional_services,
-                      price: p.price,
-                      email: p.email,
-                      phone: p.phone,
-                      passport_upload: p.passport_upload,
-                      allergy: p.allergy,
-                      emergency_phone: p.emergency_phone,
-                      created_at: p.created_at,
-                      updated_at: p.updated_at,
+                      last_name: p.last_name || "",
+                      first_name: p.first_name || "",
+                      date_of_birth: p.date_of_birth || null,
+                      age: p.age || null,
+                      gender: p.gender || null,
+                      passport_number: p.passport_number || null,
+                      passport_expire: p.passport_expiry || null,
+                      nationality: p.nationality || null,
+                      roomType: p.roomType || null,
+                      hotel: p.hotel || null,
+                      additional_services: p.additional_services || [],
+                      price: p.price || null,
+                      email: p.email || null,
+                      phone: p.phone || null,
+                      passport_upload: p.passport_upload || null,
+                      allergy: p.allergy || null,
+                      emergency_phone: p.emergency_phone || null,
+                      created_at: p.created_at || null,
+                      updated_at: p.updated_at || null,
                       status: p.status,
                       is_blacklisted: p.is_blacklisted ?? false,
-                      blacklisted_date: (p as any).blacklisted_date ?? null,
-                      notes: (p as any).notes ?? null,
-                      seat_count: (p as any).seat_count || 1,
+                      blacklisted_date: p.blacklisted_date ?? null,
+                      notes: p.notes ?? null,
+                      seat_count: p.seat_count || 1,
                       main_passenger_id: null,
                       sub_passenger_count: 0,
                       has_sub_passengers: false,
+                      booking_number: p.booking_number || null,
+                      pax: null
                     })
                   )
                   .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
@@ -180,24 +201,40 @@ export default function useRealTimeSubscriptions({
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
-            console.error("Error in passenger real-time handler:", error);
+            console.error(
+              "Error in passenger real-time handler:",
+              JSON.stringify(error, null, 2)
+            );
             wrappedShowNotification("error", "Failed to refresh passengers");
           }
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error(
+            "Passenger subscription error:",
+            JSON.stringify(error, null, 2)
+          );
+          wrappedShowNotification("error", "Passenger subscription failed");
+        }
+      });
 
+    // Order subscription
     const orderSubscription = supabase
-      .channel("orders_channel")
+      .channel(`orders_channel_${Math.random().toString(36).substring(2)}`)
       .on(
-        "postgres_changes",
+        "postgres_changes" as any,
         {
           event: "*",
           schema: "public",
           table: "orders",
           filter: `user_id=eq.${currentUser.userId}`,
         },
-        async (payload) => {
+        async (payload: any) => {
+          console.log(
+            "Order subscription payload:",
+            JSON.stringify(payload, null, 2)
+          );
           try {
             const { data, error } = await supabase
               .from("orders")
@@ -212,7 +249,10 @@ export default function useRealTimeSubscriptions({
               )
               .eq("user_id", currentUser.userId);
             if (error) {
-              console.error("Error fetching updated orders:", error);
+              console.error(
+                "Error fetching updated orders:",
+                JSON.stringify(error, null, 2)
+              );
               wrappedShowNotification(
                 "error",
                 `Failed to refresh orders: ${error.message}`
@@ -224,41 +264,42 @@ export default function useRealTimeSubscriptions({
                 (o): Order => ({
                   id: o.id,
                   order_id: String(o.id),
-                  user_id: o.user_id,
-                  tour_id: o.tour_id,
-                  departureDate: o.departureDate,
+                  user_id: o.user_id || null,
+                  tour_id: o.tour_id || "",
+                  departureDate: o.departureDate || null,
                   tour: o.tours?.title || o.tour || "Unknown Tour",
-                  phone: o.phone,
-                  last_name: o.last_name,
-                  first_name: o.first_name,
-                  email: o.email,
-                  age: o.age,
-                  gender: o.gender,
-                  passport_number: o.passport_number,
-                  passport_expire: o.passport_expire,
-                  passport_copy: o.passport_copy,
-                  created_by: o.created_by,
-                  createdBy: o.createdBy,
-                  edited_by: o.edited_by,
-                  edited_at: o.edited_at,
-                  travel_choice: o.travel_choice,
-                  status: o.status,
-                  hotel: o.hotel,
-                  room_number: o.room_number ?? "", // Map room_number from database
-                  payment_method: o.payment_method,
-                  created_at: o.created_at,
-                  updated_at: o.updated_at,
-                  show_in_provider: o.show_in_provider,
-                  total_price: o.total_price,
-                  total_amount: o.total_amount,
-                  paid_amount: o.paid_amount,
-                  balance: o.balance,
+                  phone: o.phone || null,
+                  last_name: o.last_name || null,
+                  first_name: o.first_name || null,
+                  email: o.email || null,
+                  age: o.age || null,
+                  gender: o.gender || null,
+                  passport_number: o.passport_number || null,
+                  passport_expire: o.passport_expire || null,
+                  passport_copy: o.passport_copy || null,
+                  created_by: o.created_by || null,
+                  createdBy: o.createdBy || null,
+                  edited_by: o.edited_by || null,
+                  edited_at: o.edited_at || null,
+                  travel_choice: o.travel_choice || "",
+                  status: o.status || "pending",
+                  hotel: o.hotel || null,
+                  room_number: o.room_number || "",
+                  payment_method: o.payment_method || null,
+                  created_at: o.created_at || null,
+                  updated_at: o.updated_at || null,
+                  show_in_provider: o.show_in_provider ?? true,
+                  total_price: o.total_price || 0,
+                  total_amount: o.total_amount || 0,
+                  paid_amount: o.paid_amount || 0,
+                  balance: o.balance || 0,
                   commission: o.commission || 0,
                   passengers: passengers.filter((p) => p.order_id === o.id),
                   passenger_count: passengers.filter((p) => p.order_id === o.id)
                     .length,
-                  passport_copy_url: o.passport_copy_url ?? null,
-                  booking_confirmation: o.booking_confirmation ?? null,
+                  passport_copy_url: o.passport_copy_url || null,
+                  booking_confirmation: o.booking_confirmation || null,
+                  room_allocation: o.room_number || "",
                 })
               )
             );
@@ -270,23 +311,39 @@ export default function useRealTimeSubscriptions({
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
-            console.error("Error in order real-time handler:", error);
+            console.error(
+              "Error in order real-time handler:",
+              JSON.stringify(error, null, 2)
+            );
             wrappedShowNotification("error", "Failed to refresh orders");
           }
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error(
+            "Order subscription error:",
+            JSON.stringify(error, null, 2)
+          );
+          wrappedShowNotification("error", "Order subscription failed");
+        }
+      });
 
+    // Tour subscription
     const tourSubscription = supabase
-      .channel("tours_channel")
+      .channel(`tours_channel_${Math.random().toString(36).substring(2)}`)
       .on(
-        "postgres_changes",
+        "postgres_changes" as any,
         {
           event: "*",
           schema: "public",
           table: "tours",
         },
-        async (payload) => {
+        async (payload: any) => {
+          console.log(
+            "Tour subscription payload:",
+            JSON.stringify(payload, null, 2)
+          );
           try {
             const { data, error } = await supabase.from("tours").select(`
                 id,
@@ -300,7 +357,10 @@ export default function useRealTimeSubscriptions({
                 services
               `);
             if (error) {
-              console.error("Error fetching updated tours:", error);
+              console.error(
+                "Error fetching updated tours:",
+                JSON.stringify(error, null, 2)
+              );
               wrappedShowNotification(
                 "error",
                 `Failed to refresh tours: ${error.message}`
@@ -310,7 +370,10 @@ export default function useRealTimeSubscriptions({
             const validatedTours = data.filter((tour): tour is Tour => {
               const isValid = tour.id && tour.title;
               if (!isValid) {
-                console.warn("Invalid tour data:", tour);
+                console.warn(
+                  "Invalid tour data:",
+                  JSON.stringify(tour, null, 2)
+                );
               }
               return isValid;
             });
@@ -320,19 +383,30 @@ export default function useRealTimeSubscriptions({
             );
             setTours(validatedTours);
             if (selectedTourData?.id && departureDate) {
-              const { isValid, message, seats } = await checkSeatLimit(
+              const { isValid, message } = await checkSeatLimit(
                 selectedTourData.id,
                 departureDate
               );
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
-            console.error("Error in tour real-time handler:", error);
+            console.error(
+              "Error in tour real-time handler:",
+              JSON.stringify(error, null, 2)
+            );
             wrappedShowNotification("error", "Failed to refresh tours");
           }
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error(
+            "Tour subscription error:",
+            JSON.stringify(error, null, 2)
+          );
+          wrappedShowNotification("error", "Tour subscription failed");
+        }
+      });
 
     return () => {
       supabase.removeChannel(passengerSubscription);

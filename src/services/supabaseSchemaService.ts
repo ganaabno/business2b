@@ -25,96 +25,120 @@ export function sanitizeIdentifier(name: string) {
   return name.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
-export function buildCreateTableSQL(
-  physicalName: string,
-  columns: ColumnDefinition[]
-) {
-  const colsSql = columns
-    .map((c) => {
-      const colName = sanitizeIdentifier(c.name.toLowerCase());
-      const sqlType = mapColumnTypeToSql(c.type);
-      const notNull = c.required ? "NOT NULL" : "";
-      const defaultClause = c.defaultValue
-        ? `DEFAULT '${c.defaultValue.replace("'", "''")}'`
-        : "";
-      return `\"${colName}\" ${sqlType} ${defaultClause} ${notNull}`.trim();
-    })
+// supabaseSchemaService.ts
+
+export const buildCreateTableSQL = (
+  physicalTableName: string,
+  cols: ColumnDefinition[]
+) => {
+  const colsSql = cols
+    .map(
+      (c) =>
+        `"${sanitizeIdentifier(c.name)}" ${mapColumnTypeToSql(c.type)}${
+          c.required ? " NOT NULL" : ""
+        }${
+          c.defaultValue
+            ? ` DEFAULT ${
+                c.type === "text" || c.type === "json"
+                  ? `'${c.defaultValue.replace(/'/g, "''")}'`
+                  : c.defaultValue
+              }`
+            : ""
+        }`
+    )
     .join(",\n  ");
+  return `CREATE TABLE IF NOT EXISTS "${sanitizeIdentifier(
+    physicalTableName
+  )}" (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ${colsSql},
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+); NOTIFY pgrst, 'reload schema';`;
+};
 
-  const sql = `CREATE TABLE IF NOT EXISTS \"${sanitizeIdentifier(
-    physicalName
-  )}\" (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  ${colsSql},\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\n);`;
-  return sql;
-}
-
-export function buildAddColumnSQL(
-  physicalName: string,
+export const buildAddColumnSQL = (
+  physicalTableName: string,
   column: ColumnDefinition
-) {
-  const colName = sanitizeIdentifier(column.name.toLowerCase());
-  const sqlType = mapColumnTypeToSql(column.type);
-  const notNull = column.required ? "NOT NULL" : "";
-  const defaultClause = column.defaultValue
-    ? `DEFAULT '${column.defaultValue.replace("'", "''")}'`
-    : "";
-  return `ALTER TABLE IF EXISTS \"${sanitizeIdentifier(
-    physicalName
-  )}\" ADD COLUMN IF NOT EXISTS \"${colName}\" ${sqlType} ${defaultClause} ${notNull};`;
-}
+) => {
+  return `ALTER TABLE "${sanitizeIdentifier(
+    physicalTableName
+  )}" ADD COLUMN IF NOT EXISTS "${sanitizeIdentifier(
+    column.name
+  )}" ${mapColumnTypeToSql(column.type)}${column.required ? " NOT NULL" : ""}${
+    column.defaultValue
+      ? ` DEFAULT ${
+          column.type === "text" || column.type === "json"
+            ? `'${column.defaultValue.replace(/'/g, "''")}'`
+            : column.defaultValue
+        }`
+      : ""
+  }; NOTIFY pgrst, 'reload schema';`;
+};
 
-export function buildRenameColumnSQL(
-  physicalName: string,
+export const buildRenameColumnSQL = (
+  physicalTableName: string,
   oldName: string,
   newName: string
-) {
-  return `ALTER TABLE \"${sanitizeIdentifier(
-    physicalName
-  )}\" RENAME COLUMN \"${sanitizeIdentifier(
-    oldName
-  )}\" TO \"${sanitizeIdentifier(newName)}\";`;
-}
+) => {
+  return `ALTER TABLE "${sanitizeIdentifier(
+    physicalTableName
+  )}" RENAME COLUMN "${sanitizeIdentifier(oldName)}" TO "${sanitizeIdentifier(
+    newName
+  )}"; NOTIFY pgrst, 'reload schema';`;
+};
 
-export function buildChangeTypeSQL(
-  physicalName: string,
+export const buildChangeTypeSQL = (
+  physicalTableName: string,
   colName: string,
   newType: string
-) {
-  return `ALTER TABLE \"${sanitizeIdentifier(
-    physicalName
-  )}\" ALTER COLUMN \"${sanitizeIdentifier(
-    colName
-  )}\" TYPE ${mapColumnTypeToSql(newType)};`;
-}
+) => {
+  return `ALTER TABLE "${sanitizeIdentifier(
+    physicalTableName
+  )}" ALTER COLUMN "${sanitizeIdentifier(colName)}" TYPE ${mapColumnTypeToSql(
+    newType
+  )} USING "${sanitizeIdentifier(colName)}" :: ${mapColumnTypeToSql(
+    newType
+  )}; NOTIFY pgrst, 'reload schema';`;
+};
 
-export function buildSetRequiredSQL(
-  physicalName: string,
+export const buildSetRequiredSQL = (
+  physicalTableName: string,
   colName: string,
   required: boolean
-) {
-  return `ALTER TABLE \"${sanitizeIdentifier(
-    physicalName
-  )}\" ALTER COLUMN \"${sanitizeIdentifier(colName)}\" ${
-    required ? "SET NOT NULL" : "DROP NOT NULL"
-  };`;
-}
+) => {
+  return `ALTER TABLE "${sanitizeIdentifier(
+    physicalTableName
+  )}" ALTER COLUMN "${sanitizeIdentifier(colName)}" ${
+    required ? "SET" : "DROP"
+  } NOT NULL; NOTIFY pgrst, 'reload schema';`;
+};
 
-export function buildSetDefaultSQL(
-  physicalName: string,
+export const buildSetDefaultSQL = (
+  physicalTableName: string,
   colName: string,
-  defaultValue: string | null
-) {
-  if (defaultValue === null) {
-    return `ALTER TABLE \"${sanitizeIdentifier(
-      physicalName
-    )}\" ALTER COLUMN \"${sanitizeIdentifier(colName)}\" DROP DEFAULT;`;
-  } else {
-    return `ALTER TABLE \"${sanitizeIdentifier(
-      physicalName
-    )}\" ALTER COLUMN \"${sanitizeIdentifier(
-      colName
-    )}\" SET DEFAULT '${defaultValue.replace("'", "''")}';`;
+  defaultValue: string | null,
+  colType: string // ✅ pass actual column type
+) => {
+  let defaultSql = "DROP DEFAULT";
+
+  if (
+    defaultValue !== null &&
+    defaultValue !== undefined &&
+    defaultValue !== ""
+  ) {
+    if (colType === "text" || colType === "json") {
+      defaultSql = `SET DEFAULT '${defaultValue.replace(/'/g, "''")}'`;
+    } else {
+      defaultSql = `SET DEFAULT ${defaultValue}`;
+    }
   }
-}
+
+  return `ALTER TABLE "${sanitizeIdentifier(
+    physicalTableName
+  )}" ALTER COLUMN "${sanitizeIdentifier(
+    colName
+  )}" ${defaultSql}; NOTIFY pgrst, 'reload schema';`;
+};
 
 export function buildDropColumnSQL(physicalName: string, colName: string) {
   return `ALTER TABLE \"${sanitizeIdentifier(

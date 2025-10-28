@@ -206,7 +206,7 @@ export default function UserInterface({
         );
       }
     }
-  }, [passengerFormData, tours, setSelectedTour, setDepartureDate]);  
+  }, [passengerFormData, tours, setSelectedTour, setDepartureDate]);
 
   // Calculate max passengers for prompt
   const maxPassengersForPrompt = Math.min(

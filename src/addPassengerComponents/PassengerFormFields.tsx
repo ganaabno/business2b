@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { parse, isValid, format } from "date-fns";
 import type { Passenger, Tour } from "../types/type";
 import { supabase } from "../supabaseClient";
@@ -7,6 +7,7 @@ interface PassengerFormFieldsProps {
   passenger: Passenger;
   index: number;
   selectedTourData?: Tour;
+  passengers: Passenger[] | undefined;
   errors: any[];
   updatePassenger: (
     index: number,
@@ -19,12 +20,14 @@ interface PassengerFormFieldsProps {
   roomTypes: string[];
   hotels: string[];
   setNotification: (notification: { type: string; message: string }) => void;
+  departureDate: string;
 }
 
 export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
   passenger,
   index,
   selectedTourData,
+  passengers = [],
   errors,
   updatePassenger,
   expanded,
@@ -33,9 +36,40 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
   roomTypes,
   hotels,
   setNotification,
+  departureDate = "",
 }) => {
-  const [localRoomType, setLocalRoomType] = useState(passenger.roomType || "");
+  const [localRoomType, setLocalRoomType] = useState(
+    passenger.roomType || "Single"
+  );
   const [uploadLoading, setUploadLoading] = useState(false);
+  const previousRoom = useRef<string>("");
+
+  // Memoize deps to avoid unnecessary re-renders
+  const passengerDeps = useMemo(
+    () => ({
+      main_passenger_id: passenger.main_passenger_id,
+      has_sub_passengers: passenger.has_sub_passengers,
+      sub_passenger_count: passenger.sub_passenger_count,
+    }),
+    [
+      passenger.main_passenger_id,
+      passenger.has_sub_passengers,
+      passenger.sub_passenger_count,
+    ]
+  );
+
+  // Log room changes
+  useEffect(() => {
+    if (
+      previousRoom.current &&
+      previousRoom.current !== passenger.room_allocation
+    ) {
+      console.log(
+        `P${passenger.serial_no}: ${previousRoom.current} → ${passenger.room_allocation}`
+      );
+    }
+    previousRoom.current = passenger.room_allocation;
+  }, [passenger.room_allocation, passenger.serial_no]);
 
   const getFieldError = (field: string) => {
     return errors.find(
@@ -65,32 +99,12 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
 
   const formatDate = (dateStr: string | null | undefined): string => {
     if (!dateStr) return "";
-    try {
-      let parsedDate = parse(dateStr, "yyyy-MM-dd", new Date());
-      if (isValid(parsedDate)) {
-        return format(parsedDate, "yyyy-MM-dd");
-      }
-      parsedDate = parse(dateStr, "d-MM-yy", new Date());
-      if (isValid(parsedDate)) {
-        return format(parsedDate, "yyyy-MM-dd");
-      }
-      parsedDate = parse(dateStr, "dd-MM-yy", new Date());
-      if (isValid(parsedDate)) {
-        return format(parsedDate, "yyyy-MM-dd");
-      }
-      parsedDate = parse(dateStr, "M-d-yy", new Date());
-      if (isValid(parsedDate)) {
-        return format(parsedDate, "yyyy-MM-dd");
-      }
-      parsedDate = parse(dateStr, "MM-dd-yy", new Date());
-      if (isValid(parsedDate)) {
-        return format(parsedDate, "yyyy-MM-dd");
-      }
-      return dateStr;
-    } catch (error) {
-      console.error("Date parsing error:", error);
-      return "";
+    const formats = ["yyyy-MM-dd", "d-MM-yy", "dd-MM-yy", "M-d-yy", "MM-dd-yy"];
+    for (const fmt of formats) {
+      const parsed = parse(dateStr, fmt, new Date());
+      if (isValid(parsed)) return format(parsed, "yyyy-MM-dd");
     }
+    return dateStr;
   };
 
   const handlePassportUpload = async (
@@ -101,18 +115,13 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
 
     setUploadLoading(true);
     try {
-      const fileExt = file.name.split(".").pop();
+      const fileExt = file.name.split(".").pop() || "jpg";
       const filePath = `${passenger.id}/passport.${fileExt}`;
       const { data, error } = await supabase.storage
         .from("passport")
-        .upload(filePath, file, {
-          contentType: file.type,
-          upsert: true,
-        });
+        .upload(filePath, file, { contentType: file.type, upsert: true });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       const { data: urlData } = supabase.storage
         .from("passport")
@@ -120,22 +129,15 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
 
       if (urlData?.publicUrl) {
         updatePassenger(index, "passport_upload", urlData.publicUrl);
-        setNotification({
-          type: "success",
-          message: "Passport uploaded successfully!",
-        });
+        setNotification({ type: "success", message: "Passport uploaded!" });
       } else {
-        setNotification({
-          type: "error",
-          message: "Failed to retrieve passport URL.",
-        });
+        setNotification({ type: "error", message: "Failed to get URL" });
       }
     } catch (error: any) {
-      console.error("Upload error:", error);
       setNotification({
         type: "error",
-        message: error.message.includes("row-level security")
-          ? "Upload failed: You don't have permission to upload to this bucket."
+        message: error.message.includes("security")
+          ? "Permission denied"
           : `Upload failed: ${error.message}`,
       });
     } finally {
@@ -144,20 +146,20 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
   };
 
   const handleServiceChange = (serviceName: string, checked: boolean) => {
-    const currentServices = passenger.additional_services || [];
-    const updatedServices = checked
-      ? [...currentServices, serviceName]
-      : currentServices.filter((s) => s !== serviceName);
-    updatePassenger(index, "additional_services", updatedServices);
+    const current = passenger.additional_services || [];
+    const updated = checked
+      ? [...current, serviceName]
+      : current.filter((s) => s !== serviceName);
+    updatePassenger(index, "additional_services", updated);
   };
 
   if (!expanded) return null;
 
   return (
-    <div className="space-y-4">
-      {/* Sub-Passenger Checkbox and Input (only for main passengers) */}
+    <div className="space-y-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+      {/* Sub-Passenger Controls — Only for Main */}
       {!passenger.main_passenger_id && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
           <div className="flex items-center space-x-2">
             <input
               type="checkbox"
@@ -179,19 +181,43 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
               <input
                 type="number"
                 min="0"
-                max="20" // Assuming MAX_PASSENGERS is 20 from useBooking
+                max="20"
                 value={passenger.sub_passenger_count || ""}
                 onChange={(e) =>
                   updatePassenger(index, "subPassengerCount", e.target.value)
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
           )}
         </div>
       )}
 
-      {/* Personal Information */}
+      {/* PAX TYPE — REPLACES "FAX" */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Pax Type *
+          </label>
+          <select
+            value={passenger.pax_type || "Adult"}
+            onChange={(e) => updatePassenger(index, "pax_type", e.target.value)}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+              getFieldError("pax_type") ? "border-red-500" : "border-gray-300"
+            }`}
+          >
+            <option value="Adult">Adult</option>
+            <option value="Child">Child</option>
+          </select>
+          {getFieldError("pax_type") && (
+            <p className="mt-1 text-sm text-red-600">
+              {getFieldError("pax_type").message}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Personal Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -214,7 +240,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "first_name", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("first_name") ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="First name"
@@ -235,7 +261,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "last_name", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("last_name") ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="Last name"
@@ -248,7 +274,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
         </div>
       </div>
 
-      {/* Contact Information */}
+      {/* Contact */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -258,7 +284,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             type="email"
             value={passenger.email || ""}
             onChange={(e) => updatePassenger(index, "email", e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("email") ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="example@email.com"
@@ -277,7 +303,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             type="tel"
             value={passenger.phone || ""}
             onChange={(e) => updatePassenger(index, "phone", e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("phone") ? "border-red-500" : "border-gray-300"
             }`}
             placeholder="+976..."
@@ -298,7 +324,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "emergency_phone", e.target.value)
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             placeholder="Emergency contact"
           />
         </div>
@@ -316,7 +342,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "date_of_birth", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("date_of_birth")
                 ? "border-red-500"
                 : "border-gray-300"
@@ -341,7 +367,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           <select
             value={passenger.gender || ""}
             onChange={(e) => updatePassenger(index, "gender", e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("gender") ? "border-red-500" : "border-gray-300"
             }`}
           >
@@ -365,15 +391,15 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "nationality", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("nationality")
                 ? "border-red-500"
                 : "border-gray-300"
             }`}
           >
-            {nationalities.map((nationality) => (
-              <option key={nationality} value={nationality}>
-                {nationality}
+            {nationalities.map((n) => (
+              <option key={n} value={n}>
+                {n}
               </option>
             ))}
           </select>
@@ -385,7 +411,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
         </div>
       </div>
 
-      {/* Passport Information */}
+      {/* Passport */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -397,7 +423,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "passport_number", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("passport_number")
                 ? "border-red-500"
                 : "border-gray-300"
@@ -420,7 +446,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             onChange={(e) =>
               updatePassenger(index, "passport_expire", e.target.value)
             }
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("passport_expire")
                 ? "border-red-500"
                 : getPassportExpiryColor(passenger.passport_expire)
@@ -450,12 +476,12 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           </div>
           {passenger.passport_upload &&
             typeof passenger.passport_upload === "string" && (
-              <p className="mt-1 text-sm text-green-600">✓ Uploaded</p>
+              <p className="mt-1 text-sm text-green-600">Uploaded</p>
             )}
         </div>
       </div>
 
-      {/* Accommodation Information */}
+      {/* Accommodation */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -464,15 +490,16 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           <select
             value={localRoomType}
             onChange={(e) => handleRoomTypeChange(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("roomType") ? "border-red-500" : "border-gray-300"
             }`}
-            disabled={!!passenger.main_passenger_id} // Disable for sub-passengers
+            disabled={!!passenger.main_passenger_id}
           >
-            <option value="">Select Room Type</option>
-            {roomTypes.map((roomType) => (
-              <option key={roomType} value={roomType}>
-                {roomType}
+            <option value="Single">Single</option>
+            <option value="Double">Double</option>
+            {roomTypes.map((rt) => (
+              <option key={rt} value={rt}>
+                {rt}
               </option>
             ))}
           </select>
@@ -486,13 +513,22 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Room Allocation
           </label>
-          <input
-            type="text"
-            value={passenger.room_allocation || ""}
-            readOnly
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
-            placeholder="Auto-assigned"
-          />
+          <div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
+              {passenger.room_allocation || "—"}
+              {passenger.room_allocation && (
+                <span className="ml-1 opacity-70">
+                  (
+                  {
+                    passengers.filter(
+                      (p) => p.room_allocation === passenger.room_allocation
+                    ).length
+                  }{" "}
+                  pax)
+                </span>
+              )}
+            </span>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -501,14 +537,14 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           <select
             value={passenger.hotel || ""}
             onChange={(e) => updatePassenger(index, "hotel", e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
               getFieldError("hotel") ? "border-red-500" : "border-gray-300"
             }`}
           >
             <option value="">Select Hotel</option>
-            {hotels.map((hotel) => (
-              <option key={hotel} value={hotel}>
-                {hotel}
+            {hotels.map((h) => (
+              <option key={h} value={h}>
+                {h}
               </option>
             ))}
           </select>
@@ -520,7 +556,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
         </div>
       </div>
 
-      {/* Additional Information */}
+      {/* Services & Allergies */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -528,23 +564,20 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
           </label>
           {selectedTourData?.services && (
             <div className="space-y-2 max-h-32 overflow-y-auto">
-              {selectedTourData.services.map((service) => (
-                <label
-                  key={service.name}
-                  className="flex items-center space-x-2"
-                >
+              {selectedTourData.services.map((s) => (
+                <label key={s.name} className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     checked={(passenger.additional_services || []).includes(
-                      service.name
+                      s.name
                     )}
                     onChange={(e) =>
-                      handleServiceChange(service.name, e.target.checked)
+                      handleServiceChange(s.name, e.target.checked)
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700">
-                    {service.name} (${service.price})
+                    {s.name} (${s.price})
                   </span>
                 </label>
               ))}
@@ -559,7 +592,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
             type="text"
             value={passenger.allergy || ""}
             onChange={(e) => updatePassenger(index, "allergy", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             placeholder="Enter any allergies"
           />
         </div>
@@ -573,8 +606,8 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = ({
         <textarea
           value={passenger.notes || ""}
           onChange={(e) => updatePassenger(index, "notes", e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="Additional notes or comments"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          placeholder="Additional notes"
           rows={4}
         />
       </div>

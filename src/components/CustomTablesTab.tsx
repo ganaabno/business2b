@@ -44,12 +44,17 @@ export default function CustomTablesTab({
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedTables, setSelectedTables] = useState<Set<number>>(new Set());
   const [filterStatus, setFilterStatus] = useState<
     "all" | "deployed" | "draft"
   >("all");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     fetchTables();
@@ -161,7 +166,6 @@ export default function CustomTablesTab({
         .single();
       if (error) throw error;
 
-      // Add initial columns
       for (let i = 1; i <= initialColumns; i++) {
         const colPayload = {
           table_id: data.id,
@@ -180,10 +184,7 @@ export default function CustomTablesTab({
       setInitialColumns(0);
       setInitialRows(0);
       setShowCreateForm(false);
-      showNotification(
-        "success",
-        "Custom table meta created. You can now manage columns."
-      );
+      showNotification("success", "✨ Table created successfully!");
       setEditingTable(data as CustomTable);
     } catch (error: any) {
       showNotification("error", `Failed to create table: ${error.message}`);
@@ -227,7 +228,7 @@ export default function CustomTablesTab({
 
       if (error) throw error;
 
-      showNotification("success", "Table updated successfully! ✓");
+      showNotification("success", "✓ Table updated successfully!");
       setEditingRow(null);
       setEditForm(null);
       fetchTables();
@@ -251,7 +252,7 @@ export default function CustomTablesTab({
 
       if (error) throw error;
 
-      showNotification("success", `Deleted ${selectedTables.size} table(s)`);
+      showNotification("success", `🗑️ Deleted ${selectedTables.size} table(s)`);
       setSelectedTables(new Set());
       fetchTables();
     } catch (error: any) {
@@ -312,51 +313,197 @@ export default function CustomTablesTab({
     [tables]
   );
 
+  function success(
+    type: "error" | "success" | "warning",
+    message: string
+  ): void {
+    throw new Error("Function not implemented.");
+  }
+
   return (
-    <div className="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 sm:p-6 lg:p-8">
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes slideInDown {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from {
+            opacity: 0;
+            transform: scale(0.9);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        .animate-slide-in-up {
+          animation: slideInUp 0.5s ease-out forwards;
+        }
+        .animate-slide-in-down {
+          animation: slideInDown 0.5s ease-out forwards;
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.5s ease-out forwards;
+        }
+        .animate-scale-in {
+          animation: scaleIn 0.4s ease-out forwards;
+        }
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+        .glass-effect {
+          background: rgba(255, 255, 255, 0.05);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .card-gradient {
+          background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+        }
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+      `}</style>
+
       <div className="max-w-7xl mx-auto">
-        {/* Header Section */}
-        <div className="bg-white shadow-lg rounded-xl p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
+        {/* Hero Header */}
+        <div
+          className={`glass-effect rounded-3xl p-8 mb-8 shadow-2xl ${
+            mounted ? "animate-slide-in-down" : "opacity-0"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                <span className="text-4xl">🗂️</span>
-                Custom Tables
-              </h2>
-              <p className="text-gray-600 mt-1">
-                Manage your database tables with ease
+              <div className="flex items-center gap-4 mb-3">
+                <span className="text-6xl animate-float">🗂️</span>
+                <h1 className="text-5xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                  Custom Tables
+                </h1>
+              </div>
+              <p className="text-gray-300 text-lg ml-20">
+                Design, deploy, and dominate your data architecture
               </p>
             </div>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
               disabled={editingRow !== null}
-              className={`px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 font-semibold ${
-                editingRow !== null ? "opacity-50 cursor-not-allowed" : ""
+              className={`group relative px-8 py-4 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-2xl hover:shadow-purple-500/50 transform hover:scale-105 transition-all duration-300 ${
+                editingRow !== null
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:-translate-y-1"
               }`}
             >
-              {showCreateForm ? "✕ Cancel" : "+ New Table"}
+              <span className="relative z-10 flex items-center gap-2">
+                {showCreateForm ? "✕ Cancel" : "✨ New Table"}
+              </span>
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-pink-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
             </button>
           </div>
 
           {/* Stats Dashboard */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-              <div className="text-2xl font-bold text-blue-700">
-                {stats.total}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div
+              className={`card-gradient rounded-2xl p-6 border border-purple-500/30 transform hover:scale-105 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/20 ${
+                mounted ? "animate-scale-in stagger-1" : "opacity-0"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-4xl">📊</span>
+                <div className="text-right">
+                  <div className="text-4xl font-black text-purple-400">
+                    {stats.total}
+                  </div>
+                  <div className="text-sm text-purple-300 font-medium">
+                    Total Tables
+                  </div>
+                </div>
               </div>
-              <div className="text-sm text-blue-600">Total Tables</div>
+              <div className="h-2 bg-purple-900/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
+                  style={{ width: "100%" }}
+                ></div>
+              </div>
             </div>
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-              <div className="text-2xl font-bold text-green-700">
-                {stats.deployed}
+
+            <div
+              className={`card-gradient rounded-2xl p-6 border border-emerald-500/30 transform hover:scale-105 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/20 ${
+                mounted ? "animate-scale-in stagger-2" : "opacity-0"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-4xl">✅</span>
+                <div className="text-right">
+                  <div className="text-4xl font-black text-emerald-400">
+                    {stats.deployed}
+                  </div>
+                  <div className="text-sm text-emerald-300 font-medium">
+                    Deployed
+                  </div>
+                </div>
               </div>
-              <div className="text-sm text-green-600">Deployed</div>
+              <div className="h-2 bg-emerald-900/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-green-500 rounded-full"
+                  style={{
+                    width: `${
+                      stats.total ? (stats.deployed / stats.total) * 100 : 0
+                    }%`,
+                  }}
+                ></div>
+              </div>
             </div>
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 border border-amber-200">
-              <div className="text-2xl font-bold text-amber-700">
-                {stats.draft}
+
+            <div
+              className={`card-gradient rounded-2xl p-6 border border-amber-500/30 transform hover:scale-105 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/20 ${
+                mounted ? "animate-scale-in stagger-3" : "opacity-0"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-4xl">📝</span>
+                <div className="text-right">
+                  <div className="text-4xl font-black text-amber-400">
+                    {stats.draft}
+                  </div>
+                  <div className="text-sm text-amber-300 font-medium">
+                    Draft
+                  </div>
+                </div>
               </div>
-              <div className="text-sm text-amber-600">Draft</div>
+              <div className="h-2 bg-amber-900/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
+                  style={{
+                    width: `${
+                      stats.total ? (stats.draft / stats.total) * 100 : 0
+                    }%`,
+                  }}
+                ></div>
+              </div>
             </div>
           </div>
 
@@ -364,37 +511,37 @@ export default function CustomTablesTab({
           {showCreateForm && (
             <form
               onSubmit={handleCreateMeta}
-              className="bg-gray-50 rounded-lg p-6 border-2 border-blue-200 space-y-4 mb-6"
+              className="mt-8 glass-effect rounded-2xl p-6 border-2 border-purple-500/30 animate-slide-in-up"
             >
-              <div className="grid md:grid-cols-4 gap-4">
+              <div className="grid md:grid-cols-4 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-bold text-purple-300 mb-2">
                     Table Name *
                   </label>
                   <input
                     value={newTableName}
                     onChange={(e) => setNewTableName(e.target.value)}
-                    className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                    placeholder="e.g., customer_orders"
+                    className="w-full bg-slate-800/50 border-2 border-purple-500/30 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    placeholder="customer_orders"
                     required
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    Use lowercase, underscores, start with a letter
+                    Start with letter, use lowercase & underscores
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-bold text-purple-300 mb-2">
                     Description
                   </label>
                   <input
                     value={newTableDescription}
                     onChange={(e) => setNewTableDescription(e.target.value)}
-                    className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                    placeholder="What's this table for?"
+                    className="w-full bg-slate-800/50 border-2 border-purple-500/30 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    placeholder="What's this for?"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-bold text-purple-300 mb-2">
                     Initial Columns
                   </label>
                   <input
@@ -404,12 +551,12 @@ export default function CustomTablesTab({
                     onChange={(e) =>
                       setInitialColumns(parseInt(e.target.value) || 0)
                     }
-                    className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                    placeholder="e.g., 5"
+                    className="w-full bg-slate-800/50 border-2 border-purple-500/30 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    placeholder="5"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-bold text-purple-300 mb-2">
                     Initial Rows
                   </label>
                   <input
@@ -419,27 +566,27 @@ export default function CustomTablesTab({
                     onChange={(e) =>
                       setInitialRows(parseInt(e.target.value) || 0)
                     }
-                    className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                    placeholder="e.g., 10"
+                    className="w-full bg-slate-800/50 border-2 border-purple-500/30 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    placeholder="10"
                   />
                 </div>
               </div>
               <button
                 type="submit"
                 disabled={isLoading}
-                className={`w-full px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg shadow-lg hover:shadow-xl font-semibold transition-all ${
+                className={`w-full px-6 py-4 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-600 text-white rounded-xl font-bold text-lg shadow-xl ${
                   isLoading
                     ? "opacity-50 cursor-not-allowed"
-                    : "hover:scale-[1.02]"
+                    : "hover:shadow-emerald-500/50 transform hover:scale-[1.02] transition-all duration-300"
                 }`}
               >
-                {isLoading ? "🔄 Creating..." : "✓ Create Table"}
+                {isLoading ? "🔄 Creating..." : "✨ Create Table"}
               </button>
             </form>
           )}
 
-          {/* Advanced Controls */}
-          <div className="flex flex-col md:flex-row gap-4 items-center">
+          {/* Controls */}
+          <div className="mt-6 flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <input
                 type="text"
@@ -447,14 +594,14 @@ export default function CustomTablesTab({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="🔍 Search tables..."
                 disabled={editingRow !== null}
-                className={`w-full pl-4 pr-10 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition ${
+                className={`w-full pl-4 pr-12 py-3 bg-slate-800/50 border-2 border-purple-500/30 rounded-xl text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all ${
                   editingRow !== null ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               />
               {searchQuery && editingRow === null && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1"
                 >
                   ✕
                 </button>
@@ -465,7 +612,7 @@ export default function CustomTablesTab({
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as any)}
               disabled={editingRow !== null}
-              className={`px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition ${
+              className={`px-4 py-3 bg-slate-800/50 border-2 border-purple-500/30 rounded-xl text-white focus:border-purple-500 transition-all ${
                 editingRow !== null ? "opacity-50 cursor-not-allowed" : ""
               }`}
             >
@@ -474,14 +621,14 @@ export default function CustomTablesTab({
               <option value="draft">Draft Only</option>
             </select>
 
-            <div className="flex gap-2 bg-gray-200 rounded-lg p-1">
+            <div className="flex gap-2 bg-slate-800/50 rounded-xl p-1 border-2 border-purple-500/30">
               <button
                 onClick={() => setViewMode("list")}
                 disabled={editingRow !== null}
-                className={`px-4 py-2 rounded-md transition ${
+                className={`px-6 py-2 rounded-lg font-semibold transition-all ${
                   viewMode === "list"
-                    ? "bg-white shadow-md text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "bg-purple-600 text-white shadow-lg"
+                    : "text-gray-400 hover:text-white"
                 } ${
                   editingRow !== null ? "opacity-50 cursor-not-allowed" : ""
                 }`}
@@ -491,10 +638,10 @@ export default function CustomTablesTab({
               <button
                 onClick={() => setViewMode("grid")}
                 disabled={editingRow !== null}
-                className={`px-4 py-2 rounded-md transition ${
+                className={`px-6 py-2 rounded-lg font-semibold transition-all ${
                   viewMode === "grid"
-                    ? "bg-white shadow-md text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "bg-purple-600 text-white shadow-lg"
+                    : "text-gray-400 hover:text-white"
                 } ${
                   editingRow !== null ? "opacity-50 cursor-not-allowed" : ""
                 }`}
@@ -504,25 +651,26 @@ export default function CustomTablesTab({
             </div>
           </div>
 
+          {/* Selection Actions */}
           {selectedTables.size > 0 && (
-            <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg flex items-center justify-between">
-              <span className="font-semibold text-blue-900">
+            <div className="mt-4 glass-effect rounded-xl p-4 border-2 border-blue-500/30 flex items-center justify-between animate-slide-in-up">
+              <span className="font-bold text-blue-300 text-lg">
                 {selectedTables.size} table(s) selected
               </span>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 <button
                   onClick={() => setSelectedTables(new Set())}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-all font-semibold"
                 >
                   Clear
                 </button>
                 <button
                   onClick={handleBulkDelete}
                   disabled={editingRow !== null}
-                  className={`px-4 py-2 bg-red-600 text-white rounded-lg transition ${
+                  className={`px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg transition-all font-semibold ${
                     editingRow !== null
                       ? "opacity-50 cursor-not-allowed"
-                      : "hover:bg-red-700"
+                      : "hover:shadow-lg hover:shadow-red-500/50"
                   }`}
                 >
                   🗑️ Delete Selected
@@ -533,22 +681,26 @@ export default function CustomTablesTab({
         </div>
 
         {/* Tables Display */}
-        <div className="bg-white shadow-lg rounded-xl p-6">
+        <div
+          className={`glass-effect rounded-3xl p-8 shadow-2xl ${
+            mounted ? "animate-fade-in" : "opacity-0"
+          }`}
+        >
           {filteredAndSortedTables.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-6xl mb-4">📭</div>
-              <p className="text-xl text-gray-500">
+            <div className="text-center py-20">
+              <div className="text-8xl mb-6 animate-float">📭</div>
+              <p className="text-3xl font-bold text-gray-300 mb-2">
                 {searchQuery || filterStatus !== "all"
                   ? "No tables match your filters"
                   : "No custom tables created yet"}
               </p>
-              <p className="text-gray-400 mt-2">
-                {!showCreateForm && "Click 'New Table' to get started!"}
+              <p className="text-gray-500 text-lg">
+                {!showCreateForm && "Click '✨ New Table' to get started!"}
               </p>
             </div>
           ) : viewMode === "list" ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-gray-100 rounded-lg font-semibold text-sm text-gray-700">
+              <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-slate-800/50 rounded-xl font-bold text-sm text-purple-300 border border-purple-500/30">
                 <div className="col-span-1 flex items-center justify-center">
                   <input
                     type="checkbox"
@@ -566,15 +718,15 @@ export default function CustomTablesTab({
                         setSelectedTables(new Set());
                       }
                     }}
-                    className="w-4 h-4"
+                    className="w-5 h-5"
                   />
                 </div>
                 <div
-                  className={`col-span-4 flex items-center gap-1 ${
+                  className={`col-span-4 flex items-center gap-2 ${
                     editingRow === null
-                      ? "cursor-pointer hover:text-blue-600"
+                      ? "cursor-pointer hover:text-purple-400"
                       : "opacity-50 cursor-not-allowed"
-                  }`}
+                  } transition-colors`}
                   onClick={() => editingRow === null && toggleSort("name")}
                 >
                   Name{" "}
@@ -582,11 +734,11 @@ export default function CustomTablesTab({
                 </div>
                 <div className="col-span-3">Description</div>
                 <div
-                  className={`col-span-2 flex items-center gap-1 ${
+                  className={`col-span-2 flex items-center gap-2 ${
                     editingRow === null
-                      ? "cursor-pointer hover:text-blue-600"
+                      ? "cursor-pointer hover:text-purple-400"
                       : "opacity-50 cursor-not-allowed"
-                  }`}
+                  } transition-colors`}
                   onClick={() =>
                     editingRow === null && toggleSort("created_at")
                   }
@@ -598,21 +750,22 @@ export default function CustomTablesTab({
                 <div className="col-span-2">Actions</div>
               </div>
 
-              {filteredAndSortedTables.map((table) => (
+              {filteredAndSortedTables.map((table, index) => (
                 <div
                   key={table.id}
-                  className={`grid grid-cols-12 gap-4 px-4 py-4 border-2 rounded-lg hover:shadow-md transition-all ${
+                  className={`grid grid-cols-12 gap-4 px-6 py-4 border-2 rounded-xl hover:shadow-xl transition-all duration-300 animate-scale-in ${
                     selectedTables.has(table.id!) || editingRow === table.id
-                      ? "border-blue-400 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
+                      ? "border-purple-500 bg-purple-500/10 shadow-lg shadow-purple-500/20"
+                      : "border-purple-500/20 hover:border-purple-500/50"
                   }`}
+                  style={{ animationDelay: `${index * 0.05}s` }}
                 >
                   <div className="col-span-1 flex items-center justify-center">
                     <input
                       type="checkbox"
                       checked={selectedTables.has(table.id!)}
                       onChange={() => toggleTableSelection(table.id!)}
-                      className="w-4 h-4"
+                      className="w-5 h-5"
                       disabled={editingRow !== null}
                     />
                   </div>
@@ -628,19 +781,19 @@ export default function CustomTablesTab({
                           )
                         }
                         onKeyDown={(e) => handleKeyDown(e, table.id!)}
-                        className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-1 px-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                        className="w-full bg-slate-800/50 border-2 border-purple-500 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-purple-500 transition-all"
                         placeholder="Table name"
                       />
                     ) : (
                       <>
-                        <span className="font-semibold text-gray-900">
+                        <span className="font-bold text-white text-lg">
                           {table.name}
                         </span>
                         <span
-                          className={`text-xs px-2 py-1 rounded-full w-fit mt-1 ${
+                          className={`text-xs px-2 py-1 rounded-full w-fit mt-1 font-semibold ${
                             table.physical_table_name
-                              ? "bg-green-100 text-green-700"
-                              : "bg-amber-100 text-amber-700"
+                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                              : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
                           }`}
                         >
                           {table.physical_table_name ? "✓ Deployed" : "○ Draft"}
@@ -648,7 +801,7 @@ export default function CustomTablesTab({
                       </>
                     )}
                   </div>
-                  <div className="col-span-3 text-sm text-gray-600 truncate">
+                  <div className="col-span-3 text-sm text-gray-400 truncate flex items-center">
                     {editingRow === table.id ? (
                       <input
                         value={editForm?.description || ""}
@@ -660,14 +813,14 @@ export default function CustomTablesTab({
                           )
                         }
                         onKeyDown={(e) => handleKeyDown(e, table.id!)}
-                        className="w-full border-2 border-gray-300 rounded-lg shadow-sm py-1 px-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                        placeholder="Table description"
+                        className="w-full bg-slate-800/50 border-2 border-purple-500 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-purple-500 transition-all"
+                        placeholder="Description"
                       />
                     ) : (
                       table.description || "-"
                     )}
                   </div>
-                  <div className="col-span-2 text-sm text-gray-500">
+                  <div className="col-span-2 text-sm text-gray-500 flex items-center">
                     {table.created_at
                       ? new Date(table.created_at).toLocaleDateString()
                       : "-"}
@@ -678,32 +831,32 @@ export default function CustomTablesTab({
                         <button
                           onClick={() => handleUpdateTable(table.id!)}
                           disabled={isLoading || !editForm?.name.trim()}
-                          className={`px-3 py-1 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition ${
+                          className={`px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg text-sm font-semibold transition-all ${
                             isLoading || !editForm?.name.trim()
                               ? "opacity-50 cursor-not-allowed"
-                              : ""
+                              : "hover:shadow-lg hover:shadow-emerald-500/50 transform hover:scale-105"
                           }`}
                         >
                           ✓ Save
                         </button>
                         <button
                           onClick={cancelEditing}
-                          className="px-3 py-1 bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-400 transition"
+                          className="px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-600 transition-all"
                         >
-                          ✕ Cancel
+                          ✕
                         </button>
                       </>
                     ) : (
                       <>
                         <button
                           onClick={() => startEditing(table)}
-                          className="px-3 py-1 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 transition"
+                          className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold hover:shadow-lg hover:shadow-indigo-500/50 transition-all transform hover:scale-105"
                         >
                           ✏️ Edit
                         </button>
                         <button
                           onClick={() => setEditingTable(table)}
-                          className="px-3 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-md text-sm hover:shadow-lg transition transform hover:scale-105"
+                          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105"
                           disabled={editingRow !== null}
                         >
                           ⚙️ Manage
@@ -715,54 +868,62 @@ export default function CustomTablesTab({
               ))}
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredAndSortedTables.map((table) => (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredAndSortedTables.map((table, index) => (
                 <div
                   key={table.id}
-                  className={`border-2 rounded-xl p-5 hover:shadow-xl transition-all ${
+                  className={`card-gradient rounded-2xl p-6 border-2 transform hover:scale-105 hover:-translate-y-2 transition-all duration-300 cursor-pointer group animate-scale-in ${
                     selectedTables.has(table.id!)
-                      ? "border-blue-400 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-300"
+                      ? "border-purple-500 shadow-xl shadow-purple-500/30"
+                      : "border-purple-500/20 hover:border-purple-500/50 hover:shadow-xl hover:shadow-purple-500/20"
                   }`}
+                  style={{ animationDelay: `${index * 0.05}s` }}
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
                         checked={selectedTables.has(table.id!)}
                         onChange={() => toggleTableSelection(table.id!)}
-                        className="w-4 h-4"
                         disabled={editingRow !== null}
+                        className="w-5 h-5 rounded border-purple-500 focus:ring-purple-500 cursor-pointer"
                       />
-                      <div className="text-2xl">
+                      <div className="text-4xl group-hover:scale-110 transition-transform">
                         {table.physical_table_name ? "📊" : "📝"}
                       </div>
                     </div>
                     <span
-                      className={`text-xs px-2 py-1 rounded-full ${
+                      className={`px-3 py-1 rounded-full text-xs font-bold ${
                         table.physical_table_name
-                          ? "bg-green-100 text-green-700"
-                          : "bg-amber-100 text-amber-700"
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
                       }`}
                     >
-                      {table.physical_table_name ? "Deployed" : "Draft"}
+                      {table.physical_table_name ? "✓ Live" : "○ Draft"}
                     </span>
                   </div>
-                  <h4 className="text-lg font-bold text-gray-900 mb-2">
+
+                  <h3 className="text-2xl font-black text-white mb-2 group-hover:text-purple-400 transition-colors">
                     {table.name}
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                    {table.description || "No description"}
+                  </h3>
+                  <p className="text-gray-400 mb-4 line-clamp-2 min-h-[3rem]">
+                    {table.description || "No description provided"}
                   </p>
-                  <div className="text-xs text-gray-400 mb-4">
+                  <div className="text-xs text-gray-500 mb-4 flex items-center gap-2">
+                    <span>📅</span>
                     {table.created_at
                       ? new Date(table.created_at).toLocaleDateString()
                       : "-"}
                   </div>
+
                   <button
                     onClick={() => setEditingTable(table)}
-                    className="w-full px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:shadow-lg transition transform hover:scale-105"
                     disabled={editingRow !== null}
+                    className={`w-full px-4 py-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white rounded-xl font-bold transition-all duration-300 ${
+                      editingRow !== null
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:shadow-lg hover:shadow-purple-500/50 transform hover:scale-105"
+                    }`}
                   >
                     ⚙️ Manage Columns
                   </button>
@@ -781,7 +942,7 @@ export default function CustomTablesTab({
             setEditingTable(null);
             fetchTables();
           }}
-          showNotification={showNotification}
+          showNotification={success}
           currentUser={currentUser}
         />
       )}

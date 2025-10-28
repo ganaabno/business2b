@@ -46,7 +46,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
     null
   );
 
-  // Fetch existing tables on mount
+  // Fetch and clean up tables on mount
   useEffect(() => {
     const fetchTables = async () => {
       setIsLoading(true);
@@ -57,24 +57,47 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
           .eq("created_by", currentUser.id);
         if (error) throw error;
 
-        // Filter out tables with null physical_table_name
+        const invalidTables = (tableData || []).filter(
+          (t) => t.physical_table_name == null
+        );
         const validTables = (tableData || []).filter(
           (t) => t.physical_table_name != null
         ) as CustomTable[];
-        setTables(validTables);
 
-        if (
-          tableData &&
-          tableData.some((t) => t.physical_table_name === null)
-        ) {
+        if (invalidTables.length > 0) {
           console.warn(
-            "Some tables have null physical_table_name - they won't be loadable:",
-            tableData.filter((t) => t.physical_table_name === null)
+            "Found tables with null physical_table_name:",
+            invalidTables
           );
           showNotification(
             "warning",
-            "Some tables have issues (null physical name). Check console for details."
+            `Found ${invalidTables.length} table(s) with missing physical table names. Attempting cleanup.`
           );
+
+          // Clean up invalid tables
+          const { error: deleteError } = await supabase
+            .from("custom_tables")
+            .delete()
+            .eq("created_by", currentUser.id)
+            .is("physical_table_name", null);
+          if (deleteError) {
+            console.error("Error cleaning up invalid tables:", deleteError);
+            showNotification(
+              "error",
+              `Failed to clean up invalid tables: ${deleteError.message}`
+            );
+          } else {
+            console.log("Cleaned up invalid tables");
+            showNotification(
+              "success",
+              "Cleaned up invalid tables successfully."
+            );
+          }
+        }
+
+        setTables(validTables);
+        if (validTables.length === 0) {
+          console.log("No valid tables found for user:", currentUser.id);
         }
       } catch (error: any) {
         console.error("Fetch tables error:", error);
@@ -91,7 +114,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
   };
 
   const mapColumnTypeToSql = (type: string) => {
-    return "TEXT"; // Default to TEXT for simplicity
+    return "TEXT"; // Default to TEXT; extend as needed
   };
 
   const buildCreateTableSQL = (
@@ -149,7 +172,6 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      // Create columns
       const newColumns: ColumnDefinition[] = Array.from(
         { length: numCols },
         (_, i) => ({
@@ -159,7 +181,6 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       );
       setColumns(newColumns);
 
-      // Create table metadata
       const physicalTableName = sanitizeIdentifier(
         `${tableName}_${currentUser.id}`
       );
@@ -176,56 +197,59 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         ])
         .select()
         .single();
-      if (tableError) throw tableError;
+      if (tableError) {
+        console.error("Table insert error:", tableError);
+        throw tableError;
+      }
 
-      // Debug: Log inserted data
-      console.log("Inserted table data:", tableData);
       if (!tableData.physical_table_name) {
+        console.error("physical_table_name is null after insert:", tableData);
         throw new Error(
-          "physical_table_name is null after insert - check schema/RLS!"
+          "Failed to set physical_table_name. Check RLS or database triggers."
         );
       }
 
-      // Store the table ID and physical table name
       const newTableId = tableData.id;
       setTableId(newTableId);
       setPhysicalTableName(physicalTableName);
       setSelectedTableName(tableName.trim());
 
-      // Create physical table
       const sql = buildCreateTableSQL(physicalTableName, newColumns);
       const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-      if (sqlError) throw sqlError;
+      if (sqlError) {
+        console.error("Create table SQL error:", sqlError);
+        throw sqlError;
+      }
 
-      // Insert initial rows
       const initialData: TableData[] = [];
       for (let i = 0; i < numRows; i++) {
         const row: TableData = { id: `temp-${i}` };
         newColumns.forEach((col) => {
           row[col.name] = "";
         });
-        initialData.push(row);
-
         const { data: insertedRow, error: insertError } = await supabase
           .from(physicalTableName)
           .insert([{}])
           .select()
           .single();
-        if (insertError) throw insertError;
-        initialData[i].id = insertedRow.id;
+        if (insertError) {
+          console.error("Row insert error:", insertError);
+          throw insertError;
+        }
+        initialData.push({ ...row, id: insertedRow.id });
       }
-
       setData(initialData);
 
-      // Insert column definitions
       for (const col of newColumns) {
         const { error: colError } = await supabase
           .from("custom_columns")
           .insert([{ table_id: newTableId, name: col.name, type: col.type }]);
-        if (colError) throw colError;
+        if (colError) {
+          console.error("Column insert error:", colError);
+          throw colError;
+        }
       }
 
-      // Refresh table list and switch to edit
       setTables((prev) => [
         ...prev,
         {
@@ -252,8 +276,9 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       !confirm(
         `Are you sure you want to delete table "${table.name}"? This cannot be undone.`
       )
-    )
+    ) {
       return;
+    }
     if (!table.physical_table_name) {
       showNotification(
         "error",
@@ -264,26 +289,32 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      // Drop the physical table
       const sql = buildDropTableSQL(table.physical_table_name);
       const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-      if (sqlError) throw sqlError;
+      if (sqlError) {
+        console.error("Drop table SQL error:", sqlError);
+        throw sqlError;
+      }
 
-      // Delete column definitions
       const { error: colError } = await supabase
         .from("custom_columns")
         .delete()
         .eq("table_id", table.id);
-      if (colError) throw colError;
+      if (colError) {
+        console.error("Delete columns error:", colError);
+        throw colError;
+      }
 
-      // Delete table metadata
       const { error: tableError } = await supabase
         .from("custom_tables")
         .delete()
-        .eq("id", table.id);
-      if (tableError) throw tableError;
+        .eq("id", table.id)
+        .eq("created_by", currentUser.id);
+      if (tableError) {
+        console.error("Delete table metadata error:", tableError);
+        throw tableError;
+      }
 
-      // Update UI
       setTables(tables.filter((t) => t.id !== table.id));
       if (tableId === table.id) {
         setViewMode("list");
@@ -323,19 +354,22 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       console.log(
         `Loading table: ${table.name} (physical: ${table.physical_table_name})`
       );
-
-      // Fetch columns
       const { data: columnData, error: colError } = await supabase
         .from("custom_columns")
         .select("name, type")
         .eq("table_id", table.id);
-      if (colError) throw colError;
+      if (colError) {
+        console.error("Fetch columns error:", colError);
+        throw colError;
+      }
 
-      // Fetch table data
       const { data: tableData, error: dataError } = await supabase
         .from(table.physical_table_name)
         .select("*");
-      if (dataError) throw dataError;
+      if (dataError) {
+        console.error("Fetch table data error:", dataError);
+        throw dataError;
+      }
 
       setTableId(table.id);
       setPhysicalTableName(table.physical_table_name);
@@ -362,21 +396,26 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      // Add to custom_columns
       const { error: colError } = await supabase
         .from("custom_columns")
         .insert([{ table_id: tableId, name: newColName, type: "text" }]);
-      if (colError) throw colError;
+      if (colError) {
+        console.error("Add column error:", colError);
+        throw colError;
+      }
 
-      // Add to physical table
       const sql = buildAddColumnSQL(physicalTableName, newColumn);
       const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-      if (sqlError) throw sqlError;
+      if (sqlError) {
+        console.error("Add column SQL error:", sqlError);
+        throw sqlError;
+      }
 
       setColumns([...columns, newColumn]);
       setData(data.map((row) => ({ ...row, [newColName]: "" })));
       showNotification("success", "Column added successfully!");
     } catch (error: any) {
+      console.error("Add column error:", error);
       showNotification("error", `Failed to add column: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -389,27 +428,28 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      // Delete from custom_columns
       const { error: colError } = await supabase
         .from("custom_columns")
         .delete()
         .eq("table_id", tableId)
         .eq("name", colName);
-      if (colError) throw colError;
+      if (colError) {
+        console.error("Delete column error:", colError);
+        throw colError;
+      }
 
-      // Delete from physical table
       const sql = buildDropColumnSQL(physicalTableName, colName);
       const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-      if (sqlError) throw sqlError;
+      if (sqlError) {
+        console.error("Drop column SQL error:", sqlError);
+        throw sqlError;
+      }
 
       setColumns(columns.filter((col) => col.name !== colName));
       setData(
         data.map((row) => {
           const { [colName]: _, ...rest } = row;
-          return {
-            ...rest,
-            id: row.id, // make sure id stays
-          };
+          return { ...rest, id: row.id };
         })
       );
       setPendingChanges((prev) => {
@@ -424,6 +464,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       });
       showNotification("success", "Column deleted successfully!");
     } catch (error: any) {
+      console.error("Delete column error:", error);
       showNotification("error", `Failed to delete column: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -445,12 +486,16 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         .insert([{}])
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        console.error("Add row error:", error);
+        throw error;
+      }
 
       newRow.id = insertedRow.id;
       setData([...data, newRow]);
       showNotification("success", "Row added successfully!");
     } catch (error: any) {
+      console.error("Add row error:", error);
       showNotification("error", `Failed to add row: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -467,7 +512,10 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         .from(physicalTableName)
         .delete()
         .eq("id", rowId);
-      if (error) throw error;
+      if (error) {
+        console.error("Delete row error:", error);
+        throw error;
+      }
 
       setData(data.filter((row) => row.id !== rowId));
       setPendingChanges((prev) => {
@@ -477,6 +525,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       });
       showNotification("success", "Row deleted successfully!");
     } catch (error: any) {
+      console.error("Delete row error:", error);
       showNotification("error", `Failed to delete row: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -501,26 +550,31 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      for (const rowId of Object.keys(pendingChanges)) {
-        const updates = pendingChanges[rowId];
-        if (Object.keys(updates).length > 0) {
-          const { error } = await supabase
-            .from(physicalTableName)
-            .update(updates)
-            .eq("id", rowId);
-          if (error) throw error;
-        }
+      const updates = Object.entries(pendingChanges)
+        .filter(([_, changes]) => Object.keys(changes).length > 0)
+        .map(([rowId, changes]) => ({
+          id: rowId,
+          ...changes,
+        }));
+
+      const { error } = await supabase
+        .from(physicalTableName)
+        .upsert(updates, { onConflict: "id" });
+      if (error) {
+        console.error("Save changes error:", error);
+        throw error;
       }
+
       setPendingChanges({});
       showNotification("success", "Changes saved successfully!");
     } catch (error: any) {
+      console.error("Save changes error:", error);
       showNotification("error", `Failed to save changes: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Filter valid tables for display
   const validTables = tables.filter((t) => t.physical_table_name != null);
 
   return (
@@ -566,7 +620,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
             {tables.length > validTables.length && (
               <p className="text-red-500 text-sm mt-2">
                 ⚠️ {tables.length - validTables.length} table(s) skipped due to
-                missing physical name.
+                missing physical name. They have been removed from the database.
               </p>
             )}
             <button
@@ -735,6 +789,11 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
                   ))}
                 </tbody>
               </table>
+              {data.length === 0 && (
+                <p className="text-gray-500 mt-4 text-center">
+                  No data available. Add a row to start!
+                </p>
+              )}
             </div>
           </div>
         )}

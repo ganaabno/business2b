@@ -1,5 +1,5 @@
-import { FileText, MapPin, Users } from 'lucide-react';
-import type { Order, Tour } from '../../types/type';
+import { FileText, MapPin, Users } from "lucide-react";
+import type { Order, Tour } from "../../types/type";
 
 interface StatsCardsProps {
   orders: Order[];
@@ -23,9 +23,14 @@ export default function StatsCards({ orders, tours }: StatsCardsProps) {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-600">Total Passengers</p>
+            <p className="text-sm font-medium text-gray-600">
+              Total Passengers
+            </p>
             <p className="text-2xl font-bold text-gray-900">
-              {orders.reduce((sum, order) => sum + (order.passenger_count || 0), 0)}
+              {orders.reduce(
+                (sum, order) => sum + (order.passenger_count || 0),
+                0
+              )}
             </p>
           </div>
           <div className="p-3 bg-green-100 rounded-lg">

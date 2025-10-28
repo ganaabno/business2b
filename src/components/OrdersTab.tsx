@@ -1205,9 +1205,7 @@ export default function OrdersTab({
               No orders found
             </h3>
             <p className="text-gray-500 max-w-md mx-auto">
-              No orders match the current filters, or no passengers have been
-              approved yet. Check the Passenger Requests tab to approve or
-              reject passenger requests.
+              No orders match the current filters.
             </p>
             <button
               onClick={() => fetchOrders()}

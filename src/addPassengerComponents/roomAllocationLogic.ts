@@ -1,31 +1,60 @@
+// src/addPassengerComponents/roomAllocationLogic.ts
 import type { Passenger } from "../types/type";
 
+const ROOM_CAPACITY: Record<string, number> = {
+  Single: 1,
+  King: 1,
+  Double: 2,
+  Twin: 2,
+  Family: 5,
+  "": 5,
+};
+
 export const assignRoomAllocation = (
-  passengers: Passenger[],
-  currentIndex: number,
-  roomType: string
+  allPassengers: Passenger[],
+  currentPassenger: Passenger,
+  departureDate: string
 ): string => {
-  if (currentIndex < 0 || currentIndex >= passengers.length) return "M1";
-  const currentPassenger = passengers[currentIndex];
+  const sameDatePax = allPassengers.filter(
+    (p) => p.departure_date === departureDate
+  );
 
-  // If this is a sub-passenger, inherit the main passenger's room_allocation
-  if (currentPassenger.main_passenger_id) {
-    const mainPassenger = passengers.find(
-      (p) => p.id === currentPassenger.main_passenger_id
+  const groupId = currentPassenger.main_passenger_id
+    ? allPassengers.find((p) => p.id === currentPassenger.main_passenger_id)
+        ?.serial_no
+    : currentPassenger.serial_no;
+
+  if (!groupId) return "M1";
+
+  // 1. Extend group room
+  const mainInGroup = sameDatePax.find(
+    (p) => p.serial_no === groupId && !p.main_passenger_id
+  );
+
+  if (mainInGroup?.room_allocation) {
+    const paxInRoom = sameDatePax.filter(
+      (p) => p.room_allocation === mainInGroup.room_allocation
     );
-    if (mainPassenger) {
-      return mainPassenger.room_allocation || "M1";
+    const capacity = ROOM_CAPACITY[paxInRoom[0]?.roomType || ""] || 5;
+    if (paxInRoom.length < capacity) {
+      return mainInGroup.room_allocation;
     }
   }
 
-  // Count main passengers (those without main_passenger_id) up to currentIndex
-  let mainPassengerCount = 0;
-  for (let i = 0; i <= currentIndex; i++) {
-    if (!passengers[i].main_passenger_id) {
-      mainPassengerCount++;
+  // 2. Reuse empty room
+  const usedRooms = [
+    ...new Set(sameDatePax.map((p) => p.room_allocation).filter(Boolean)),
+  ];
+  for (const room of usedRooms) {
+    if (sameDatePax.filter((p) => p.room_allocation === room).length === 0) {
+      return room;
     }
   }
 
-  // Assign M<mainPassengerCount> (e.g., M1 for first main, M2 for second, etc.)
-  return `M${mainPassengerCount}`;
+  // 3. New room
+  const numbers = usedRooms
+    .map((r) => parseInt(r.replace("M", ""), 10))
+    .filter((n) => !isNaN(n));
+  const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+  return `M${nextNum}`;
 };

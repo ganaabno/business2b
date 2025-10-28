@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import type { User as UserType } from "../types/type";
 import {
@@ -38,7 +38,10 @@ interface CustomTable {
 interface Props {
   tableMeta: CustomTable;
   onClose: () => void;
-  showNotification: (type: "success" | "error", message: string) => void;
+  showNotification: (
+    type: "success" | "error" | "warning",
+    message: string
+  ) => void;
   currentUser: UserType;
 }
 
@@ -111,18 +114,19 @@ export default function CustomTableEditor({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<ColumnType | "all">("all");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [draggedColumn, setDraggedColumn] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [data, setData] = useState<any[]>([]);
 
+  // Fetch columns and data on mount
   useEffect(() => {
     fetchColumns();
     if (tableMeta.physical_table_name) {
       fetchData();
     }
 
-    const subscription = supabase
-      .channel("custom_columns_changes")
+    // Set up subscription for custom_columns
+    const channel = supabase
+      .channel(`custom_columns_changes_${tableMeta.id}`)
       .on(
         "postgres_changes",
         {
@@ -131,14 +135,27 @@ export default function CustomTableEditor({
           table: "custom_columns",
           filter: `table_id=eq.${tableMeta.id}`,
         },
-        () => fetchColumns()
+        (payload) => {
+          console.log("Custom columns change:", payload);
+          fetchColumns();
+        }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error("Custom columns subscription error:", error);
+          showNotification(
+            "error",
+            `Real-time columns subscription failed: ${error.message}`
+          );
+        }
+        console.log("Custom columns subscription status:", status);
+      });
 
     return () => {
-      supabase.removeChannel(subscription);
+      console.log("Cleaning up custom_columns subscription");
+      supabase.removeChannel(channel);
     };
-  }, [tableMeta.id, tableMeta.physical_table_name]);
+  }, [tableMeta.id, tableMeta.physical_table_name, showNotification]);
 
   const fetchColumns = async () => {
     try {
@@ -147,25 +164,32 @@ export default function CustomTableEditor({
         .select("*")
         .eq("table_id", tableMeta.id)
         .order("created_at", { ascending: false });
-
-      if (error) throw error;
+      if (error) {
+        console.error("Fetch columns error:", error);
+        throw error;
+      }
       setColumns(data || []);
     } catch (error: any) {
+      console.error("Fetch columns error:", error);
       showNotification("error", `Failed to fetch columns: ${error.message}`);
     }
   };
 
   const fetchData = async () => {
+    if (!tableMeta.physical_table_name) return;
     setIsLoading(true);
     try {
       const { data: d, error } = await supabase
-        .from(tableMeta.physical_table_name!)
+        .from(tableMeta.physical_table_name)
         .select("*")
         .order("created_at", { ascending: false });
-
-      if (error) throw error;
+      if (error) {
+        console.error("Fetch data error:", error);
+        throw error;
+      }
       setData(d || []);
     } catch (error: any) {
+      console.error("Fetch data error:", error);
       showNotification("error", `Failed to fetch data: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -187,7 +211,6 @@ export default function CustomTableEditor({
       acc[col.type] = (acc[col.type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-
     return {
       total: columns.length,
       required: columns.filter((c) => c.required).length,
@@ -212,25 +235,56 @@ export default function CustomTableEditor({
         `${tableMeta.name.toLowerCase()}_${currentUser.id}`
       );
       const sql = buildCreateTableSQL(physicalName, columns);
-      const { error } = await supabase.rpc("execute_sql", { sql });
-      if (error) throw error;
+      const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
+      if (sqlError) {
+        console.error("Create table SQL error:", sqlError);
+        throw sqlError;
+      }
 
+      // Update custom_tables with physical_table_name
       const { error: updateError } = await supabase
         .from("custom_tables")
         .update({ physical_table_name: physicalName })
-        .eq("id", tableMeta.id);
-      if (updateError) throw updateError;
+        .eq("id", tableMeta.id)
+        .eq("created_by", currentUser.id); // Ensure RLS compliance
+      if (updateError) {
+        console.error("Update physical_table_name error:", updateError);
+        throw updateError;
+      }
+
+      // Verify the update
+      const { data: updatedTable, error: fetchError } = await supabase
+        .from("custom_tables")
+        .select("physical_table_name")
+        .eq("id", tableMeta.id)
+        .single();
+      if (fetchError || !updatedTable?.physical_table_name) {
+        console.error(
+          "Verification failed: physical_table_name is null or fetch error:",
+          fetchError
+        );
+        throw new Error(
+          "physical_table_name not set after update. Check RLS policies."
+        );
+      }
 
       // Insert initial rows
-      for (let i = 0; i < (tableMeta.initial_rows || 0); i++) {
+      const initialRows = tableMeta.initial_rows || 0;
+      if (initialRows > 0) {
+        const inserts = Array(initialRows).fill({});
         const { error: insertError } = await supabase
           .from(physicalName)
-          .insert({});
+          .insert(inserts);
+        if (insertError) {
+          console.error("Insert initial rows error:", insertError);
+          throw insertError;
+        }
       }
 
       showNotification("success", "Table deployed successfully! 🎉");
       onClose();
     } catch (error: any) {
+      console.error("Deploy error:", error);
       showNotification("error", `Failed to deploy table: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -243,7 +297,6 @@ export default function CustomTableEditor({
       showNotification("error", "Column name is required");
       return;
     }
-
     if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(newColumnName.trim())) {
       showNotification(
         "error",
@@ -251,7 +304,6 @@ export default function CustomTableEditor({
       );
       return;
     }
-
     if (
       columns.some(
         (c) => c.name.toLowerCase() === newColumnName.trim().toLowerCase()
@@ -271,8 +323,13 @@ export default function CustomTableEditor({
         defaultValue: newColumnDefault.trim() || undefined,
       };
 
-      const { error } = await supabase.from("custom_columns").insert([payload]);
-      if (error) throw error;
+      const { error: insertError } = await supabase
+        .from("custom_columns")
+        .insert([payload]);
+      if (insertError) {
+        console.error("Insert column error:", insertError);
+        throw insertError;
+      }
 
       if (tableMeta.physical_table_name) {
         const sql = buildAddColumnSQL(
@@ -280,7 +337,10 @@ export default function CustomTableEditor({
           payload as ColumnDefinition
         );
         const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-        if (sqlError) throw sqlError;
+        if (sqlError) {
+          console.error("Add column SQL error:", sqlError);
+          throw sqlError;
+        }
       }
 
       setNewColumnName("");
@@ -292,6 +352,7 @@ export default function CustomTableEditor({
       fetchColumns();
       if (tableMeta.physical_table_name) fetchData();
     } catch (error: any) {
+      console.error("Add column error:", error);
       showNotification("error", `Failed to add column: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -299,18 +360,26 @@ export default function CustomTableEditor({
   };
 
   const handleUpdateColumn = async (column: ColumnDefinition) => {
+    if (!column.id) {
+      showNotification("error", "Column ID is missing");
+      return;
+    }
     try {
+      const updates: Partial<ColumnDefinition> = {
+        name: column.name,
+        type: column.type,
+        required: column.required,
+        defaultValue: column.defaultValue,
+      };
       const { error } = await supabase
         .from("custom_columns")
-        .update({
-          name: column.name,
-          type: column.type,
-          required: column.required,
-          defaultValue: column.defaultValue,
-        })
-        .eq("id", column.id);
-
-      if (error) throw error;
+        .update(updates)
+        .eq("id", column.id)
+        .eq("table_id", tableMeta.id); // Ensure RLS compliance
+      if (error) {
+        console.error("Update column error:", error);
+        throw error;
+      }
 
       if (tableMeta.physical_table_name && originalColumn) {
         const sqls: string[] = [];
@@ -347,6 +416,7 @@ export default function CustomTableEditor({
               tableMeta.physical_table_name,
               column.name,
               column.defaultValue || "",
+              column.type
             )
           );
         }
@@ -354,7 +424,10 @@ export default function CustomTableEditor({
           const { error: sqlError } = await supabase.rpc("execute_sql", {
             sql,
           });
-          if (sqlError) throw sqlError;
+          if (sqlError) {
+            console.error("Update column SQL error:", sqlError);
+            throw sqlError;
+          }
         }
       }
 
@@ -364,7 +437,8 @@ export default function CustomTableEditor({
       fetchColumns();
       if (tableMeta.physical_table_name) fetchData();
     } catch (error: any) {
-      showNotification("error", `Failed to update: ${error.message}`);
+      console.error("Update column error:", error);
+      showNotification("error", `Failed to update column: ${error.message}`);
     }
   };
 
@@ -376,29 +450,38 @@ export default function CustomTableEditor({
     ) {
       return;
     }
-
     try {
       const col = columns.find((c) => c.id === columnId);
-      if (!col) return;
+      if (!col) {
+        showNotification("error", "Column not found");
+        return;
+      }
 
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from("custom_columns")
         .delete()
-        .eq("id", columnId);
-
-      if (error) throw error;
+        .eq("id", columnId)
+        .eq("table_id", tableMeta.id); // Ensure RLS compliance
+      if (deleteError) {
+        console.error("Delete column error:", deleteError);
+        throw deleteError;
+      }
 
       if (tableMeta.physical_table_name) {
         const sql = buildDropColumnSQL(tableMeta.physical_table_name, col.name);
         const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-        if (sqlError) throw sqlError;
+        if (sqlError) {
+          console.error("Drop column SQL error:", sqlError);
+          throw sqlError;
+        }
       }
 
       showNotification("success", "Column deleted");
       fetchColumns();
       if (tableMeta.physical_table_name) fetchData();
     } catch (error: any) {
-      showNotification("error", `Failed to delete: ${error.message}`);
+      console.error("Delete column error:", error);
+      showNotification("error", `Failed to delete column: ${error.message}`);
     }
   };
 
@@ -412,10 +495,13 @@ export default function CustomTableEditor({
         defaultValue: column.defaultValue,
       };
 
-      const { error } = await supabase
+      const { error: insertError } = await supabase
         .from("custom_columns")
         .insert([newColumn]);
-      if (error) throw error;
+      if (insertError) {
+        console.error("Duplicate column error:", insertError);
+        throw insertError;
+      }
 
       if (tableMeta.physical_table_name) {
         const sql = buildAddColumnSQL(
@@ -423,14 +509,18 @@ export default function CustomTableEditor({
           newColumn as ColumnDefinition
         );
         const { error: sqlError } = await supabase.rpc("execute_sql", { sql });
-        if (sqlError) throw sqlError;
+        if (sqlError) {
+          console.error("Add duplicated column SQL error:", sqlError);
+          throw sqlError;
+        }
       }
 
       showNotification("success", "Column duplicated! 📋");
       fetchColumns();
       if (tableMeta.physical_table_name) fetchData();
     } catch (error: any) {
-      showNotification("error", `Failed to duplicate: ${error.message}`);
+      console.error("Duplicate column error:", error);
+      showNotification("error", `Failed to duplicate column: ${error.message}`);
     }
   };
 
@@ -481,34 +571,48 @@ export default function CustomTableEditor({
         .from(tableMeta.physical_table_name!)
         .update({ [col]: updateVal })
         .eq("id", id);
-      if (error) throw error;
+      if (error) {
+        console.error("Update cell error:", error);
+        throw error;
+      }
     } catch (error: any) {
+      console.error("Update cell error:", error);
       showNotification("error", `Failed to update cell: ${error.message}`);
     }
   };
 
   const addRow = async () => {
+    if (!tableMeta.physical_table_name) return;
     try {
       const { error } = await supabase
-        .from(tableMeta.physical_table_name!)
+        .from(tableMeta.physical_table_name)
         .insert({});
-      if (error) throw error;
+      if (error) {
+        console.error("Add row error:", error);
+        throw error;
+      }
       fetchData();
     } catch (error: any) {
+      console.error("Add row error:", error);
       showNotification("error", `Failed to add row: ${error.message}`);
     }
   };
 
   const deleteRow = async (id: string) => {
     if (!confirm("Are you sure you want to delete this row?")) return;
+    if (!tableMeta.physical_table_name) return;
     try {
       const { error } = await supabase
-        .from(tableMeta.physical_table_name!)
+        .from(tableMeta.physical_table_name)
         .delete()
         .eq("id", id);
-      if (error) throw error;
+      if (error) {
+        console.error("Delete row error:", error);
+        throw error;
+      }
       fetchData();
     } catch (error: any) {
+      console.error("Delete row error:", error);
       showNotification("error", `Failed to delete row: ${error.message}`);
     }
   };
@@ -566,7 +670,6 @@ export default function CustomTableEditor({
               <span className="text-2xl">➕</span>
               Add New Column
             </h4>
-
             <form onSubmit={handleAddColumn} className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
@@ -584,7 +687,6 @@ export default function CustomTableEditor({
                     Use lowercase, underscores, start with a letter
                   </p>
                 </div>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Column Type *
@@ -604,7 +706,6 @@ export default function CustomTableEditor({
                   </select>
                 </div>
               </div>
-
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -617,7 +718,6 @@ export default function CustomTableEditor({
                     Required Field
                   </span>
                 </label>
-
                 <button
                   type="button"
                   onClick={() => setShowAdvanced(!showAdvanced)}
@@ -626,7 +726,6 @@ export default function CustomTableEditor({
                   {showAdvanced ? "▼" : "▶"} Advanced Options
                 </button>
               </div>
-
               {showAdvanced && (
                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -640,7 +739,6 @@ export default function CustomTableEditor({
                   />
                 </div>
               )}
-
               <button
                 type="submit"
                 disabled={isLoading}
@@ -675,7 +773,6 @@ export default function CustomTableEditor({
                   </button>
                 )}
               </div>
-
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as any)}
@@ -688,7 +785,6 @@ export default function CustomTableEditor({
                   </option>
                 ))}
               </select>
-
               <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode("cards")}
@@ -720,7 +816,6 @@ export default function CustomTableEditor({
               <span className="text-2xl">📋</span>
               Existing Columns ({filteredColumns.length})
             </h4>
-
             {filteredColumns.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-6xl mb-4">📭</div>
@@ -807,11 +902,9 @@ export default function CustomTableEditor({
                             </span>
                           </div>
                         </div>
-
                         <h5 className="text-lg font-bold text-gray-900 mb-1 break-words">
                           {column.name}
                         </h5>
-
                         {column.defaultValue && (
                           <p className="text-sm text-gray-600 mb-3">
                             Default:{" "}
@@ -820,13 +913,11 @@ export default function CustomTableEditor({
                             </code>
                           </p>
                         )}
-
                         <div className="text-xs text-gray-400 mb-4">
                           {column.created_at
                             ? new Date(column.created_at).toLocaleDateString()
                             : "-"}
                         </div>
-
                         <div className="flex gap-2">
                           <button
                             onClick={() => startColumnEditing(column)}

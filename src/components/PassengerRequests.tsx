@@ -577,6 +577,8 @@ export default function PassengerRequests({
         sub_passenger_count: passenger.sub_passenger_count,
         has_sub_passengers: passenger.has_sub_passengers,
         passenger_number: "",
+        booking_number: null,
+        pax_type: "Adult",
       };
 
       console.log("approvePassenger: Attempting to insert into passengers", {

@@ -50,7 +50,13 @@ function Navbar({ role, onLogout }: NavbarProps) {
   // Clone nav items so we can attach logout action
   const items = NAV_ITEMS[role as Role].map((item) =>
     item.label === "Logout"
-      ? { ...item, action: () => { onLogout(); navigate("/login"); } }
+      ? {
+          ...item,
+          action: () => {
+            onLogout();
+            navigate("/login");
+          },
+        }
       : item
   );
 

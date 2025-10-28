@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import "react-toastify/dist/ReactToastify.css";
 import type {
   User as UserType,
@@ -14,9 +14,10 @@ import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
 import PassengersInLead from "../components/PassengersInLead";
-import ExcelLikeTable from "../Pages/ExcelLikeTable"; // Replace CustomTablesTab with ExcelLikeTable
+import ExcelLikeTable from "../Pages/ExcelLikeTable"; // Updated component
 import { useNotifications } from "../hooks/useNotifications";
 import { supabase } from "../supabaseClient";
+import { debounce } from "lodash"; // Ensure lodash is installed: npm install lodash
 
 interface ManagerInterfaceProps {
   tours: Tour[];
@@ -45,7 +46,6 @@ export default function ManagerInterface({
     | "passengerRequests"
     | "blacklist"
     | "pendingLeads"
-    | "customTables"
   >("orders");
 
   const [selectedTour, setSelectedTour] = useState("");
@@ -53,10 +53,13 @@ export default function ManagerInterface({
   const { showNotification } = useNotifications();
   const [pendingLeadsCount, setPendingLeadsCount] = useState(0);
   const [passengerRequestsCount, setPassengerRequestsCount] = useState(0);
+  const [errors, setErrors] = useState<ValidationError[]>([]);
+  const [isGroup, setIsGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
 
-  // Fetch leads count for badge (pending and confirmed)
-  useEffect(() => {
-    const fetchPendingLeadsCount = async () => {
+  // Debounced fetch functions to prevent excessive API calls
+  const fetchPendingLeadsCount = useCallback(
+    debounce(async () => {
       try {
         const { count, error } = await supabase
           .from("passengers_in_lead")
@@ -73,21 +76,80 @@ export default function ManagerInterface({
           return;
         }
 
-        console.log("Leads count for user", currentUser.id, ":", count);
+        console.log(`Leads count for user ${currentUser.id}: ${count}`);
         setPendingLeadsCount(count || 0);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Unexpected error fetching leads count:", error);
         showNotification(
           "error",
           "An unexpected error occurred while fetching leads count."
         );
       }
-    };
+    }, 500),
+    [currentUser.id, showNotification]
+  );
 
+  const fetchPassengerRequestsCount = useCallback(
+    debounce(async () => {
+      try {
+        const { count, error } = await supabase
+          .from("passenger_requests")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", currentUser.id)
+          .eq("status", "pending");
+
+        if (error) {
+          console.error("Error fetching passenger requests count:", error);
+          showNotification(
+            "error",
+            `Failed to fetch passenger requests count: ${error.message}`
+          );
+          return;
+        }
+
+        console.log(
+          `Passenger requests count for user ${currentUser.id}: ${count}`
+        );
+        setPassengerRequestsCount(count || 0);
+      } catch (error: any) {
+        console.error(
+          "Unexpected error fetching passenger requests count:",
+          error
+        );
+        showNotification(
+          "error",
+          "An unexpected error occurred while fetching passenger requests count."
+        );
+      }
+    }, 500),
+    [currentUser.id, showNotification]
+  );
+
+  // Memoized dependencies to prevent unnecessary re-renders
+  const subscriptionDependencies = useMemo(
+    () => [
+      currentUser.id,
+      fetchPendingLeadsCount,
+      fetchPassengerRequestsCount,
+      showNotification,
+    ],
+    [
+      currentUser.id,
+      fetchPendingLeadsCount,
+      fetchPassengerRequestsCount,
+      showNotification,
+    ]
+  );
+
+  // Set up subscriptions
+  useEffect(() => {
+    // Initial fetch
     fetchPendingLeadsCount();
+    fetchPassengerRequestsCount();
 
-    const leadsSubscription = supabase
-      .channel("passengers_in_lead_count_changes")
+    // Set up leads subscription
+    const leadsChannel = supabase
+      .channel(`passengers_in_lead_count_${currentUser.id}`)
       .on(
         "postgres_changes",
         {
@@ -112,47 +174,9 @@ export default function ManagerInterface({
         console.log("Leads subscription status:", status);
       });
 
-    // Fetch passenger requests count
-    const fetchPassengerRequestsCount = async () => {
-      try {
-        const { count, error } = await supabase
-          .from("passenger_requests")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", currentUser.id)
-          .eq("status", "pending");
-
-        if (error) {
-          console.error("Error fetching passenger requests count:", error);
-          showNotification(
-            "error",
-            `Failed to fetch passenger requests count: ${error.message}`
-          );
-          return;
-        }
-
-        console.log(
-          "Passenger requests count for user",
-          currentUser.id,
-          ":",
-          count
-        );
-        setPassengerRequestsCount(count || 0);
-      } catch (error) {
-        console.error(
-          "Unexpected error fetching passenger requests count:",
-          error
-        );
-        showNotification(
-          "error",
-          "An unexpected error occurred while fetching passenger requests count."
-        );
-      }
-    };
-
-    fetchPassengerRequestsCount();
-
-    const requestsSubscription = supabase
-      .channel("passenger_requests_count_changes")
+    // Set up passenger requests subscription
+    const requestsChannel = supabase
+      .channel(`passenger_requests_count_${currentUser.id}`)
       .on(
         "postgres_changes",
         {
@@ -177,16 +201,15 @@ export default function ManagerInterface({
         console.log("Requests subscription status:", status);
       });
 
+    // Cleanup subscriptions
     return () => {
       console.log("Cleaning up subscriptions");
-      supabase.removeChannel(leadsSubscription);
-      supabase.removeChannel(requestsSubscription);
+      supabase.removeChannel(leadsChannel);
+      supabase.removeChannel(requestsChannel);
+      console.log("Leads subscription status: CLOSED");
+      console.log("Requests subscription status: CLOSED");
     };
-  }, [showNotification, currentUser.id]);
-
-  const [errors, setErrors] = useState<ValidationError[]>([]);
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
+  }, [subscriptionDependencies]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -197,7 +220,7 @@ export default function ManagerInterface({
               Manager Dashboard
             </h1>
             <p className="mt-2 text-gray-600">
-              Manage your tours, orders, passengers, and custom tables
+              Manage your tours, orders, passengers
               efficiently
             </p>
           </div>
@@ -214,7 +237,6 @@ export default function ManagerInterface({
                 "addPassenger",
                 "blacklist",
                 "pendingLeads",
-                "customTables",
               ].map((tab) => (
                 <button
                   key={tab}
@@ -233,7 +255,6 @@ export default function ManagerInterface({
                         | "addPassenger"
                         | "blacklist"
                         | "pendingLeads"
-                        | "customTables"
                     )
                   }
                 >
@@ -249,8 +270,6 @@ export default function ManagerInterface({
                         ? "Blacklist"
                         : tab === "pendingLeads"
                         ? "Leads"
-                        : tab === "customTables"
-                        ? "Custom Tables"
                         : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </span>
                     {tab !== "addTour" &&
@@ -329,12 +348,6 @@ export default function ManagerInterface({
         )}
         {activeTab === "pendingLeads" && (
           <PassengersInLead
-            currentUser={currentUser}
-            showNotification={showNotification}
-          />
-        )}
-        {activeTab === "customTables" && (
-          <ExcelLikeTable
             currentUser={currentUser}
             showNotification={showNotification}
           />
