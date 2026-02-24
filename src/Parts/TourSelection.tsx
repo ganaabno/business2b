@@ -37,280 +37,304 @@ export default function TourSelection({
   showAvailableSeats = true,
 }: TourSelectionProps) {
   const mergedTours = useMemo(() => {
-    const map = new Map<string, Tour & { dates: string[] }>();
+    const map = new Map<string, Tour & { dateSeats: Record<string, number> }>();
+
     for (const tour of tours) {
-      if (!tour.title) {
-        console.warn("Tour missing title:", tour);
+      if (!tour.title || tour.status === "inactive" || tour.status === "full")
         continue;
+
+      const key = tour.title.trim().toLowerCase();
+
+      // === Normalize dates ===
+      let tourDates: string[] = [];
+
+      // 1. From dates array (preferred)
+      if (tour.dates && Array.isArray(tour.dates)) {
+        tourDates = tour.dates
+          .filter((d): d is string => typeof d === "string" && d.trim() !== "")
+          .map((d) => d.split("T")[0]); // normalize
       }
-      const normalizedTitle = tour.title.trim().toLowerCase();
-      // Normalize dates to string[], trusting useTours to provide valid dates
-      const tourDates =
-        Array.isArray(tour.dates) && tour.dates.length
-          ? tour.dates
-          : tour.departure_date
-          ? [tour.departure_date]
-          : [new Date().toISOString().split("T")[0]]; // Fallback to today
-      if (!map.has(normalizedTitle)) {
-        map.set(normalizedTitle, {
+
+      // 2. Fallback to departure_date if no dates
+      if (tourDates.length === 0 && tour.departure_date) {
+        const date = tour.departure_date.split("T")[0];
+        if (date) tourDates = [date];
+      }
+      if (tourDates.length === 0 && tour.departure_date) {
+        tourDates = [tour.departure_date];
+      }
+
+      // === Normalize hotels to string[] ===
+      let tourHotels: string[] = [];
+      if (tour.hotels) {
+        if (Array.isArray(tour.hotels)) {
+          tourHotels = tour.hotels
+            .filter((h): h is string => typeof h === "string")
+            .map((h) => h.trim())
+            .filter(Boolean);
+        } else if (typeof tour.hotels === "string") {
+          tourHotels = tour.hotels
+            .split(",")
+            .map((h) => h.trim())
+            .filter(Boolean);
+        }
+      }
+
+      const seatsToUse = tour.available_seats ?? tour.seats ?? 0;
+
+      if (!map.has(key)) {
+        const newTour = {
           ...tour,
           title: tour.title.trim(),
-          dates: [...tourDates],
-          available_seats: tour.available_seats ?? tour.seats ?? 0,
-        });
+          dates: tourDates,
+          hotels: tourHotels,
+          dateSeats: {} as Record<string, number>,
+        };
+        for (const d of tourDates) {
+          newTour.dateSeats[d] = seatsToUse;
+        }
+        map.set(key, newTour);
       } else {
-        const existing = map.get(normalizedTitle)!;
+        const existing = map.get(key)!;
+
+        // === SAFELY MERGE DATES ===
         existing.dates = Array.from(new Set([...existing.dates, ...tourDates]));
-        existing.available_seats = Math.max(
-          existing.available_seats ?? 0,
-          tour.available_seats ?? tour.seats ?? 0
+
+        // === SAFELY MERGE HOTELS (this is the fix!) ===
+        const existingHotels: string[] = Array.isArray(existing.hotels)
+          ? existing.hotels
+              .filter((h): h is string => typeof h === "string")
+              .map((h) => h.trim())
+              .filter(Boolean)
+          : typeof existing.hotels === "string"
+          ? existing.hotels
+              .split(",")
+              .map((h) => h.trim())
+              .filter(Boolean)
+          : [];
+
+        existing.hotels = Array.from(
+          new Set([...existingHotels, ...tourHotels])
         );
+
+        // === MERGE SEATS BY DATE ===
+        for (const d of tourDates) {
+          if (!(d in existing.dateSeats)) {
+            existing.dateSeats[d] = seatsToUse;
+          } else {
+            existing.dateSeats[d] = Math.max(existing.dateSeats[d], seatsToUse);
+          }
+        }
       }
     }
-    const result = Array.from(map.values());
-    console.log(
-      "Merged tours:",
-      result.map((t) => ({
-        id: t.id,
-        title: t.title,
-        seats: t.seats,
-        available_seats: t.available_seats,
-        dates: t.dates,
-      }))
-    );
-    return result;
+
+    return Array.from(map.values());
   }, [tours]);
 
-  useEffect(() => {
-    console.log("TourSelection rendered with props:", {
-      selectedTour,
-      departure_date,
-      tours: tours.map((t) => ({
-        id: t.id,
-        title: t.title,
-        seats: t.seats,
-        available_seats: t.available_seats,
-        departure_date: t.departure_date,
-        dates: t.dates,
-      })),
-    });
-    console.log(
-      "Merged tours titles and seats:",
-      mergedTours.map((tour) => ({
-        title: tour.title,
-        seats: tour.seats,
-        available_seats: tour.available_seats,
-        dates: tour.dates,
-      }))
-    );
-  }, [tours, selectedTour, departure_date, mergedTours]);
-
   const selectedTourData = useMemo(() => {
-    const tour = mergedTours.find(
-      (tour) =>
-        tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase()
+    if (!selectedTour) return null;
+    const normalized = selectedTour.trim().toLowerCase();
+    return (
+      mergedTours.find((t) => t.title.trim().toLowerCase() === normalized) ??
+      null
     );
-    console.log(
-      "Selected tour data:",
-      tour
-        ? {
-            id: tour.id,
-            title: tour.title,
-            seats: tour.seats,
-            available_seats: tour.available_seats,
-            dates: tour.dates,
-          }
-        : null
-    );
-    return tour;
   }, [mergedTours, selectedTour]);
 
   const hasTourError = errors.some((e) => e.field === "tour");
   const hasDepartureError = errors.some((e) => e.field === "departure");
-  const hasDates = (selectedTourData?.dates?.length ?? 0) > 0;
+  const hasDates = selectedTourData?.dates && selectedTourData.dates.length > 0;
+
+  if (mergedTours.length === 0) {
+    return (
+      <div className="mono-card p-6">
+        <h3 className="mono-title text-lg flex items-center mb-6">
+          <MapPin className="w-5 h-5 mr-2" />
+          Choose Your Tour
+        </h3>
+        <div className="text-center py-8">
+          <p className="text-gray-500 text-lg">No tours available right now.</p>
+          <p className="text-sm text-gray-400 mt-2">
+            All tours are either inactive, full, or not showing. Check back
+            later!
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 flex items-center mb-6">
+    <div className="mono-card p-6">
+      <h3 className="mono-title text-lg flex items-center mb-6">
         <MapPin className="w-5 h-5 mr-2" />
         Choose Your Tour
       </h3>
 
-      {mergedTours.length === 0 ? (
-        <p className="text-red-500 text-sm mb-4">
-          No tours available. Please contact support to add tours.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
-            <label
-              htmlFor="tourSelect"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Tour
-            </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div>
+          <label
+            htmlFor="tourSelect"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
+            Tour
+          </label>
+          <select
+            id="tourSelect"
+            className={`mono-input ${hasTourError ? "border-red-300" : ""}`}
+            value={selectedTour}
+            onChange={(e) => {
+              const value = e.target.value.trim();
+              setSelectedTour(value);
+              setDepartureDate("");
+            }}
+          >
+            <option value="" disabled>
+              Select a tour
+            </option>
+            {mergedTours.map((tour) => (
+              <option key={tour.id} value={tour.title}>
+                {tour.title}
+              </option>
+            ))}
+          </select>
+          {hasTourError && (
+            <p className="text-red-500 text-xs mt-1">Please select a tour</p>
+          )}
+        </div>
+
+        <div>
+          <label
+            htmlFor="dateSelect"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
+            Departure Date
+          </label>
+          <div className="relative">
+            <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <select
-              id="tourSelect"
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                hasTourError ? "border-red-300" : "border-gray-300"
+              id="dateSelect"
+              className={`mono-input pl-10 pr-3 ${
+                hasDepartureError ? "border-red-300" : ""
               }`}
-              value={selectedTour}
-              onChange={(e) => {
-                const newTour = e.target.value.trim();
-                console.log("Tour selected:", newTour);
-                setSelectedTour(newTour);
-                setDepartureDate("");
-              }}
-              aria-invalid={hasTourError}
-              aria-describedby={hasTourError ? "tour-error" : undefined}
-              disabled={mergedTours.length === 0}
+              value={departure_date}
+              onChange={(e) => setDepartureDate(e.target.value)}
+              disabled={!selectedTour || !hasDates}
             >
               <option value="" disabled>
-                Select a tour
+                {selectedTour ? "Select a date" : "Select a tour first"}
               </option>
-              {mergedTours.map((tour, index) => (
-                <option key={`${tour.title}-${index}`} value={tour.title}>
-                  {tour.title}{" "}
-                  {showAvailableSeats
-                    ? `(${
-                        tour.available_seats ?? tour.seats ?? "No limit"
-                      } seats)`
-                    : ""}
-                </option>
-              ))}
-            </select>
-            {hasTourError && (
-              <p id="tour-error" className="text-red-500 text-xs mt-1">
-                Please select a tour
-              </p>
-            )}
-          </div>
+              {selectedTourData?.dates &&
+                selectedTourData.dates.length > 0 &&
+                selectedTourData.dates
+                  .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+                  .map((d) => {
+                    const availableSeats =
+                      selectedTourData!.dateSeats?.[d] ??
+                      selectedTourData!.seats ??
+                      "No limit";
 
-          <div>
-            <label
-              htmlFor="dateSelect"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Departure Date
-            </label>
-            <div className="relative">
-              <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <select
-                id="dateSelect"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  hasDepartureError ? "border-red-300" : "border-gray-300"
-                }`}
-                value={departure_date}
-                onChange={(e) => {
-                  console.log("Departure date selected:", e.target.value);
-                  setDepartureDate(e.target.value);
-                }}
-                disabled={!selectedTour || !hasDates}
-                aria-invalid={hasDepartureError}
-                aria-describedby={
-                  hasDepartureError ? "departure-error" : undefined
-                }
-              >
-                <option value="" disabled>
-                  {selectedTour ? "Select a date" : "Select a tour first"}
-                </option>
-                {hasDates &&
-                  selectedTourData!.dates
-                    .sort(
-                      (a, b) => new Date(a).getTime() - new Date(b).getTime()
-                    )
-                    .map((d, index) => {
-                      console.log(
-                        "Rendering date:",
-                        d,
-                        "Formatted:",
-                        formatDisplayDate(d)
-                      );
-                      return (
-                        <option key={`${d}-${index}`} value={d}>
-                          {formatDisplayDate(d)}
-                        </option>
-                      );
-                    })}
-              </select>
-            </div>
-            {hasDepartureError && (
-              <p id="departure-error" className="text-red-500 text-xs mt-1">
-                Departure date is required
-              </p>
-            )}
-            {selectedTour && !hasDates && (
-              <p className="text-yellow-500 text-xs mt-1">
-                No valid departure dates for this tour. Please try another tour
-                or contact support to update tour dates.
-              </p>
-            )}
+                    return (
+                      <option key={d} value={d}>
+                        {formatDisplayDate(d)}
+                        {showAvailableSeats && ` (${availableSeats} seats)`}
+                      </option>
+                    );
+                  })}
+            </select>
           </div>
+          {hasDepartureError && (
+            <p className="text-red-500 text-xs mt-1">
+              Departure date is required
+            </p>
+          )}
+          {selectedTour && !hasDates && (
+            <p className="text-yellow-500 text-xs mt-1">
+              No valid departure dates for "{selectedTour}". Try another tour.
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       {selectedTourData && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
           <h4 className="text-sm font-medium text-gray-900 mb-3">
             Tour Details
           </h4>
           <div className="space-y-2">
-            <p className="text-sm text-gray-600">
+            <p>
               <span className="font-medium">Title:</span>{" "}
               {selectedTourData.title}
             </p>
             {selectedTourData.name &&
               selectedTourData.name !== selectedTourData.title && (
-                <p className="text-sm text-gray-600">
+                <p>
                   <span className="font-medium">Name:</span>{" "}
                   {selectedTourData.name}
                 </p>
               )}
             {selectedTourData.description && (
-              <p className="text-sm text-gray-600">
+              <p>
                 <span className="font-medium">Description:</span>{" "}
                 {selectedTourData.description}
               </p>
             )}
             {showAvailableSeats && (
-              <p className="text-sm text-gray-600">
-                <span className="font-medium">Available Seats:</span>{" "}
-                {selectedTourData.available_seats ??
-                  selectedTourData.seats ??
-                  "No limit"}
+              <p>
+                <span className="font-medium">Available Seats:</span> Varies by
+                date
               </p>
             )}
-            {selectedTourData.hotels && selectedTourData.hotels.length > 0 && (
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center">
-                  <Hotel className="w-4 h-4 mr-1" />
-                  <span className="font-medium">Hotels:</span>
+
+            {/* HOTELS: TYPE-SAFE RENDER */}
+            {(() => {
+              const hotels: string[] = [];
+              if (selectedTourData.hotels) {
+                if (Array.isArray(selectedTourData.hotels)) {
+                  hotels.push(
+                    ...selectedTourData.hotels
+                      .filter((h): h is string => typeof h === "string")
+                      .map((h) => h.trim())
+                      .filter(Boolean)
+                  );
+                } else if (typeof selectedTourData.hotels === "string") {
+                  hotels.push(
+                    ...selectedTourData.hotels
+                      .split(",")
+                      .map((h) => h.trim())
+                      .filter(Boolean)
+                  );
+                }
+              }
+              return hotels.length > 0 ? (
+                <div className="text-sm">
+                  <div className="flex items-center mb-1">
+                    <Hotel className="w-4 h-4 mr-1" />
+                    <span className="font-medium">Hotels:</span>
+                  </div>
+                  <ul className="ml-5 list-disc space-y-1">
+                    {hotels.map((hotel, i) => (
+                      <li key={i}>{hotel}</li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="ml-5 list-disc">
-                  {selectedTourData.hotels.map((hotel, index) => (
-                    <li key={index} className="text-sm text-gray-600">
-                      {hotel}
+              ) : null;
+            })()}
+
+            {/* SERVICES */}
+            {selectedTourData.services?.length > 0 && (
+              <div className="text-sm">
+                <div className="flex items-center mb-1">
+                  <Package className="w-4 h-4 mr-1" />
+                  <span className="font-medium">Services:</span>
+                </div>
+                <ul className="ml-5 list-disc space-y-1">
+                  {selectedTourData.services.map((service, i) => (
+                    <li key={i}>
+                      {service.name} (${service.price})
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            {selectedTourData.services &&
-              selectedTourData.services.length > 0 && (
-                <div className="text-sm text-gray-600">
-                  <div className="flex items-center">
-                    <Package className="w-4 h-4 mr-1" />
-                    <span className="font-medium">Services:</span>
-                  </div>
-                  <ul className="ml-5 list-disc">
-                    {selectedTourData.services.map((service, index) => (
-                      <li key={index} className="text-sm text-gray-600">
-                        {service.name} (${service.price})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
           </div>
         </div>
       )}
@@ -318,10 +342,8 @@ export default function TourSelection({
       <div className="flex justify-end">
         <button
           onClick={() => setActiveStep(2)}
-          disabled={
-            !selectedTour || !departure_date || mergedTours.length === 0
-          }
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          disabled={!selectedTour || !departure_date || !hasDates}
+          className="mono-button"
         >
           Continue to Passengers
         </button>

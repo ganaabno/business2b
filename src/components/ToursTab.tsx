@@ -41,11 +41,21 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
 
   const handleAddTour = async () => {
     if (!newTourTitle.trim() || !newTourName.trim() || !newTourDepartureDate) {
-      toast.error("Please provide a title, name, and departure date for the new tour.");
+      toast.error(
+        "Please provide a title, name, and departure date for the new tour.",
+      );
       return;
     }
 
-    const newTour: Omit<Tour, "id" | "created_at" | "updated_at" | "created_by" | "creator_name" | "tour_number"> = {
+    const newTour: Omit<
+      Tour,
+      | "id"
+      | "created_at"
+      | "updated_at"
+      | "created_by"
+      | "creator_name"
+      | "tour_number"
+    > = {
       title: newTourTitle.trim(),
       name: newTourName.trim(),
       departure_date: newTourDepartureDate,
@@ -60,6 +70,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
       available_seats: 0,
       price_base: undefined,
       booking_confirmation: null,
+      show_to_user: undefined,
     };
 
     try {
@@ -88,20 +99,25 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
       delete insertData.departureDate;
 
       // Check if show_in_provider column exists
-      const { data: schemaData, error: schemaError } = await supabase
-        .rpc("get_table_columns", { table_name: "tours" });
+      const { data: schemaData, error: schemaError } = await supabase.rpc(
+        "get_table_columns",
+        { table_name: "tours" },
+      );
       if (schemaError) {
         console.error("Error checking schema:", schemaError);
         toast.error(`Failed to verify schema: ${schemaError.message}`);
         return;
       }
-      const hasShowInProvider = schemaData.some((col: any) => col.column_name === "show_in_provider");
+      const hasShowInProvider = schemaData.some(
+        (col: any) => col.column_name === "show_in_provider",
+      );
       if (!hasShowInProvider) {
-        console.warn("show_in_provider column not found in tours table. Omitting from insert.");
+        console.warn(
+          "show_in_provider column not found in tours table. Omitting from insert.",
+        );
         delete insertData.show_in_provider;
       }
 
-      console.log("Adding tour with data:", insertData);
       const { data, error } = await supabase
         .from("tours")
         .insert([insertData])
@@ -122,9 +138,15 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
             id: String(data.id),
             tour_number: data.tour_number || null,
             created_by: data.created_by || "system",
-            creator_name: data.users?.username || data.users?.email || data.created_by || "Unknown",
+            creator_name:
+              data.users?.username ||
+              data.users?.email ||
+              data.created_by ||
+              "Unknown",
             seats: Number(data.seats) || 0,
-            show_in_provider: hasShowInProvider ? (data.show_in_provider ?? true) : null,
+            show_in_provider: hasShowInProvider
+              ? (data.show_in_provider ?? true)
+              : null,
             description: data.description || "",
             hotels: data.hotels || [],
             dates: data.dates || [],
@@ -147,7 +169,7 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
 
   // Rest of the component remains unchanged
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 max-w-[105rem] mx-auto">
       <ToastContainer />
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Manage Tours</h2>
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -192,7 +214,6 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
               </tr>
             ) : (
               filteredTours.map((tour) => {
-                console.log(`Rendering tour ${tour.id}, show_in_provider: ${tour.show_in_provider}`);
                 return (
                   <tr key={tour.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 border-r border-gray-200 text-sm text-gray-900">
@@ -202,7 +223,9 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       <input
                         type="text"
                         value={tour.title}
-                        onChange={(e) => handleTourChange(tour.id, "title", e.target.value)}
+                        onChange={(e) =>
+                          handleTourChange(tour.id, "title", e.target.value)
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Tour title..."
                       />
@@ -211,7 +234,9 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       <input
                         type="text"
                         value={tour.name}
-                        onChange={(e) => handleTourChange(tour.id, "name", e.target.value)}
+                        onChange={(e) =>
+                          handleTourChange(tour.id, "name", e.target.value)
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Tour name..."
                       />
@@ -220,7 +245,13 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       <input
                         type="date"
                         value={tour.departure_date}
-                        onChange={(e) => handleTourChange(tour.id, "departure_date", e.target.value)}
+                        onChange={(e) =>
+                          handleTourChange(
+                            tour.id,
+                            "departure_date",
+                            e.target.value,
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                       />
                       {tour.departure_date && (
@@ -236,7 +267,11 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       <select
                         value={tour.status}
                         onChange={(e) =>
-                          handleTourChange(tour.id, "status", e.target.value as Tour["status"])
+                          handleTourChange(
+                            tour.id,
+                            "status",
+                            e.target.value as Tour["status"],
+                          )
                         }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                       >
@@ -247,21 +282,28 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       </select>
                     </td>
                     <td className="px-4 py-3 border-r border-gray-200">
-                      {tour.show_in_provider !== null && tour.show_in_provider !== undefined ? (
+                      {tour.show_in_provider !== null &&
+                      tour.show_in_provider !== undefined ? (
                         <label className="flex items-center space-x-2">
                           <input
                             type="checkbox"
                             checked={tour.show_in_provider}
                             onChange={(e) => {
                               const newValue = e.target.checked;
-                              console.log(`Toggling show_in_provider for tour ${tour.id} to: ${newValue}`);
-                              handleTourChange(tour.id, "show_in_provider", newValue)
-                                .then(() => {
-                                  console.log(`Successfully toggled show_in_provider to ${newValue} for tour ${tour.id}`);
-                                })
+                              handleTourChange(
+                                tour.id,
+                                "show_in_provider",
+                                newValue,
+                              )
+                                .then(() => {})
                                 .catch((error) => {
-                                  console.error(`Error toggling show_in_provider for tour ${tour.id}:`, error);
-                                  toast.error(`Failed to update show in provider: ${error.message}`);
+                                  console.error(
+                                    `Error toggling show_in_provider for tour ${tour.id}:`,
+                                    error,
+                                  );
+                                  toast.error(
+                                    `Failed to update show in provider: ${error.message}`,
+                                  );
                                 });
                             }}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -282,7 +324,13 @@ export default function ToursTab({ tours, setTours }: ToursTabProps) {
                       <input
                         type="number"
                         value={tour.seats}
-                        onChange={(e) => handleTourChange(tour.id, "seats", Number(e.target.value))}
+                        onChange={(e) =>
+                          handleTourChange(
+                            tour.id,
+                            "seats",
+                            Number(e.target.value),
+                          )
+                        }
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Seats..."
                       />

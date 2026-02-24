@@ -1,12 +1,36 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import "react-toastify/dist/ReactToastify.css";
-import type {
-  User as UserType,
-  Tour,
-  Order,
-  Passenger,
-  ValidationError,
-} from "../types/type";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { format } from "date-fns";
+import {
+  Search,
+  Upload,
+  Download,
+  RefreshCw,
+  Loader2,
+  Plane,
+  Clock,
+  FileSpreadsheet,
+  Users,
+  Calendar,
+  DollarSign,
+  MapPin,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  MessageCircle,
+  PhoneIncoming,
+  UserPlus,
+  LayoutDashboard,
+  Ticket,
+  Ban,
+  FileText,
+  PlaneTakeoff,
+} from "lucide-react";
+import { useDropzone } from "react-dropzone";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+import { toast, Toaster } from "react-hot-toast";
+import { useTranslation } from "react-i18next";
+
 import OrdersTab from "../components/OrdersTab";
 import PassengersTab from "../components/PassengerTab";
 import AddTourTab from "../components/AddTourTab";
@@ -14,20 +38,100 @@ import AddPassengerTab from "../components/AddPassengerTab";
 import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
 import PassengersInLead from "../components/PassengersInLead";
-import ExcelLikeTable from "../Pages/ExcelLikeTable"; // Updated component
+import InterestedLeadsTab from "../components/InterestedLeadsTab";
+import DataTable from "../Parts/DataTable.";
 import { useNotifications } from "../hooks/useNotifications";
 import { supabase } from "../supabaseClient";
-import { debounce } from "lodash"; // Ensure lodash is installed: npm install lodash
+import { debounce } from "lodash";
+import { useFlightDataStore } from "../Parts/flightDataStore";
+import type { Tour, ValidationError } from "../types/type";
+import ToursTable from "../components/ToursTable";
+import ProviderInterface from "./ProviderInterface";
 
-interface ManagerInterfaceProps {
-  tours: Tour[];
-  setTours: React.Dispatch<React.SetStateAction<Tour[]>>;
-  orders: Order[];
-  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
-  passengers: Passenger[];
-  setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
-  currentUser: UserType;
-}
+const supabaseClient = supabase;
+
+type TabType =
+  | "dashboard"
+  | "orders"
+  | "passengers"
+  | "addTour"
+  | "addPassenger"
+  | "passengerRequests"
+  | "interestedLeads"
+  | "pendingLeads"
+  | "blacklist"
+  | "flightData"
+  | "tours"
+  | "ProviderInterface";
+
+type TabConfig = {
+  key: TabType;
+  labelKey: string;
+  icon: any;
+  countKey?:
+    | "orders"
+    | "passengers"
+    | "requests"
+    | "interested"
+    | "pendingLeads"
+    | "blacklist"
+    | "flightData"
+    | "ProviderInterface";
+};
+
+const TAB_CONFIG: TabConfig[] = [
+  { key: "dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { key: "orders", labelKey: "orders", icon: Ticket, countKey: "orders" },
+  {
+    key: "passengers",
+    labelKey: "allPassengers",
+    icon: Users,
+    countKey: "passengers",
+  },
+  { key: "addPassenger", labelKey: "bookPassenger", icon: UserPlus },
+  { key: "addTour", labelKey: "addTour", icon: PlaneTakeoff },
+  {
+    key: "tours",
+    labelKey: "toursTable",
+    icon: FileSpreadsheet,
+  },
+  {
+    key: "interestedLeads",
+    labelKey: "interestedLeads",
+    icon: PhoneIncoming,
+    countKey: "interested",
+  },
+  {
+    key: "passengerRequests",
+    labelKey: "passengerRequests",
+    icon: MessageCircle,
+    countKey: "requests",
+  },
+  {
+    key: "pendingLeads",
+    labelKey: "leadPassengers",
+    icon: FileText,
+    countKey: "pendingLeads",
+  },
+  {
+    key: "blacklist",
+    labelKey: "blacklist",
+    icon: Ban,
+    countKey: "blacklist",
+  },
+  {
+    key: "flightData",
+    labelKey: "flightData",
+    icon: Plane,
+    countKey: "flightData",
+  },
+  {
+    key: "ProviderInterface",
+    labelKey: "viewAsProvider",
+    icon: LayoutDashboard,
+    countKey: "flightData",
+  },
+];
 
 export default function ManagerInterface({
   tours,
@@ -37,322 +141,466 @@ export default function ManagerInterface({
   passengers: initialPassengers,
   setPassengers,
   currentUser,
-}: ManagerInterfaceProps) {
-  const [activeTab, setActiveTab] = useState<
-    | "orders"
-    | "passengers"
-    | "addTour"
-    | "addPassenger"
-    | "passengerRequests"
-    | "blacklist"
-    | "pendingLeads"
-  >("orders");
-
+}: any) {
+  const { i18n, t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [selectedTour, setSelectedTour] = useState("");
   const [departureDate, setDepartureDate] = useState("");
-  const { showNotification } = useNotifications();
-  const [pendingLeadsCount, setPendingLeadsCount] = useState(0);
-  const [passengerRequestsCount, setPassengerRequestsCount] = useState(0);
   const [errors, setErrors] = useState<ValidationError[]>([]);
-  const [isGroup, setIsGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
 
-  // Debounced fetch functions to prevent excessive API calls
-  const fetchPendingLeadsCount = useCallback(
-    debounce(async () => {
-      try {
-        const { count, error } = await supabase
-          .from("passengers_in_lead")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", currentUser.id)
-          .in("status", ["pending", "confirmed"]);
+  // In your main page or layout
+  const [prefilledLead, setPrefilledLead] = useState<any>(null);
 
-        if (error) {
-          console.error("Error fetching leads count:", error);
-          showNotification(
-            "error",
-            `Failed to fetch leads count: ${error.message}`
-          );
-          return;
-        }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("fromLead") === "true") {
+      setPrefilledLead({
+        tourId: params.get("tourId"),
+        departureDate: params.get("date"),
+        name: params.get("name") || "",
+        phone: params.get("phone") || "",
+        passengerCount: parseInt(params.get("pax") || "1"),
+      });
+    }
+  }, []);
 
-        console.log(`Leads count for user ${currentUser.id}: ${count}`);
-        setPendingLeadsCount(count || 0);
-      } catch (error: any) {
-        console.error("Unexpected error fetching leads count:", error);
-        showNotification(
-          "error",
-          "An unexpected error occurred while fetching leads count."
-        );
-      }
-    }, 500),
-    [currentUser.id, showNotification]
-  );
+  const { showNotification } = useNotifications();
 
-  const fetchPassengerRequestsCount = useCallback(
-    debounce(async () => {
-      try {
-        const { count, error } = await supabase
+  // Counts state
+  const [counts, setCounts] = useState({
+    orders: orders.length,
+    passengers: initialPassengers.length,
+    requests: 0,
+    interested: 0,
+    pendingLeads: 0,
+    blacklist: initialPassengers.filter((p: any) => p.is_blacklisted).length,
+    flightData: 0,
+  });
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const {
+    data: flightData,
+    isLoading,
+    fetchFlightData,
+    subscribeToFlightData,
+  } = useFlightDataStore();
+
+  // Refresh counts
+  const refreshCounts = useCallback(async () => {
+    try {
+      const [
+        { count: reqCount },
+        { count: interestedCount },
+        { count: leadCount },
+      ] = await Promise.all([
+        supabaseClient
           .from("passenger_requests")
           .select("*", { count: "exact", head: true })
-          .eq("user_id", currentUser.id)
-          .eq("status", "pending");
+          .eq("status", "pending"),
+        supabaseClient
+          .from("interested_leads")
+          .select("*", { count: "exact", head: true }),
+        supabaseClient
+          .from("passengers_in_lead")
+          .select("*", { count: "exact", head: true }),
+      ]);
 
-        if (error) {
-          console.error("Error fetching passenger requests count:", error);
-          showNotification(
-            "error",
-            `Failed to fetch passenger requests count: ${error.message}`
-          );
-          return;
-        }
+      setCounts((prev) => ({
+        ...prev,
+        requests: reqCount || 0,
+        interested: interestedCount || 0,
+        pendingLeads: leadCount || 0,
+      }));
+    } catch (err) {
+      console.error("Failed to fetch counts", err);
+    }
+  }, []);
 
-        console.log(
-          `Passenger requests count for user ${currentUser.id}: ${count}`
-        );
-        setPassengerRequestsCount(count || 0);
-      } catch (error: any) {
-        console.error(
-          "Unexpected error fetching passenger requests count:",
-          error
-        );
-        showNotification(
-          "error",
-          "An unexpected error occurred while fetching passenger requests count."
-        );
-      }
-    }, 500),
-    [currentUser.id, showNotification]
-  );
-
-  // Memoized dependencies to prevent unnecessary re-renders
-  const subscriptionDependencies = useMemo(
-    () => [
-      currentUser.id,
-      fetchPendingLeadsCount,
-      fetchPassengerRequestsCount,
-      showNotification,
-    ],
-    [
-      currentUser.id,
-      fetchPendingLeadsCount,
-      fetchPassengerRequestsCount,
-      showNotification,
-    ]
-  );
-
-  // Set up subscriptions
   useEffect(() => {
-    // Initial fetch
-    fetchPendingLeadsCount();
-    fetchPassengerRequestsCount();
+    const handler = () => setActiveTab("addPassenger");
+    window.addEventListener("prefill-success", handler);
+    return () => window.removeEventListener("prefill-success", handler);
+  }, []);
 
-    // Set up leads subscription
-    const leadsChannel = supabase
-      .channel(`passengers_in_lead_count_${currentUser.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "passengers_in_lead",
-          filter: `user_id=eq.${currentUser.id}`,
-        },
-        (payload) => {
-          console.log("Real-time leads count change:", payload);
-          fetchPendingLeadsCount();
-        }
-      )
-      .subscribe((status, error) => {
-        if (error) {
-          console.error("Leads subscription error:", error);
-          showNotification(
-            "error",
-            `Real-time leads subscription failed: ${error.message}`
-          );
-        }
-        console.log("Leads subscription status:", status);
-      });
+  useEffect(() => {
+    const handleForcePrefill = (e: any) => {
+      const { tourId, departureDate, name, phone, passengerCount } = e.detail;
 
-    // Set up passenger requests subscription
-    const requestsChannel = supabase
-      .channel(`passenger_requests_count_${currentUser.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "passenger_requests",
-          filter: `user_id=eq.${currentUser.id},status=eq.pending`,
-        },
-        (payload) => {
-          console.log("Real-time passenger requests count change:", payload);
-          fetchPassengerRequestsCount();
-        }
-      )
-      .subscribe((status, error) => {
-        if (error) {
-          console.error("Requests subscription error:", error);
-          showNotification(
-            "error",
-            `Real-time requests subscription failed: ${error.message}`
-          );
-        }
-        console.log("Requests subscription status:", status);
-      });
+      // SET EVERYTHING IN PARENT STATE
+      setSelectedTour(tourId);
+      setDepartureDate(departureDate);
 
-    // Cleanup subscriptions
-    return () => {
-      console.log("Cleaning up subscriptions");
-      supabase.removeChannel(leadsChannel);
-      supabase.removeChannel(requestsChannel);
-      console.log("Leads subscription status: CLOSED");
-      console.log("Requests subscription status: CLOSED");
+      // Small delay to let React update
+      setTimeout(() => {
+        setPrefilledLead({
+          name,
+          phone,
+          passengerCount,
+          tourId,
+          departureDate,
+        });
+
+        // Success → switch tab
+        setActiveTab("addPassenger");
+        window.dispatchEvent(new CustomEvent("prefill-success"));
+      }, 100);
     };
-  }, [subscriptionDependencies]);
+
+    window.addEventListener("force-prefill-booking", handleForcePrefill);
+    return () =>
+      window.removeEventListener("force-prefill-booking", handleForcePrefill);
+  }, []);
+
+  useEffect(() => {
+    const handleLeadRegistered = (e: any) => {
+      const { name, phone, passengerCount, tourId, departureDate } = e.detail;
+
+      // Set prefill
+      setPrefilledLead({
+        name,
+        phone,
+        passengerCount,
+        tourId,
+        departureDate,
+      });
+
+      // Switch to booking tab
+      setActiveTab("addPassenger");
+
+      toast.success(`Booking started for ${name} (${passengerCount} pax)`);
+    };
+
+    window.addEventListener("lead-registered", handleLeadRegistered);
+    return () =>
+      window.removeEventListener("lead-registered", handleLeadRegistered);
+  }, []);
+
+  useEffect(() => {
+    refreshCounts();
+
+    const channels = TAB_CONFIG.filter((t) => t.countKey)
+      .map((tab) => {
+        const tableMap: any = {
+          requests: "passenger_requests",
+          interested: "interested_leads",
+          pendingLeads: "passengers_in_lead",
+        };
+        if (!tableMap[tab.countKey!]) return null;
+
+        return supabaseClient
+          .channel(`count_${tab.key}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: tableMap[tab.countKey!] },
+            refreshCounts,
+          )
+          .subscribe();
+      })
+      .filter(Boolean);
+
+    return () =>
+      channels.forEach((ch) => ch && supabaseClient.removeChannel(ch));
+  }, [refreshCounts]);
+
+  useEffect(() => {
+    if (activeTab !== "flightData") return;
+    const loadFlightData = async () => {
+      try {
+        await fetchFlightData({ mode: "full" });
+      } catch (err: any) {
+        toast.error("Алдаа: " + err.message);
+      }
+    };
+
+    void loadFlightData();
+    const unsubscribe = subscribeToFlightData({ mode: "full" });
+    return unsubscribe;
+  }, [activeTab, fetchFlightData, subscribeToFlightData]);
+
+  // Flight data stuff (unchanged)
+  const filteredFlightData = useMemo(() => {
+    if (!searchTerm) return flightData;
+    const term = searchTerm.toLowerCase();
+    return flightData.filter((row) =>
+      Object.values(row).some(
+        (val) => val && String(val).toLowerCase().includes(term),
+      ),
+    );
+  }, [flightData, searchTerm]);
+
+  const exportToCSV = () => {
+    // your export logic
+  };
+
+  const toggleLanguage = () => {
+    i18n.changeLanguage(i18n.language === "mn" ? "en" : "mn");
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Manager Dashboard
-            </h1>
-            <p className="mt-2 text-gray-600">
-              Manage your tours, orders, passengers
-              efficiently
-            </p>
+    <>
+      <Toaster position="top-right" />
+      <div className="mono-shell flex">
+        {/* SIDEBAR */}
+        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-5 border-b border-gray-200">
+            <div className="flex items-center justify-between gap-2">
+              <h1 className="mono-title text-xl">{t("managerPanel")}</h1>
+              <button
+                onClick={toggleLanguage}
+                className="mono-button mono-button--ghost mono-button--sm"
+                title="Toggle language"
+              >
+                {i18n.language === "mn" ? "EN" : "MN"}
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mt-1">{currentUser?.email}</p>
           </div>
-        </div>
 
-        <div className="mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex justify-between">
-              {[
-                "orders",
-                "passengers",
-                "passengerRequests",
-                "addTour",
-                "addPassenger",
-                "blacklist",
-                "pendingLeads",
-              ].map((tab) => (
+          <nav className="flex-1 overflow-y-auto py-4">
+            {TAB_CONFIG.map(({ key, labelKey, icon: Icon, countKey }) => {
+              const count = countKey
+                ? counts[countKey as keyof typeof counts]
+                : undefined;
+              const isActive = activeTab === key;
+
+              return (
                 <button
-                  key={tab}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 ${
-                    activeTab === tab
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  key={key}
+                  onClick={() => setActiveTab(key as TabType)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 mx-3 rounded-lg text-left border transition-colors ${
+                    isActive
+                      ? "bg-gray-100 text-gray-900 border-gray-200 font-semibold"
+                      : "border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   }`}
-                  onClick={() =>
-                    setActiveTab(
-                      tab as
-                        | "orders"
-                        | "passengers"
-                        | "passengerRequests"
-                        | "addTour"
-                        | "addPassenger"
-                        | "blacklist"
-                        | "pendingLeads"
-                    )
-                  }
                 >
-                  <div className="flex items-center space-x-2">
-                    <span>
-                      {tab === "addPassenger"
-                        ? "Add Passenger"
-                        : tab === "passengerRequests"
-                        ? "Passenger Requests"
-                        : tab === "addTour"
-                        ? "Add Tour"
-                        : tab === "blacklist"
-                        ? "Blacklist"
-                        : tab === "pendingLeads"
-                        ? "Leads"
-                        : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  <Icon className="w-5 h-5" />
+                  <span className="flex-1">{t(labelKey)}</span>
+                  {count !== undefined && count > 0 && (
+                    <span className="mono-badge mono-badge--danger">
+                      {count}
                     </span>
-                    {tab !== "addTour" &&
-                      tab !== "addPassenger" &&
-                      tab !== "customTables" && (
-                        <span className="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs font-semibold ml-2">
-                          {tab === "orders"
-                            ? orders.length
-                            : tab === "passengers"
-                            ? initialPassengers.length
-                            : tab === "blacklist"
-                            ? initialPassengers.filter((p) => p.is_blacklisted)
-                                .length
-                            : tab === "passengerRequests"
-                            ? passengerRequestsCount
-                            : tab === "pendingLeads"
-                            ? pendingLeadsCount
-                            : 0}
-                        </span>
-                      )}
-                  </div>
+                  )}
                 </button>
-              ))}
-            </nav>
-          </div>
+              );
+            })}
+          </nav>
         </div>
 
-        {activeTab === "orders" && (
-          <OrdersTab
-            orders={orders}
-            setOrders={setOrders}
-            currentUser={currentUser}
-          />
-        )}
-        {activeTab === "passengers" && (
-          <PassengersTab
-            passengers={initialPassengers}
-            setPassengers={setPassengers}
-            currentUser={currentUser}
-            showNotification={showNotification}
-          />
-        )}
-        {activeTab === "passengerRequests" && (
-          <PassengerRequests showNotification={showNotification} />
-        )}
-        {activeTab === "addTour" && (
-          <AddTourTab
-            tours={tours}
-            setTours={setTours}
-            currentUser={currentUser}
-            showNotification={showNotification}
-          />
-        )}
-        {activeTab === "addPassenger" && (
-          <AddPassengerTab
-            tours={tours}
-            orders={orders}
-            setOrders={setOrders}
-            selectedTour={selectedTour}
-            setSelectedTour={setSelectedTour}
-            departureDate={departureDate}
-            setDepartureDate={setDepartureDate}
-            errors={errors}
-            setErrors={setErrors}
-            showNotification={showNotification}
-            currentUser={currentUser}
-          />
-        )}
-        {activeTab === "blacklist" && (
-          <BlackListTab
-            passengers={initialPassengers}
-            setPassengers={setPassengers}
-            currentUser={currentUser}
-            showNotification={showNotification}
-          />
-        )}
-        {activeTab === "pendingLeads" && (
-          <PassengersInLead
-            currentUser={currentUser}
-            showNotification={showNotification}
-          />
-        )}
+        {/* MAIN CONTENT */}
+        <div className="flex-1 overflow-auto">
+          <div
+            className={`w-full py-8 ${
+              activeTab === "orders" ||
+              activeTab === "passengers" ||
+              activeTab === "ProviderInterface"
+                ? "px-0"
+                : "px-4 sm:px-6 lg:px-8"
+            }`}
+          >
+            {activeTab === "dashboard" && (
+              <div className="text-center py-32">
+                <h1 className="text-6xl font-bold text-gray-800 mb-4">
+                   {t("welcomeManager", { name: currentUser?.name || "Manager" })}
+                 </h1>
+                 <p className="text-xl text-gray-600">
+                   {t("selectTabFromSidebar")}
+                 </p>
+              </div>
+            )}
+
+            {activeTab === "orders" && (
+              <OrdersTab
+                orders={orders}
+                setOrders={setOrders}
+                currentUser={currentUser}
+              />
+            )}
+            {activeTab === "passengers" && (
+              <PassengersTab
+                passengers={initialPassengers}
+                setPassengers={setPassengers}
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+            {activeTab === "addTour" && (
+              <AddTourTab
+                tours={tours}
+                setTours={setTours}
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+            {activeTab === "tours" && (
+              <ToursTable
+                tours={tours}
+                onSave={async (tourId, data) => {
+                  const { error } = await supabaseClient
+                    .from("tours")
+                    .update({
+                      title: data.title,
+                      departure_date: data.departure_date,
+                      seats: parseInt(data.seats || "0"),
+                      available_seats: parseInt(
+                        data.available_seats || data.seats || "0",
+                      ),
+                      base_price: parseFloat(data.base_price || "0"),
+                      status: data.status,
+                      image_key: data.image_key,
+                      hotels: data.hotels
+                        ?.split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                      services: data.services
+                        ?.split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                      description: data.description,
+                      show_to_user: data.show_to_user,
+                      show_in_provider: data.show_in_provider,
+                    })
+                    .eq("id", tourId);
+
+                  if (!error) {
+                    setTours((prev: Tour[]) =>
+                      prev.map((t) =>
+                        t.id === tourId
+                          ? {
+                              ...t,
+                              ...data,
+                              seats: parseInt(data.seats || "0"),
+                              available_seats: parseInt(
+                                data.available_seats || data.seats || "0",
+                              ),
+                              base_price: parseFloat(data.base_price || "0"),
+                              hotels:
+                                data.hotels
+                                  ?.split(",")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean) || [],
+                              services:
+                                data.services
+                                  ?.split(",")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean) || [],
+                              show_to_user: data.show_to_user,
+                              show_in_provider: data.show_in_provider,
+                            }
+                          : t,
+                      ),
+                    );
+                    toast.success("Tour updated successfully!");
+                  } else {
+                    toast.error("Failed to update tour");
+                    console.error(error);
+                  }
+                }}
+                onDelete={async (tourId) => {
+                  const { error } = await supabaseClient
+                    .from("tours")
+                    .delete()
+                    .eq("id", tourId);
+                  if (!error) {
+                    setTours((prev: Tour[]) =>
+                      prev.filter((t) => t.id !== tourId),
+                    );
+                    toast.success("Tour deleted");
+                  } else {
+                    toast.error("Delete failed");
+                  }
+                }}
+                onStatusChange={async (id, status) => {
+                  const { error } = await supabaseClient
+                    .from("tours")
+                    .update({ status })
+                    .eq("id", id);
+
+                  if (!error) {
+                    setTours((prev: Tour[]) =>
+                      prev.map((t) => (t.id === id ? { ...t, status } : t)),
+                    );
+                  }
+                }}
+              />
+            )}
+
+            {activeTab === "addPassenger" && (
+              <AddPassengerTab
+                orders={orders}
+                setOrders={setOrders}
+                selectedTour={selectedTour}
+                setSelectedTour={setSelectedTour}
+                departureDate={departureDate}
+                setDepartureDate={setDepartureDate}
+                errors={errors}
+                setErrors={setErrors}
+                showNotification={showNotification}
+                currentUser={currentUser}
+                prefilledLead={prefilledLead}
+              />
+            )}
+
+            {activeTab === "passengerRequests" && (
+              <PassengerRequests showNotification={showNotification} />
+            )}
+
+            {activeTab === "interestedLeads" && (
+              <InterestedLeadsTab
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+
+            {activeTab === "pendingLeads" && (
+              <PassengersInLead
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+            {activeTab === "blacklist" && (
+              <BlackListTab
+                passengers={initialPassengers}
+                setPassengers={setPassengers}
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+
+            {activeTab === "flightData" && (
+              <div className="space-y-4">
+                {isLoading ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="w-12 h-12 animate-spin text-emerald-600 mx-auto mb-4" />
+                    <p>{t("loadingFlightData")}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="mono-title text-lg">{t("flightData")}</h3>
+                      <button
+                        onClick={exportToCSV}
+                        className="mono-button mono-button--ghost flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" /> {t("exportToCSV")}
+                      </button>
+                    </div>
+                    <DataTable data={filteredFlightData} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "ProviderInterface" && (
+              <ProviderInterface
+                tours={tours}
+                setTours={setTours}
+                currentUser={currentUser}
+              />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

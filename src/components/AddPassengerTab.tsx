@@ -1,25 +1,34 @@
-import React from "react";
-import { useBooking } from "../hooks/useBooking";
-import TourSelection from "../Parts/TourSelection";
-import BookingSummary from "../Parts/BookingSummary";
-import { BookingActions } from "../addPassengerComponents/BookingActions";
+import React, { useEffect, useRef, useState } from "react";
+
+import type {
+  ValidationError,
+  Order,
+  User as UserType,
+  Tour,
+  Passenger,
+} from "../types/type";
 import { downloadTemplate } from "../addPassengerComponents/downloadTemplate";
-import Notification from "../Parts/Notification";
+import { BookingActions } from "../addPassengerComponents/BookingActions";
+import LeadPassengerForm from "../components/LeadPassengerForm";
+import BookingSummary from "../Parts/BookingSummary";
+import TourList from "../components/tours/TourList";
+import TourSelection from "../Parts/TourSelection";
 import ProgressSteps from "../Parts/ProgressSteps";
+import { useBooking } from "../hooks/useBooking";
+import Notification from "../Parts/Notification";
 import ErrorSummary from "../Parts/ErrorSummary";
 import { PassengerList } from "./PassengerList";
 import { MobileFooter } from "./MobileFooter";
-import LeadPassengerForm from "../components/LeadPassengerForm";
-import type {
-  Tour,
-  ValidationError,
-  LeadPassenger,
-  Order,
-  User as UserType,
-} from "../types/type";
+import { useTours } from "../hooks/useTours";
+import { toast } from "react-hot-toast";
+
+const sanitizeDate = (date: string | null | undefined): string => {
+  if (!date) return "";
+  const trimmed = date.trim();
+  return trimmed === "" ? "" : trimmed;
+};
 
 interface AddPassengerTabProps {
-  tours: Tour[];
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   selectedTour: string;
@@ -30,6 +39,14 @@ interface AddPassengerTabProps {
   setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>;
   currentUser: UserType;
   showNotification: (type: "success" | "error", message: string) => void;
+  prefilledLead?: {
+    leadId: any;
+    name: string;
+    phone: string;
+    passengerCount: number;
+    tourId: string;
+    departureDate: string | null;
+  } | null;
 }
 
 const NATIONALITIES = [
@@ -49,11 +66,26 @@ const NATIONALITIES = [
   "South Africa",
 ];
 
-const ROOM_TYPES = ["Single", "King", "Double", "Twin", "Family"];
+const ROOM_TYPES = [
+  "Single",
+  "King",
+  "Double",
+  "Twin",
+  "Family",
+  "Twin + Extra Bed",
+  "King + Extra Bed",
+];
 
 export default function AddPassengerTab(props: AddPassengerTabProps) {
+  const { currentUser, prefilledLead } = props;
+  const userRole = currentUser.role || "user";
+  const [hasAppliedLead, setHasAppliedLead] = useState(false);
+
+  const { tours, loading: toursLoading, refreshTours } = useTours({ userRole });
+
   const {
     bookingPassengers,
+    setBookingPassengers,
     activeStep,
     setActiveStep,
     loading,
@@ -77,22 +109,128 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
     handleDownloadCSV,
     handleUploadCSV,
     handleNextStep,
-    MAX_PASSENGERS,
     notification,
     setNotification,
     leadPassengerData,
     setLeadPassengerData,
     confirmLeadPassenger,
-    paymentMethod, // From useBooking
-    setPaymentMethod, // From useBooking
-  } = useBooking(props);
+    paymentMethod,
+    setPaymentMethod,
+  } = useBooking({ ...props, tours });
 
-  const filteredTours = isPowerUser
-    ? props.tours
-    : props.tours.map(({ available_seats, ...rest }) => ({
-        ...rest,
-        available_seats: undefined,
-      }));
+  const hasAppliedLeadRef = useRef(false);
+
+  useEffect(() => {
+    if (!prefilledLead || hasAppliedLeadRef.current) return;
+
+    (window as any).__currentLeadId = prefilledLead.leadId;
+
+    // Wait for tours to be loaded AND not empty
+    if (toursLoading || tours.length === 0) {
+      return; // Will re-run when tours finish loading
+    }
+    hasAppliedLeadRef.current = true;
+    setLeadPassengerData(null);
+    setActiveStep(3);
+
+    const applyLead = async () => {
+      const { name, phone, passengerCount, tourId, departureDate } =
+        prefilledLead;
+
+      // BULLETPROOF TOUR MATCHING
+      let matchedTour = tours.find((t) => t.id === tourId); // UUID first
+
+      if (!matchedTour) {
+        const normalize = (s: string) =>
+          s?.toLowerCase().trim().replace(/\s+/g, " ");
+        const search = normalize(tourId);
+        matchedTour = tours.find((t) => {
+          return (
+            normalize(t.title) === search ||
+            normalize(t.name) === search ||
+            normalize(t.title).includes(search) ||
+            search.includes(normalize(t.title))
+          );
+        });
+      }
+
+      if (!matchedTour) {
+        toast.error(`Tour not found: "${tourId}". Please select manually.`);
+        return;
+      }
+
+      props.setSelectedTour(matchedTour.title);
+      if (departureDate) props.setDepartureDate(departureDate.trim());
+
+      const [first, ...last] = name.trim().split(/\s+/);
+      const firstName = first || "";
+      const lastName = last.join(" ") || "";
+
+      const idx = await addMultiplePassengers(1);
+      if (idx === -1) return;
+
+      updatePassenger(idx, "first_name", firstName);
+      updatePassenger(idx, "last_name", lastName);
+      updatePassenger(idx, "phone", phone || "");
+      updatePassenger(idx, "name", name.trim());
+      updatePassenger(idx, "nationality", "Mongolia");
+      updatePassenger(idx, "roomType", "Twin");
+
+      if (passengerCount > 1) {
+        updatePassenger(
+          idx,
+          "notes",
+          `From Lead → Group of ${passengerCount} passengers`
+        );
+      }
+
+      toast.success(
+        `${name} (${passengerCount} pax) loaded — hotels & age ready!`,
+        { duration: 8000 }
+      );
+    };
+
+    applyLead();
+  }, [prefilledLead, tours, toursLoading]); // This combo will re-run when tours load
+
+  // AUTO-FETCH TOUR DATA WHEN TOUR IS SET FROM LEAD
+  useEffect(() => {
+    if (!props.selectedTour || selectedTourData) return;
+
+    // Find the tour by title (since tourId from lead is actually the title)
+    const foundTour = tours.find(
+      (t) =>
+        t.title === props.selectedTour ||
+        t.name === props.selectedTour ||
+        t.tour_number === props.selectedTour
+    );
+
+    if (foundTour) {
+      // Force refresh selectedTourData by setting the actual title
+      props.setSelectedTour(foundTour.title);
+
+      // Trigger hotel loading & age calc
+      setTimeout(() => {}, 100);
+    }
+  }, [props.selectedTour, tours, selectedTourData]);
+
+  useEffect(() => {
+    refreshTours();
+  }, [refreshTours]);
+
+  if (toursLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-gray-600">Loading tours...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasStartedBooking =
+    bookingPassengers.length > 0 || props.selectedTour || props.departureDate;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -100,47 +238,70 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
         notification={notification}
         setNotification={setNotification}
       />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold text-gray-900">Travel Booking</h1>
+
+      <div className="max-w-[105rem] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <h1 className="text-3xl font-bold text-gray-900">Travel Booking</h1>
             {bookingPassengers.length > 0 && (
-              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+              <div className="bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-semibold">
                 {bookingPassengers.length} passenger
-                {bookingPassengers.length !== 1 ? "s" : ""} • $
+                {bookingPassengers.length > 1 && "s"} • $
                 {totalPrice.toLocaleString()}
               </div>
             )}
           </div>
-          {(bookingPassengers.length > 0 ||
-            props.selectedTour ||
-            props.departureDate) && (
+
+          {hasStartedBooking && (
             <button
               onClick={resetBookingForm}
-              className="px-4 py-2 text-green-600 border border-green-300 rounded-lg hover:bg-green-50 transition-colors"
+              className="px-5 py-2.5 text-sm font-medium text-green-700 bg-green-50 border border-green-300 rounded-lg hover:bg-green-100 transition-colors"
             >
-              Complete Registration
+              ✕ Start New Booking
             </button>
           )}
         </div>
       </div>
-      <div className="max-w-9xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+
+      <div className="max-w-[105rem] mx-auto px-4 sm:px-6 lg:px-8">
         <ProgressSteps activeStep={activeStep} />
         <ErrorSummary errors={props.errors} />
+
+        {/* STEP 1: Tour Selection */}
         {activeStep === 1 && (
-          <TourSelection
-            tours={filteredTours}
-            selectedTour={props.selectedTour}
-            setSelectedTour={props.setSelectedTour}
-            departure_date={props.departureDate}
-            setDepartureDate={props.setDepartureDate}
-            errors={props.errors}
-            setActiveStep={setActiveStep}
-            userRole={props.currentUser.role || "user"}
-            showAvailableSeats={true}
-          />
+          <>
+            <TourSelection
+              tours={tours}
+              selectedTour={props.selectedTour}
+              setSelectedTour={props.setSelectedTour}
+              departure_date={props.departureDate}
+              setDepartureDate={props.setDepartureDate}
+              errors={props.errors}
+              setActiveStep={setActiveStep}
+              userRole={userRole}
+              showAvailableSeats={isPowerUser}
+            />
+
+            <div className="mt-10">
+              <TourList
+                tours={tours}
+                editingId={null}
+                editForm={{}}
+                setEditForm={() => {}}
+                onStartEdit={() => {}}
+                onCancelEdit={() => {}}
+                showDeleteConfirm={null}
+                setShowDeleteConfirm={() => {}}
+                onRefresh={refreshTours}
+                onSaveEdit={async () => {}}
+                onDelete={async () => {}}
+                onStatusChange={async () => {}}
+              />
+            </div>
+          </>
         )}
-        {activeStep === 2 && (
+
+        {activeStep === 2 && !prefilledLead && (
           <LeadPassengerForm
             selectedTour={props.selectedTour}
             departureDate={props.departureDate}
@@ -153,15 +314,17 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
             confirmLeadPassenger={confirmLeadPassenger}
           />
         )}
+
+        {/* STEP 3: Passenger List */}
         {activeStep === 3 && (
           <>
-            <div className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl shadow-sm border border-slate-200 mb-6">
-              <div className="px-6 py-4 border-b border-slate-200">
+            <div className="sticky top-0 z-10 bg-white rounded-xl shadow-lg border border-slate-200 mb-8 overflow-hidden">
+              <div className="bg-gradient-to-r from-slate-50 to-blue-50 px-6 py-5 border-b border-slate-200">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
+                  <div className="flex items-center gap-4">
+                    <div className="p-2.5 bg-blue-600 rounded-lg">
                       <svg
-                        className="h-5 w-5 text-white"
+                        className="w-6 h-6 text-white"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -175,73 +338,25 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">
+                      <h3 className="text-xl font-bold text-slate-900">
                         Booking Details
                       </h3>
-                      <p className="text-sm text-slate-600 flex items-center space-x-4">
-                        <span className="flex items-center">
-                          <svg
-                            className="w-4 h-4 mr-1"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-8.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
-                            />
-                          </svg>
-                          {bookingPassengers.length}{" "}
-                          {bookingPassengers.length === 1
-                            ? "passenger"
-                            : "passengers"}
+                      <p className="text-sm text-slate-600 flex flex-wrap items-center gap-4 mt-1">
+                        <span>
+                          {bookingPassengers.length} passenger
+                          {bookingPassengers.length > 1 && "s"}
                         </span>
-                        <span className="flex items-center">
-                          <svg
-                            className="w-4 h-4 mr-1"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
-                            />
-                          </svg>
+                        <span className="font-semibold">
                           ${totalPrice.toLocaleString()}
                         </span>
                         {isPowerUser ? (
-                          <span className="flex items-center font-medium text-green-600">
-                            <svg
-                              className="w-4 h-4 mr-1"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                              />
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                              />
-                            </svg>
-                            💪 {props.currentUser.role?.toUpperCase()} MODE:
-                            Unlimited seats
+                          <span className="text-green-600 font-medium">
+                            ⚡ Power User: Unlimited seats
                           </span>
                         ) : (
                           remainingSeats !== undefined && (
                             <span
-                              className={`flex items-center font-medium ${
+                              className={`font-medium ${
                                 remainingSeats > 5
                                   ? "text-green-600"
                                   : remainingSeats > 0
@@ -249,26 +364,8 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                                   : "text-red-600"
                               }`}
                             >
-                              <svg
-                                className="w-4 h-4 mr-1"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                                />
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                                />
-                              </svg>
-                              {remainingSeats} seats left
+                              {remainingSeats} seat{remainingSeats !== 1 && "s"}{" "}
+                              left
                             </span>
                           )
                         )}
@@ -277,7 +374,8 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                   </div>
                 </div>
               </div>
-              <div className="px-6 py-4 bg-white rounded-b-xl">
+
+              <div className="px-6 py-4 bg-white">
                 <BookingActions
                   bookingPassengers={bookingPassengers}
                   selectedTour={props.selectedTour}
@@ -291,11 +389,12 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                   handleUploadCSV={handleUploadCSV}
                   handleDownloadCSV={handleDownloadCSV}
                   newPassengerRef={newPassengerRef}
-                  maxPassengers={MAX_PASSENGERS}
                   canAddPassenger={canAdd}
+                  maxPassengers={0}
                 />
               </div>
             </div>
+
             <PassengerList
               passengers={bookingPassengers}
               selectedTourData={selectedTourData}
@@ -309,57 +408,31 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
               nationalities={NATIONALITIES}
               roomTypes={ROOM_TYPES}
               hotels={availableHotels}
-              setNotification={(notification) =>
-                props.showNotification(
-                  notification.type as "success" | "error",
-                  notification.message
-                )
+              setNotification={(n) =>
+                props.showNotification(n.type as "success" | "error", n.message)
               }
               addMainPassenger={() => addMultiplePassengers(1)}
+              setPassengers={setBookingPassengers}
             />
-            <div className="flex gap-2 mt-8">
+
+            <div className="flex gap-4 mt-10">
               <button
                 onClick={() => setActiveStep(2)}
-                className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
               >
-                <svg
-                  className="w-4 h-4 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-                Back
+                ← Back
               </button>
               <button
                 onClick={handleNextStep}
                 disabled={bookingPassengers.length === 0}
-                className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-lg transition shadow-md hover:shadow-lg"
               >
-                Review Booking
-                <svg
-                  className="w-4 h-4 ml-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
+                Review Booking →
               </button>
             </div>
           </>
         )}
+
         {activeStep === 4 && (
           <BookingSummary
             selectedTour={props.selectedTour}
@@ -380,23 +453,27 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
           />
         )}
       </div>
+
       <MobileFooter
         activeStep={activeStep}
         bookingPassengers={bookingPassengers}
         setActiveStep={setActiveStep}
         totalPrice={totalPrice}
         canAdd={canAdd}
-        maxPassengers={MAX_PASSENGERS}
         addPassenger={() => addMultiplePassengers(1)}
         clearAllPassengers={clearAllPassengers}
         handleNextStep={handleNextStep}
         newPassengerRef={newPassengerRef}
+        maxPassengers={0}
       />
+
       {loading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 flex items-center">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-            <span className="text-gray-900">Processing your request...</span>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl px-8 py-6 flex items-center gap-4 shadow-2xl">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <span className="text-lg font-medium text-gray-800">
+              Processing your request...
+            </span>
           </div>
         </div>
       )}

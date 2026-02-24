@@ -86,18 +86,11 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
               "error",
               `Failed to clean up invalid tables: ${deleteError.message}`
             );
-          } else {
-            console.log("Cleaned up invalid tables");
-            showNotification(
-              "success",
-              "Cleaned up invalid tables successfully."
-            );
           }
         }
 
         setTables(validTables);
         if (validTables.length === 0) {
-          console.log("No valid tables found for user:", currentUser.id);
         }
       } catch (error: any) {
         console.error("Fetch tables error:", error);
@@ -351,9 +344,6 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
     setIsLoading(true);
     try {
-      console.log(
-        `Loading table: ${table.name} (physical: ${table.physical_table_name})`
-      );
       const { data: columnData, error: colError } = await supabase
         .from("custom_columns")
         .select("name, type")
@@ -579,7 +569,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[105rem] mx-auto">
         {viewMode === "list" ? (
           <div className="bg-white shadow-lg rounded-xl p-6">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">
@@ -739,7 +729,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-max table-auto border-collapse">
+              <table className="w-full min-w-max mono-table table-auto border-collapse">
                 <thead className="bg-gray-50">
                   <tr>
                     {columns.map((col) => (

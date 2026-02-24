@@ -74,6 +74,11 @@ export const createNewPassenger = (
     has_sub_passengers: false,
     main_passenger_id: "",
     sub_passenger_count: 0,
+    booking_number: null,
+    orders: null,
+    note: "",
+    is_request: undefined,
+    pax_type: "Adult",
   };
 };
 

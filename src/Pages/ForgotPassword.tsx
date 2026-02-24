@@ -25,11 +25,6 @@ export default function ForgotPassword() {
     try {
       const redirectUrl =
         import.meta.env.VITE_BASE_URL || window.location.origin;
-      console.log("Environment:", {
-        VITE_BASE_URL: import.meta.env.VITE_BASE_URL,
-        windowLocationOrigin: window.location.origin,
-        redirectUrl: `${redirectUrl}/reset-password`,
-      });
 
       const response = await Promise.race([
         supabase.auth.resetPasswordForEmail(formState.email, {

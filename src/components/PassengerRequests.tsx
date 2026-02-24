@@ -30,6 +30,7 @@ interface PassengerWithUser extends Passenger {
     createdBy: string;
     user_id: string;
     tours: Tour | null;
+    hotel: string | null;
   } | null;
 }
 
@@ -93,16 +94,7 @@ export default function PassengerRequests({
       const userId = userData?.user?.id || "unknown";
       let userRole = userData?.user?.role || "authenticated";
 
-      console.log("fetchPassengerRequests: Starting fetch for user", {
-        userId,
-        userRole,
-      });
-
       if (userError) {
-        console.error("fetchPassengerRequests: Failed to get user", {
-          userError,
-        });
-        showNotification("error", "Failed to authenticate user");
         setErrors([{ message: "Failed to authenticate user" }]);
         return;
       }
@@ -122,9 +114,6 @@ export default function PassengerRequests({
           );
         } else if (customUser?.role) {
           userRole = customUser.role;
-          console.log("fetchPassengerRequests: Using custom user role", {
-            userRole,
-          });
         }
       }
 
@@ -163,17 +152,8 @@ export default function PassengerRequests({
       }
 
       if (!rawData || rawData.length === 0) {
-        console.log(
-          "fetchPassengerRequests: No passenger requests found in table"
-        );
         setPassengers([]);
-      } else {
-        console.log("fetchPassengerRequests: Raw passenger_requests data", {
-          count: rawData.length,
-          data: rawData,
-        });
       }
-
       const { data, error } = await supabase
         .from("passenger_requests")
         .select(
@@ -235,22 +215,11 @@ export default function PassengerRequests({
           orders: null,
         })) as PassengerWithUser[];
         setPassengers(passengerData);
-        console.log("fetchPassengerRequests: Fallback to raw data", {
-          count: passengerData.length,
-        });
         return;
       }
 
       if (!data || data.length === 0) {
-        console.log(
-          "fetchPassengerRequests: No passenger requests found with joins"
-        );
         setPassengers([]);
-      } else {
-        console.log("fetchPassengerRequests: Raw data with joins", {
-          count: data.length,
-          data,
-        });
       }
 
       const passengerData = data.map((p: any) => ({
@@ -298,14 +267,7 @@ export default function PassengerRequests({
 
       setPassengers(passengerData);
       setErrors([]);
-      console.log("fetchPassengerRequests: Processed passenger requests", {
-        count: passengerData.length,
-      });
     } catch (error) {
-      console.error("fetchPassengerRequests: Unexpected error", {
-        error,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
       showNotification("error", "Unexpected error fetching passenger requests");
       setErrors([{ message: "Unexpected error fetching passenger requests" }]);
     } finally {
@@ -316,7 +278,6 @@ export default function PassengerRequests({
   useEffect(() => {
     fetchPassengerRequests();
 
-    console.log("Setting up real-time subscription for passenger_requests...");
     const channel = supabase.channel("passenger_requests_channel");
     subscriptionRef.current = channel;
 
@@ -330,16 +291,10 @@ export default function PassengerRequests({
           filter: "status=in.(pending,rejected)",
         },
         async (payload) => {
-          console.log("Real-time passenger request update:", payload);
           await fetchPassengerRequests();
         }
       )
       .subscribe((status, error) => {
-        console.log(
-          "Passenger requests subscription status:",
-          status,
-          error ? `Error: ${error.message}` : ""
-        );
         if (error) {
           showNotification("error", `Subscription error: ${error.message}`);
           setErrors([{ message: `Subscription error: ${error.message}` }]);
@@ -347,7 +302,6 @@ export default function PassengerRequests({
       });
 
     return () => {
-      console.log("Unsubscribing from passenger_requests_channel");
       if (subscriptionRef.current) {
         supabase.removeChannel(subscriptionRef.current);
         subscriptionRef.current = null;
@@ -358,7 +312,6 @@ export default function PassengerRequests({
   const updateOrderStatus = async (orderId: string, currentUserId: string) => {
     if (!orderId) {
       showNotification("error", "Invalid order ID");
-      console.error("updateOrderStatus: Invalid order ID", { orderId });
       return;
     }
 
@@ -376,17 +329,12 @@ export default function PassengerRequests({
       showNotification("error", `Order ${orderId} not found`);
       return;
     }
-    console.log("updateOrderStatus: Order exists", { order: orderCheck });
 
     const { data: passengers, error: passengerError } = await supabase
       .from("passenger_requests")
       .select("status")
       .eq("order_id", orderId);
     if (passengerError) {
-      console.error("updateOrderStatus: Failed to fetch passengers", {
-        passengerError,
-        orderId,
-      });
       showNotification(
         "error",
         `Failed to fetch passengers: ${passengerError.message}`
@@ -404,7 +352,6 @@ export default function PassengerRequests({
     }
 
     const statuses = passengers.map((p) => p.status);
-    console.log("updateOrderStatus: Passenger statuses", { orderId, statuses });
 
     const newStatus: OrderStatus = statuses.every((s) => s === "active")
       ? "approved"
@@ -413,17 +360,8 @@ export default function PassengerRequests({
       : statuses.every((s) => s === "rejected")
       ? "rejected"
       : "pending";
-    console.log("updateOrderStatus: Calculated newStatus", {
-      orderId,
-      newStatus,
-    });
 
     if (!VALID_ORDER_STATUSES.includes(newStatus)) {
-      console.error("updateOrderStatus: Invalid status value", {
-        orderId,
-        newStatus,
-        validStatuses: VALID_ORDER_STATUSES,
-      });
       showNotification(
         "error",
         `Invalid order status: ${newStatus}. Allowed statuses: ${VALID_ORDER_STATUSES.join(
@@ -438,10 +376,6 @@ export default function PassengerRequests({
       updated_at: new Date().toISOString(),
       edited_by: currentUserId,
     };
-    console.log("updateOrderStatus: Attempting to update order", {
-      orderId,
-      updateData,
-    });
 
     const { data, error: updateError } = await supabase
       .from("orders")
@@ -472,11 +406,6 @@ export default function PassengerRequests({
       return;
     }
 
-    console.log("updateOrderStatus: Order updated successfully", {
-      orderId,
-      newStatus,
-      data,
-    });
     showNotification("success", `Order ${orderId} updated to ${newStatus}`);
     return data;
   };
@@ -489,9 +418,6 @@ export default function PassengerRequests({
         await supabase.auth.getUser();
       const currentUserId = userData?.user?.id;
       if (userError || !currentUserId) {
-        console.error("approvePassenger: Failed to get current user", {
-          userError,
-        });
         showNotification("error", "Failed to authenticate user");
         return;
       }
@@ -499,7 +425,6 @@ export default function PassengerRequests({
       const passenger = passengers.find((p) => p.id === passengerId);
       if (!passenger) {
         showNotification("error", "Passenger not found");
-        console.log("approvePassenger: Passenger not found", { passengerId });
         return;
       }
 
@@ -512,9 +437,6 @@ export default function PassengerRequests({
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("approvePassenger: Failed to fetch tour", {
-              tourError,
-            });
             showNotification(
               "error",
               `Failed to fetch tour: ${tourError.message}`
@@ -529,10 +451,6 @@ export default function PassengerRequests({
               "error",
               "Cannot approve passenger: No seats available"
             );
-            console.log("approvePassenger: No seats available", {
-              tourId,
-              available_seats: tourData.available_seats,
-            });
             return;
           }
         }
@@ -579,23 +497,15 @@ export default function PassengerRequests({
         passenger_number: "",
         booking_number: null,
         pax_type: "Adult",
+        orders: null,
+        note: "",
+        is_request: undefined,
       };
-
-      console.log("approvePassenger: Attempting to insert into passengers", {
-        passengerId,
-        cleanedPassenger,
-      });
 
       const { error: insertError } = await supabase
         .from("passengers")
         .insert(cleanedPassenger);
       if (insertError) {
-        console.error("approvePassenger: Failed to insert into passengers", {
-          insertError,
-          message: insertError.message,
-          details: insertError.details,
-          code: insertError.code,
-        });
         showNotification(
           "error",
           `Failed to approve passenger: ${insertError.message}`
@@ -608,12 +518,6 @@ export default function PassengerRequests({
         .delete()
         .eq("id", passengerId);
       if (deleteError) {
-        console.error(
-          "approvePassenger: Failed to delete from passenger_requests",
-          {
-            deleteError,
-          }
-        );
         showNotification(
           "error",
           `Failed to remove passenger from requests: ${deleteError.message}`
@@ -630,9 +534,6 @@ export default function PassengerRequests({
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("approvePassenger: Failed to fetch tour", {
-              tourError,
-            });
             showNotification(
               "error",
               `Failed to fetch tour: ${tourError.message}`
@@ -651,19 +552,12 @@ export default function PassengerRequests({
               })
               .eq("id", tourId);
             if (updateError) {
-              console.error("approvePassenger: Failed to update tour seats", {
-                updateError,
-              });
               showNotification(
                 "error",
                 `Failed to update seats: ${updateError.message}`
               );
               return;
             }
-            console.log("approvePassenger: Tour seats updated", {
-              tourId,
-              new_seats: tourData.available_seats - 1,
-            });
           }
         }
       }
@@ -676,13 +570,8 @@ export default function PassengerRequests({
         "success",
         "Passenger approved and moved to passengers table"
       );
-      console.log("approvePassenger: Success", { passengerId });
       await fetchPassengerRequests();
     } catch (error) {
-      console.error("approvePassenger: Unexpected error:", {
-        error,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
       showNotification("error", "Failed to approve passenger");
     } finally {
       setLoading(false);
@@ -697,9 +586,6 @@ export default function PassengerRequests({
         await supabase.auth.getUser();
       const currentUserId = userData?.user?.id;
       if (userError || !currentUserId) {
-        console.error("rejectPassenger: Failed to get current user", {
-          userError,
-        });
         showNotification("error", "Failed to authenticate user");
         return;
       }
@@ -707,7 +593,6 @@ export default function PassengerRequests({
       const passenger = passengers.find((p) => p.id === passengerId);
       if (!passenger) {
         showNotification("error", "Passenger not found");
-        console.log("rejectPassenger: Passenger not found", { passengerId });
         return;
       }
 
@@ -720,9 +605,6 @@ export default function PassengerRequests({
             .eq("id", tourId)
             .single();
           if (tourError) {
-            console.error("rejectPassenger: Failed to fetch tour", {
-              tourError,
-            });
             showNotification(
               "error",
               `Failed to fetch tour: ${tourError.message}`
@@ -738,19 +620,12 @@ export default function PassengerRequests({
               })
               .eq("id", tourId);
             if (updateError) {
-              console.error("rejectPassenger: Failed to update tour seats", {
-                updateError,
-              });
               showNotification(
                 "error",
                 `Failed to update seats: ${updateError.message}`
               );
               return;
             }
-            console.log("rejectPassenger: Tour seats updated", {
-              tourId,
-              new_seats: tourData.available_seats + 1,
-            });
           }
         }
       }
@@ -760,12 +635,6 @@ export default function PassengerRequests({
         .update({ status: "rejected", updated_at: new Date().toISOString() })
         .eq("id", passengerId);
       if (error) {
-        console.error("rejectPassenger: Failed to update passenger_requests", {
-          error,
-          message: error.message,
-          details: error.details,
-          code: error.code,
-        });
         showNotification(
           "error",
           `Failed to reject passenger: ${error.message}`
@@ -778,13 +647,8 @@ export default function PassengerRequests({
         currentUserId
       );
       showNotification("success", "Passenger rejected successfully");
-      console.log("rejectPassenger: Success", { passengerId });
       await fetchPassengerRequests();
     } catch (error) {
-      console.error("rejectPassenger: Unexpected error:", {
-        error,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
       showNotification("error", "Failed to reject passenger");
     } finally {
       setLoading(false);

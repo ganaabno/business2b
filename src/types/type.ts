@@ -104,24 +104,26 @@ export interface Service {
 }
 
 export interface Tour {
+  show_to_user: any;
+  image_key?: string | null;
   id: string;
   title: string;
   description: string | null;
   creator_name: string | null;
   tour_number: string | null;
   name: string;
-  dates: string[] | string | null;
-  departure_date: string;
+  dates: string[];
+  departure_date?: string;
   seats: number;
   available_seats?: number;
-  hotels?: string | string[];
+  hotels: string | string[] | null;
   services: { name: string; price: number }[];
   price_base?: number;
   base_price: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
-  status?: "active" | "inactive" | "full" | "hidden" | "pending";
+  status?: "active" | "inactive" | "full" | "hidden" | "pending" | "completed";
   show_in_provider?: boolean | null;
   booking_confirmation: {
     order_id: string;
@@ -136,6 +138,10 @@ export interface Tour {
   } | null;
 }
 
+export interface ValidationError {
+  message: string;
+}
+
 export interface PendingUser {
   id: string;
   email: string;
@@ -147,9 +153,12 @@ export interface PendingUser {
   approved_by?: string;
   approved_at?: string;
   notes?: string;
+  password_hash?: string;
 }
 
 export interface Order {
+  note?: string | null;
+  passenger_requests?: Passenger[];
   id: string;
   user_id: string;
   tour_title?: string;
@@ -173,7 +182,7 @@ export interface Order {
   travel_choice: string;
   status: OrderStatus;
   hotel: string | null;
-  room_number: string | null; // Removed room_allocation, kept room_number
+  room_number: string | null;
   payment_method: string | null;
   created_at: string;
   updated_at: string;
@@ -195,6 +204,7 @@ export interface Order {
   } | null;
   passengers: Passenger[];
   room_allocation: string;
+  travel_group: string | null;
 }
 
 export interface BookingConfirmation {
@@ -250,6 +260,8 @@ export type PaymentMethod =
   | "Loan";
 
 export interface Passenger {
+  note: string;
+  is_request: any;
   id: string;
   order_id?: string | null;
   user_id: string | null;
@@ -258,7 +270,7 @@ export interface Passenger {
   departure_date?: string | null;
   name?: string;
   room_allocation: string;
-  serial_no: string;
+  serial_no?: string;
   last_name: string;
   first_name: string;
   date_of_birth: string | null;
@@ -284,7 +296,8 @@ export interface Passenger {
     | "rejected"
     | "active"
     | "inactive"
-    | "cancelled";
+    | "cancelled"
+    | "completed";
   is_blacklisted: boolean;
   blacklisted_date: string | null;
   notes: string | null;
@@ -294,8 +307,35 @@ export interface Passenger {
   has_sub_passengers: boolean;
   passenger_number: string;
   booking_number: string | null;
-  pax_type?: "Adult" | "Child";
+  pax_type: "Adult" | "Child" | "Infant";
+  itinerary_status?:
+    | "With itinerary"
+    | "No itinerary"
+    | "Hotel + itinerary"
+    | "Hotel"
+    | "Roundway ticket"
+    | null;
+  orders: {
+    hotel: string | null;
+  } | null;
+  has_baby_bed?: boolean;
+  travel_group_name?: string | null;
+  is_traveling_with_others?: boolean;
+  is_related_to_next?: boolean;
+  group_color?: string | null;
 }
+
+export type SupabaseTour = {
+  id: string;
+  title: string;
+  name?: string | null;
+  description?: string | null;
+  seats?: number | null;
+  base_price?: number | null;
+  dates?: string | string[] | null;
+  hotels?: string | string[] | null; // nullable + optional
+  services?: { name: string; price: number }[] | null;
+};
 
 export interface PassengerRequest {
   id: string;
@@ -367,16 +407,20 @@ export interface AdminStats {
   active_tours: number;
 }
 
-export interface TourFormData {
-  title: string;
-  description: string;
-  name: string;
-  departureDate: string;
-  seats: string;
-  hotels: string;
-  services: string;
-  price_base?: string;
-}
+export type TourFormData = {
+  title?: string;
+  description?: string; // string in UI, null never appears
+  departure_date?: string;
+  seats?: string;
+  base_price?: string;
+  hotels?: string; // comma-separated
+  services?: string; // comma-separated
+  image_key?: string;
+  show_to_user?: boolean;
+  show_in_provider?: boolean;
+  status?: "active" | "inactive" | "full" | "completed";
+  available_seats?: string;
+};
 
 export interface PassengerFormData {
   tour_id: string;

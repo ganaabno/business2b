@@ -61,13 +61,6 @@ export function useSendRequestsHandler({
   const [loading, setLoading] = useState(false);
 
   const sendRequest = useCallback(async () => {
-    console.log("SendRequestsHandler: sendRequest called with", {
-      bookingPassengers: bookingPassengers.length,
-      selectedTour,
-      departureDate,
-      paymentMethod,
-      isPowerUser,
-    });
 
     if (!selectedTour || !departureDate) {
       setNotification({
@@ -261,6 +254,9 @@ export function useSendRequestsHandler({
           passenger_count: 0,
           booking_confirmation: null,
           order_id: "",
+          room_allocation: "",
+          passenger_requests: [],
+          travel_group: null
         };
 
         setOrders((prev) => [...prev, newOrder]);

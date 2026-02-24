@@ -131,6 +131,9 @@ export const createNewPassenger = (
     has_sub_passengers: false,
     booking_number: null,
     pax_type: "Adult",
+    orders: null,
+    note: "",
+    is_request: undefined,
   };
 };
 
@@ -198,5 +201,8 @@ export function createNewPassengerLocal(
     has_sub_passengers: false,
     booking_number: null,
     pax_type: "Adult",
+    orders: null,
+    note: "",
+    is_request: undefined,
   };
 }

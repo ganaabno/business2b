@@ -1,4 +1,3 @@
-// src/hooks/useBooking.ts
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { supabase } from "../supabaseClient";
 import type {
@@ -29,6 +28,10 @@ interface UseBookingProps {
   errors: ValidationError[];
   setErrors: React.Dispatch<React.SetStateAction<ValidationError[]>>;
   currentUser: UserType;
+}
+
+declare global {
+  var __bookingPassengers: Passenger[];
 }
 
 export const useBooking = ({
@@ -65,13 +68,15 @@ export const useBooking = ({
     useState<PassengerFormData | null>(null);
   const newPassengerRef = useRef<HTMLDivElement | null>(null);
 
-  // REF TO BREAK LOOP
   const bookingPassengersRef = useRef<Passenger[]>([]);
   useEffect(() => {
     bookingPassengersRef.current = bookingPassengers;
   }, [bookingPassengers]);
 
-  const MAX_PASSENGERS = 20;
+  // CHANGE 1: Allow user to add, but only admin/manager save to passengers
+  const canAddPassengers = ["admin", "manager", "superadmin", "user"].includes(
+    currentUser.role || "user"
+  );
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
     currentUser.role || "user"
   );
@@ -79,7 +84,7 @@ export const useBooking = ({
   const selectedTourData = tours.find((t) => t.title === selectedTour);
   const effectiveDepartureDate = departureDate;
 
-  // === FETCH EXISTING PASSENGERS FROM DB ===
+  // === FETCH EXISTING PASSENGERS ===
   useEffect(() => {
     if (!selectedTourData || !effectiveDepartureDate) {
       setExistingPassengers([]);
@@ -95,7 +100,6 @@ export const useBooking = ({
         .eq("departure_date", effectiveDepartureDate);
 
       if (error) {
-        console.error("Failed to fetch existing passengers:", error);
         return;
       }
 
@@ -105,20 +109,22 @@ export const useBooking = ({
     fetchExisting();
   }, [selectedTourData, effectiveDepartureDate, isPowerUser]);
 
-  // === REASSIGN ROOMS — NO LOOP ===
-  const reassignAllRooms = useCallback(() => {
+  // === REASSIGN ROOMS ===
+  const reassignAllRooms = useCallback(async () => {
     const allPassengers = [
       ...existingPassengers,
       ...bookingPassengersRef.current,
     ];
-    const updated = bookingPassengersRef.current.map((p) => ({
-      ...p,
-      room_allocation: assignRoomAllocation(
-        allPassengers,
-        p,
-        effectiveDepartureDate
-      ),
-    }));
+    const updated = await Promise.all(
+      bookingPassengersRef.current.map(async (p) => ({
+        ...p,
+        room_allocation: await assignRoomAllocation(
+          allPassengers,
+          p,
+          effectiveDepartureDate
+        ).catch(() => "M1"),
+      }))
+    );
 
     const oldRooms = bookingPassengersRef.current.map((p) => p.room_allocation);
     const newRooms = updated.map((p) => p.room_allocation);
@@ -128,7 +134,6 @@ export const useBooking = ({
     }
   }, [existingPassengers, effectiveDepartureDate]);
 
-  // === ONLY RUN WHEN DB CHANGES ===
   useEffect(() => {
     reassignAllRooms();
   }, [existingPassengers, reassignAllRooms]);
@@ -140,121 +145,113 @@ export const useBooking = ({
     }
   }, [paymentMethod, setErrors]);
 
+  // In useBooking.ts — KEEP IT, but make it safe
   const confirmLeadPassenger = useCallback(() => {
     if (!leadPassengerData) {
-      setNotification({ type: "error", message: "No lead passenger data" });
+      setNotification({ type: "error", message: "No lead data" });
       return;
     }
-    addMultiplePassengers(1);
-  }, []);
+
+    // ONLY run if we have leadPassengerData AND no passengers yet
+    if (bookingPassengers.length === 0) {
+      addMultiplePassengers(1);
+    }
+  }, [leadPassengerData, bookingPassengers.length]);
 
   // === UPDATE PASSENGER ===
   const updatePassenger = useCallback(
-    (
+    async (
       index: number,
       field: keyof Passenger | "subPassengerCount" | "hasSubPassengers",
       value: any
     ) => {
       if (index < 0 || index >= bookingPassengers.length) return;
 
-      const updatedPassengers = [...bookingPassengers];
-      const mainPassenger = updatedPassengers[index];
+      let updatedPassengers = [...bookingPassengers];
+      const passenger = updatedPassengers[index];
       let shouldReassign = false;
 
       if (field === "hasSubPassengers") {
-        updatedPassengers[index] = {
-          ...mainPassenger,
-          has_sub_passengers: value,
-        };
+        // Only when checkbox is clicked → create/remove subs
+        updatedPassengers[index] = { ...passenger, has_sub_passengers: value };
         if (!value) {
           updatedPassengers[index].sub_passenger_count = 0;
-          const subs = updatedPassengers.filter(
-            (p) => p.main_passenger_id === mainPassenger.id
-          );
-          updatedPassengers.splice(
-            updatedPassengers.findIndex((p) => p.id === mainPassenger.id) + 1,
-            subs.length
+          updatedPassengers = updatedPassengers.filter(
+            (p) => p.main_passenger_id !== passenger.id
           );
         }
         shouldReassign = true;
-      } else if (field === "subPassengerCount") {
-        const currentSubCount = updatedPassengers.filter(
-          (p) => p.main_passenger_id === mainPassenger.id
-        ).length;
-        const newSubCount = parseInt(value, 10) || 0;
-        updatedPassengers[index] = {
-          ...mainPassenger,
-          sub_passenger_count: newSubCount,
-        };
+      } else if (
+        field === "subPassengerCount" &&
+        passenger.has_sub_passengers
+      ) {
+        // ONLY create subs when checkbox is ON
+        const count = Math.max(0, parseInt(value, 10) || 0);
+        updatedPassengers = updatedPassengers.filter(
+          (p) => p.main_passenger_id !== passenger.id
+        );
+        updatedPassengers[index].sub_passenger_count = count;
 
-        if (newSubCount > currentSubCount) {
-          const toAdd = newSubCount - currentSubCount;
-          const newSubs = Array.from({ length: toAdd }, () =>
-            createNewPassengerLocal(
-              currentUser,
-              updatedPassengers,
-              selectedTourData,
-              availableHotels,
-              {
-                main_passenger_id: mainPassenger.id,
-                roomType: mainPassenger.roomType || "Single",
-                room_allocation: mainPassenger.room_allocation,
-                serial_no: mainPassenger.serial_no,
-                departureDate: effectiveDepartureDate,
-              }
-            )
+        if (count > 0) {
+          const newSubs = await Promise.all(
+            Array.from({ length: count }, async () => {
+              const sub = createNewPassengerLocal(
+                currentUser,
+                updatedPassengers,
+                selectedTourData,
+                availableHotels,
+                {
+                  main_passenger_id: passenger.id,
+                  roomType: passenger.roomType || "Single",
+                  serial_no: passenger.serial_no,
+                  departureDate: effectiveDepartureDate,
+                }
+              );
+              sub.room_allocation = await assignRoomAllocation(
+                [...existingPassengers, ...updatedPassengers, sub],
+                sub,
+                effectiveDepartureDate
+              ).catch(() => "M1");
+              return sub;
+            })
           );
-          updatedPassengers.splice(index + currentSubCount + 1, 0, ...newSubs);
-        } else if (newSubCount < currentSubCount) {
-          updatedPassengers.splice(
-            updatedPassengers.findIndex((p) => p.id === mainPassenger.id) +
-              newSubCount +
-              1,
-            currentSubCount - newSubCount
-          );
+          updatedPassengers.splice(index + 1, 0, ...newSubs);
         }
         shouldReassign = true;
       } else {
-        updatedPassengers[index] = {
-          ...mainPassenger,
+        // Normal field update
+        const updated = {
+          ...passenger,
           [field]: cleanValueForDB(field, value),
+          updated_at: new Date().toISOString(),
         };
-
-        if (field === "date_of_birth" && value) {
-          updatedPassengers[index].age = calculateAge(value);
-        }
-
-        if (field === "additional_services" && selectedTourData) {
-          updatedPassengers[index].price =
-            selectedTourData.base_price +
-            calculateServicePrice(value, selectedTourData);
-        }
-
-        if (field === "first_name" || field === "last_name") {
-          updatedPassengers[index].name = `${
-            updatedPassengers[index].first_name || ""
-          } ${updatedPassengers[index].last_name || ""}`.trim();
-        }
-
         if (field === "roomType") {
           shouldReassign = true;
+          updatedPassengers.forEach((p, i) => {
+            if (p.main_passenger_id === passenger.id) {
+              updatedPassengers[i].roomType = value;
+            }
+          });
         }
+        updatedPassengers[index] = updated;
+      }
 
-        updatedPassengers[index].updated_at = new Date().toISOString();
+      if (shouldReassign) {
+        const all = [...existingPassengers, ...updatedPassengers];
+        const rooms = await Promise.all(
+          updatedPassengers.map((p) =>
+            assignRoomAllocation(all, p, effectiveDepartureDate).catch(
+              () => "M1"
+            )
+          )
+        );
+        updatedPassengers = updatedPassengers.map((p, i) => ({
+          ...p,
+          room_allocation: rooms[i],
+        }));
       }
 
       setBookingPassengers(updatedPassengers);
-
-      if (shouldReassign) {
-        const allPassengers = [...existingPassengers, ...updatedPassengers];
-        const newRooms = updatedPassengers.map((p) =>
-          assignRoomAllocation(allPassengers, p, effectiveDepartureDate)
-        );
-        const oldRooms = updatedPassengers.map((p) => p.room_allocation);
-        if (JSON.stringify(newRooms) !== JSON.stringify(oldRooms)) {
-          reassignAllRooms();
-        }
-      }
     },
     [
       bookingPassengers,
@@ -263,7 +260,44 @@ export const useBooking = ({
       availableHotels,
       effectiveDepartureDate,
       existingPassengers,
-      reassignAllRooms,
+    ]
+  );
+
+  // === ADD MULTIPLE PASSENGERS ===
+  const addMultiplePassengers = useCallback(
+    async (count: number): Promise<number> => {
+      const startIndex = bookingPassengers.length;
+      if (count <= 0) return -1;
+
+      const newPassengers: Passenger[] = [];
+      for (let i = 0; i < count; i++) {
+        const passenger = createNewPassenger(
+          currentUser,
+          [...bookingPassengers, ...newPassengers],
+          selectedTourData,
+          availableHotels,
+          {},
+          effectiveDepartureDate
+        );
+        passenger.room_allocation = await assignRoomAllocation(
+          [...existingPassengers, ...bookingPassengers, ...newPassengers],
+          passenger,
+          effectiveDepartureDate
+        ).catch(() => "M1");
+        newPassengers.push(passenger);
+      }
+
+      setBookingPassengers((prev) => [...prev, ...newPassengers]);
+      setExpandedPassengerId(newPassengers[0]?.id || null);
+      return startIndex;
+    },
+    [
+      bookingPassengers.length,
+      currentUser,
+      selectedTourData,
+      availableHotels,
+      effectiveDepartureDate,
+      existingPassengers,
     ]
   );
 
@@ -283,14 +317,12 @@ export const useBooking = ({
 
   useEffect(() => {
     const canAddValue =
-      bookingPassengers.length < MAX_PASSENGERS &&
       !!selectedTour &&
       !!departureDate &&
       !!selectedTourData &&
       (isPowerUser || (remainingSeats !== undefined && remainingSeats > 0));
     setCanAdd(canAddValue);
   }, [
-    bookingPassengers.length,
     selectedTour,
     departureDate,
     selectedTourData,
@@ -304,19 +336,26 @@ export const useBooking = ({
       setAvailableHotels([]);
       return;
     }
-    const raw = selectedTourData.hotels;
-    let hotels: string[] = [];
-    if (Array.isArray(raw)) {
-      hotels = raw
-        .filter((h): h is string => typeof h === "string")
-        .map((h) => h.trim())
-        .filter(Boolean);
-    } else if (typeof raw === "string") {
-      hotels = raw
-        .split(",")
-        .map((h) => h.trim())
-        .filter(Boolean);
+
+    const rawHotels = selectedTourData.hotels;
+    const hotels: string[] = [];
+
+    if (Array.isArray(rawHotels)) {
+      hotels.push(
+        ...rawHotels
+          .filter((h): h is string => typeof h === "string")
+          .map((h) => h.trim())
+          .filter((h) => h.length > 0)
+      );
+    } else if (typeof rawHotels === "string") {
+      hotels.push(
+        ...rawHotels
+          .split(",")
+          .map((h) => h.trim())
+          .filter((h) => h.length > 0)
+      );
     }
+
     setAvailableHotels(hotels);
   }, [selectedTourData]);
 
@@ -351,14 +390,8 @@ export const useBooking = ({
   );
 
   const canAddPassenger = useCallback(async () => {
-    if (bookingPassengers.length >= MAX_PASSENGERS) return false;
     if (!selectedTour || !departureDate || !selectedTourData) return false;
     if (!isPowerUser && remainingSeats !== undefined && remainingSeats <= 0)
-      return false;
-    if (
-      leadPassengerData?.seat_count !== undefined &&
-      bookingPassengers.length >= leadPassengerData.seat_count
-    )
       return false;
     const { isValid } = await checkSeatLimit(
       selectedTourData.id,
@@ -367,125 +400,39 @@ export const useBooking = ({
     );
     return isValid;
   }, [
-    bookingPassengers.length,
     selectedTour,
     departureDate,
     selectedTourData,
     isPowerUser,
     remainingSeats,
-    leadPassengerData,
     currentUser.role,
   ]);
 
-  // === ADD PASSENGERS ===
-  const addMultiplePassengers = useCallback(
-    async (count: number) => {
-      if (!(await canAddPassenger())) return;
-
-      const availableSlots = isPowerUser
-        ? MAX_PASSENGERS - bookingPassengers.length
-        : Math.min(
-            MAX_PASSENGERS - bookingPassengers.length,
-            remainingSeats ?? MAX_PASSENGERS,
-            leadPassengerData?.seat_count ?? MAX_PASSENGERS
-          );
-      const actualCount = Math.min(count, availableSlots);
-      if (actualCount <= 0) return;
-
-      const newPassengers = Array.from({ length: actualCount }, (_, idx) => {
-        const isMain = idx === 0 && leadPassengerData;
-        const passenger = createNewPassenger(
-          currentUser,
-          bookingPassengers,
-          selectedTourData,
-          availableHotels,
-          isMain
-            ? {
-                first_name: leadPassengerData.first_name,
-                last_name: leadPassengerData.last_name,
-                phone: leadPassengerData.phone,
-              }
-            : {},
-          effectiveDepartureDate
-        );
-        if (isMain) {
-          passenger.serial_no = `P${Date.now()}-${Math.random()
-            .toString(36)
-            .substr(2, 4)}`;
-        }
-        return passenger;
-      });
-
-      const allPassengers = [
-        ...existingPassengers,
-        ...bookingPassengers,
-        ...newPassengers,
-      ];
-      const updatedWithRooms = newPassengers.map((p) => ({
-        ...p,
-        room_allocation: assignRoomAllocation(
-          allPassengers,
-          p,
-          effectiveDepartureDate
-        ),
-        departure_date: effectiveDepartureDate,
-      }));
-
-      setBookingPassengers((prev) => [...prev, ...updatedWithRooms]);
-      setExpandedPassengerId(updatedWithRooms[0].id);
-      showNotification(
-        "success",
-        `Added ${actualCount} passenger${actualCount > 1 ? "s" : ""}`
-      );
-      newPassengerRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    },
-    [
-      canAddPassenger,
-      bookingPassengers,
-      currentUser,
-      selectedTourData,
-      availableHotels,
-      remainingSeats,
-      leadPassengerData,
-      isPowerUser,
-      showNotification,
-      effectiveDepartureDate,
-      existingPassengers,
-    ]
-  );
-
   // === REMOVE PASSENGER ===
   const removePassenger = useCallback(
-    (index: number) => {
+    async (index: number) => {
       if (bookingPassengers.length === 1) {
         showNotification("error", "At least one passenger is required");
         return;
       }
       const passengerToRemove = bookingPassengers[index];
-      setBookingPassengers((prev) => {
-        const filteredLocal = prev
-          .filter((_, i) => i !== index)
-          .filter((p) => p.main_passenger_id !== passengerToRemove.id);
-        const allPassengers = [...existingPassengers, ...filteredLocal];
-        const updated = filteredLocal.map((p) => ({
+      let updatedPassengers = [...bookingPassengers];
+      const filteredLocal = updatedPassengers
+        .filter((_, i) => i !== index)
+        .filter((p) => p.main_passenger_id !== passengerToRemove.id);
+      const allPassengers = [...existingPassengers, ...filteredLocal];
+      const updated = await Promise.all(
+        filteredLocal.map(async (p) => ({
           ...p,
-          room_allocation: assignRoomAllocation(
+          room_allocation: await assignRoomAllocation(
             allPassengers,
             p,
             effectiveDepartureDate
-          ),
-        }));
-        if (
-          JSON.stringify(updated.map((p) => p.room_allocation)) !==
-          JSON.stringify(filteredLocal.map((p) => p.room_allocation))
-        ) {
-          return updated;
-        }
-        return filteredLocal;
-      });
+          ).catch(() => "M1"),
+        }))
+      );
+
+      setBookingPassengers(updated);
       if (expandedPassengerId === bookingPassengers[index].id)
         setExpandedPassengerId(null);
       showNotification("success", `Removed passenger ${index + 1}`);
@@ -523,6 +470,10 @@ export const useBooking = ({
     setPassengerCountInput("");
     showNotification("success", "Booking form reset");
   }, [setSelectedTour, setDepartureDate, setErrors, showNotification]);
+
+  useEffect(() => {
+    globalThis.__bookingPassengers = bookingPassengers;
+  }, [bookingPassengers]);
 
   // === VALIDATION ===
   const validatePassenger = useCallback(
@@ -639,172 +590,148 @@ export const useBooking = ({
 
     setLoading(true);
     try {
-      const totalPrice = bookingPassengers.reduce(
-        (s, p) => s + (p.price || 0),
-        0
-      );
-      const orderData = {
-        user_id: currentUser.id,
-        tour_id: tourData.id,
-        departureDate: effectiveDepartureDate,
-        total_price: totalPrice,
-        status: isPowerUser ? "confirmed" : "pending",
-        payment_method: paymentMethod[0] || null,
-        travel_choice: "Regular",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // === CORRECT GROUPING LOGIC ===
+      const groups: Passenger[][] = [];
+      let currentGroup: Passenger[] = [];
 
-      const { data: orderResult, error: orderError } = await supabase
-        .from("orders")
-        .insert(orderData)
-        .select()
-        .single();
+      bookingPassengers.forEach((p, index) => {
+        if (!p.main_passenger_id) {
+          let wasLinkedFromPrevious = false;
+          for (let j = index - 1; j >= 0; j--) {
+            const prev = bookingPassengers[j];
+            if (!prev.main_passenger_id) {
+              wasLinkedFromPrevious = prev.is_related_to_next === true;
+              break;
+            }
+          }
 
-      if (orderError || !orderResult)
-        throw orderError || new Error("Order failed");
+          if (currentGroup.length > 0 && !wasLinkedFromPrevious) {
+            groups.push(currentGroup);
+            currentGroup = [];
+          }
 
-      const orderId = String(orderResult.id);
+          currentGroup.push(p);
+        } else {
+          currentGroup.push(p);
+        }
+      });
+
+      if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+      }
+
       const target = isPowerUser ? "passengers" : "passenger_requests";
+      const savedOrders: Order[] = [];
 
-      for (const p of bookingPassengers) {
-        const cleaned = {
-          order_id: parseInt(orderId, 10),
-          user_id: currentUser.id,
-          tour_id: tourData.id,
-          tour_title: selectedTour,
-          departure_date: effectiveDepartureDate
-            ? cleanValueForDB("departure_date", effectiveDepartureDate)
-            : null,
-          name: `${p.first_name} ${p.last_name}`.trim(),
-          room_allocation: p.room_allocation || "",
-          serial_no: p.serial_no || "",
-          passenger_number: p.passenger_number || `PAX-${Date.now()}`,
-          last_name: p.last_name || "",
-          first_name: p.first_name || "",
-          date_of_birth: cleanValueForDB("date_of_birth", p.date_of_birth),
-          age: p.age || null,
-          gender: p.gender || null,
-          passport_number: p.passport_number || "",
-          passport_expire: cleanValueForDB(
-            "passport_expire",
-            p.passport_expire
-          ),
-          nationality: p.nationality || "Mongolia",
-          roomType: p.roomType || "",
-          hotel: p.hotel || "",
-          additional_services: p.additional_services || [],
-          price: p.price || 0,
-          email: p.email || "",
-          phone: p.phone || "",
-          passport_upload: p.passport_upload || null,
-          allergy: p.allergy || "",
-          emergency_phone: p.emergency_phone || "",
-          status: isPowerUser ? "active" : "pending",
-          is_blacklisted: false,
-          notes: p.notes || "",
-          seat_count: p.seat_count || 1,
-          main_passenger_id: p.main_passenger_id || null,
-          sub_passenger_count: p.sub_passenger_count || 0,
-          has_sub_passengers: p.has_sub_passengers || false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+      for (const group of groups) {
+        const groupPrice = group.reduce((s, p) => s + (p.price || 0), 0);
 
-        const { data: inserted } = await supabase
-          .from(target)
-          .insert(cleaned)
+        const { data: orderResult, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            user_id: currentUser.id,
+            tour_id: tourData.id,
+            departureDate: effectiveDepartureDate,
+            total_price: groupPrice,
+            status: isPowerUser ? "confirmed" : "pending",
+            payment_method: paymentMethod[0] || null,
+            travel_choice: "Regular",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
           .select()
           .single();
-        if (!inserted) continue;
 
-        const { data: allForDate } = await supabase
-          .from(target)
-          .select("*")
-          .eq("departure_date", effectiveDepartureDate);
-        const room = assignRoomAllocation(
-          allForDate || [],
-          inserted,
-          effectiveDepartureDate
-        );
-        await supabase
-          .from(target)
-          .update({ room_allocation: room })
-          .eq("id", inserted.id);
-      }
+        if (orderError || !orderResult)
+          throw orderError || new Error("Order failed");
 
-      if (isPowerUser && tourData.available_seats !== undefined) {
-        await supabase
-          .from("tours")
-          .update({
-            available_seats: Math.max(
-              0,
-              tourData.available_seats - bookingPassengers.length
+        const realOrderId = orderResult.id;
+
+        for (const p of group) {
+          const cleaned = {
+            order_id: realOrderId,
+            user_id: currentUser.id,
+            tour_id: tourData.id,
+            tour_title: selectedTour,
+            departure_date: effectiveDepartureDate
+              ? cleanValueForDB("departure_date", effectiveDepartureDate)
+              : null,
+            name: `${p.first_name} ${p.last_name}`.trim(),
+            room_allocation: p.room_allocation || "",
+            serial_no: p.serial_no || "",
+            passenger_number: p.passenger_number || `PAX-${Date.now()}`,
+            last_name: p.last_name || "",
+            first_name: p.first_name || "",
+            date_of_birth: cleanValueForDB("date_of_birth", p.date_of_birth),
+            age: p.age || null,
+            gender: p.gender || null,
+            passport_number: p.passport_number || "",
+            passport_expire: cleanValueForDB(
+              "passport_expire",
+              p.passport_expire
             ),
-          })
-          .eq("id", tourData.id);
+            nationality: p.nationality || "Mongolia",
+            roomType: p.roomType || "",
+            hotel: p.hotel || "",
+            additional_services: p.additional_services || [],
+            price: p.price || 0,
+            email: p.email || "",
+            phone: p.phone || "",
+            passport_upload: p.passport_upload || null,
+            allergy: p.allergy || "",
+            emergency_phone: p.emergency_phone || "",
+            status: isPowerUser ? "active" : "pending",
+            is_blacklisted: false,
+            notes: p.notes || "",
+            seat_count: p.seat_count || 1,
+            main_passenger_id: p.main_passenger_id || null,
+            sub_passenger_count: p.sub_passenger_count || 0,
+            has_sub_passengers: p.has_sub_passengers || false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            itinerary_status: p.itinerary_status || "No itinerary",
+            pax_type: p.pax_type || "Adult",
+            group_color: p.group_color || null,
+          };
+
+          await supabase.from(target).insert(cleaned);
+        }
+
+        if (isPowerUser && tourData.available_seats !== undefined) {
+          await supabase
+            .from("tours")
+            .update({
+              available_seats: Math.max(
+                0,
+                tourData.available_seats - group.length
+              ),
+            })
+            .eq("id", tourData.id);
+        }
+
+        savedOrders.push({
+          id: orderResult.id,
+          tour_title: selectedTour,
+          departureDate: effectiveDepartureDate,
+          total_price: groupPrice,
+          status: isPowerUser ? "confirmed" : "pending",
+          payment_method: paymentMethod[0] || null,
+          passenger_count: group.length,
+        } as Order);
       }
 
-      const newOrder: Order = {
-        id: orderResult.id,
-        user_id: currentUser.id,
-        tour_id: tourData.id,
-        tour_title: selectedTour,
-        departureDate: effectiveDepartureDate,
-        total_price: totalPrice,
-        status: isPowerUser ? "confirmed" : "pending",
-        payment_method: paymentMethod[0] || null,
-        created_at: new Date().toISOString(),
-        phone: null,
-        last_name: null,
-        first_name: null,
-        email: null,
-        age: null,
-        gender: null,
-        tour: null,
-        passport_number: null,
-        passport_expire: null,
-        passport_copy: null,
-        passport_copy_url: null,
-        commission: null,
-        created_by: null,
-        createdBy: null,
-        edited_by: null,
-        edited_at: null,
-        travel_choice: "Regular",
-        hotel: null,
-        room_number: null,
-        updated_at: "",
-        passenger_count: 0,
-        total_amount: 0,
-        paid_amount: 0,
-        balance: 0,
-        show_in_provider: false,
-        order_id: "",
-        booking_confirmation: null,
-        passengers: [],
-        room_allocation: "",
-      };
-
-      setOrders((prev) => [...prev, newOrder]);
+      setOrders((prev) => [...prev, ...savedOrders]);
       showNotification(
         "success",
-        isPowerUser ? "Booking confirmed" : "Submitted for approval"
+        `${groups.length} booking${groups.length > 1 ? "s" : ""} created!`
       );
       resetBookingForm();
     } catch (error: any) {
-      console.error("Save error:", error);
       showNotification("error", error.message || "Save failed");
     } finally {
       setLoading(false);
     }
   };
-
-  const handleDownloadCSV = useCallback(() => {}, [
-    bookingPassengers,
-    selectedTour,
-  ]);
-  const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {};
 
   const totalPrice = bookingPassengers.reduce((s, p) => s + (p.price || 0), 0);
 
@@ -863,10 +790,9 @@ export const useBooking = ({
     removePassenger,
     clearAllPassengers,
     resetBookingForm,
-    handleDownloadCSV,
-    handleUploadCSV,
+    handleDownloadCSV: () => {},
+    handleUploadCSV: async () => {},
     handleNextStep,
-    MAX_PASSENGERS,
     notification,
     setNotification,
     leadPassengerData,
@@ -874,5 +800,6 @@ export const useBooking = ({
     passengerFormData,
     setPassengerFormData,
     confirmLeadPassenger,
+    setBookingPassengers,
   };
 };

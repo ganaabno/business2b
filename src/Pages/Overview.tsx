@@ -12,12 +12,33 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { format, subMonths, addMonths, subWeeks, addWeeks, subDays, addDays, startOfWeek, endOfWeek, startOfDay, endOfDay, differenceInDays } from "date-fns";
+import {
+  format,
+  subMonths,
+  addMonths,
+  subWeeks,
+  addWeeks,
+  subDays,
+  addDays,
+  startOfWeek,
+  endOfWeek,
+  startOfDay,
+  endOfDay,
+  differenceInDays,
+} from "date-fns";
 import { useNotifications } from "../hooks/useNotifications";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 interface AnalyticsDashboardProps {
   currentUser: User;
@@ -29,12 +50,22 @@ interface AnalyticsDashboardProps {
 interface AnalyticsData {
   passengersByUser: { userId: string; username: string; count: number }[];
   toursByPopularity: { tourTitle: string; count: number }[];
-  ordersByProvider: { providerId: string; providerName: string; count: number }[];
+  ordersByProvider: {
+    providerId: string;
+    providerName: string;
+    count: number;
+  }[];
 }
 
-export default function AnalyticsDashboard({ tours, orders, passengers }: AnalyticsDashboardProps) {
+export default function AnalyticsDashboard({
+  tours,
+  orders,
+  passengers,
+}: AnalyticsDashboardProps) {
   const { showNotification } = useNotifications();
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "threeMonths" | "custom">("month");
+  const [viewMode, setViewMode] = useState<
+    "month" | "week" | "day" | "threeMonths" | "custom"
+  >("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -51,7 +82,14 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
     switch (viewMode) {
       case "month":
         start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        end = new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth() + 1,
+          0,
+          23,
+          59,
+          59
+        );
         break;
       case "week":
         start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
@@ -62,13 +100,34 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
         end = endOfDay(currentDate);
         break;
       case "threeMonths":
-        start = subMonths(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1), 2);
-        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        start = subMonths(
+          new Date(currentDate.getFullYear(), currentDate.getMonth(), 1),
+          2
+        );
+        end = new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth() + 1,
+          0,
+          23,
+          59,
+          59
+        );
         break;
       case "custom":
         if (!startDate || !endDate) {
-          start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-          end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+          start = new Date(
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            1
+          );
+          end = new Date(
+            currentDate.getFullYear(),
+            currentDate.getMonth() + 1,
+            0,
+            23,
+            59,
+            59
+          );
         } else {
           start = startOfDay(startDate);
           end = endOfDay(endDate);
@@ -76,7 +135,14 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
         break;
       default:
         start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+        end = new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth() + 1,
+          0,
+          23,
+          59,
+          59
+        );
     }
     return { start, end };
   };
@@ -85,11 +151,6 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
   const fetchAnalyticsData = async (start: Date, end: Date) => {
     setLoading(true);
     try {
-      // Debug: Log input data
-      console.log("🚀 Tours prop:", tours);
-      console.log("🚀 Orders prop:", orders);
-      console.log("🚀 Passengers prop:", passengers);
-
       // Fetch users
       const { data: users, error: usersError } = await supabase
         .from("users")
@@ -118,20 +179,26 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
       // Fetch orders for the selected date range
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*, tour: tours(title), created_by, show_in_provider, created_at")
+        .select(
+          "*, tour: tours(title), created_by, show_in_provider, created_at"
+        )
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
       if (ordersError) throw new Error(ordersError.message);
 
       // Process passengers by user
       const passengersByUser = users
-        .filter(user => user.id)
+        .filter((user) => user.id)
         .map((user) => {
           const userId = String(user.id);
-          const count = filteredPassengers.filter((p) => String(p.user_id) === userId).length;
-          const displayName = user.username ||
-            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` :
-              user.email || `User ${userId.slice(-6)}`);
+          const count = filteredPassengers.filter(
+            (p) => String(p.user_id) === userId
+          ).length;
+          const displayName =
+            user.username ||
+            (user.first_name && user.last_name
+              ? `${user.first_name} ${user.last_name}`
+              : user.email || `User ${userId.slice(-6)}`);
           return { userId, username: displayName, count };
         })
         .filter((item) => item.count > 0)
@@ -139,11 +206,12 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
 
       // Process tours by popularity
       const toursByPopularity = tours
-        .filter(tour => tour.title)
+        .filter((tour) => tour.title)
         .map((tour) => {
           const tourTitle = tour.title.toLowerCase().trim();
-          const count = filteredPassengers.filter((p) =>
-            p.tour_title && p.tour_title.toLowerCase().trim() === tourTitle
+          const count = filteredPassengers.filter(
+            (p) =>
+              p.tour_title && p.tour_title.toLowerCase().trim() === tourTitle
           ).length;
           return { tourTitle: tour.title, count };
         })
@@ -151,18 +219,22 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
         .sort((a, b) => b.count - a.count);
 
       // Process orders by provider
-      const monthOrders = ordersData.filter(order =>
-        order.created_by && order.show_in_provider !== false
+      const monthOrders = ordersData.filter(
+        (order) => order.created_by && order.show_in_provider !== false
       );
 
       const ordersByProvider = users
-        .filter(user => user.id)
+        .filter((user) => user.id)
         .map((user) => {
           const userId = String(user.id);
-          const count = monthOrders.filter((o) => String(o.created_by) === userId).length;
-          const displayName = user.username ||
-            (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` :
-              user.email || `Provider ${userId.slice(-6)}`);
+          const count = monthOrders.filter(
+            (o) => String(o.created_by) === userId
+          ).length;
+          const displayName =
+            user.username ||
+            (user.first_name && user.last_name
+              ? `${user.first_name} ${user.last_name}`
+              : user.email || `Provider ${userId.slice(-6)}`);
           return { providerId: userId, providerName: displayName, count };
         })
         .filter((item) => item.count > 0)
@@ -175,7 +247,12 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
       });
     } catch (error) {
       console.error("💥 Analytics fetch error:", error);
-      showNotification("error", `Failed to fetch analytics data: ${error instanceof Error ? error.message : "Unknown error"}`);
+      showNotification(
+        "error",
+        `Failed to fetch analytics data: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
       setAnalyticsData({
         passengersByUser: [],
         toursByPopularity: [],
@@ -233,60 +310,69 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
   };
 
   // Chart data (unchanged)
-  const passengersByUserChartData = useMemo(() => ({
-    labels: analyticsData.passengersByUser.map((item) => item.username),
-    datasets: [
-      {
-        label: "Passengers Registered",
-        data: analyticsData.passengersByUser.map((item) => item.count),
-        backgroundColor: "rgba(59, 130, 246, 0.6)",
-        borderColor: "rgba(59, 130, 246, 1)",
-        borderWidth: 1,
-      },
-    ],
-  }), [analyticsData.passengersByUser]);
+  const passengersByUserChartData = useMemo(
+    () => ({
+      labels: analyticsData.passengersByUser.map((item) => item.username),
+      datasets: [
+        {
+          label: "Passengers Registered",
+          data: analyticsData.passengersByUser.map((item) => item.count),
+          backgroundColor: "rgba(59, 130, 246, 0.6)",
+          borderColor: "rgba(59, 130, 246, 1)",
+          borderWidth: 1,
+        },
+      ],
+    }),
+    [analyticsData.passengersByUser]
+  );
 
-  const toursByPopularityChartData = useMemo(() => ({
-    labels: analyticsData.toursByPopularity.map((item) => item.tourTitle),
-    datasets: [
-      {
-        label: "Passenger Count",
-        data: analyticsData.toursByPopularity.map((item) => item.count),
-        backgroundColor: [
-          "rgba(34, 197, 94, 0.6)",
-          "rgba(249, 115, 22, 0.6)",
-          "rgba(239, 68, 68, 0.6)",
-          "rgba(168, 85, 247, 0.6)",
-          "rgba(59, 130, 246, 0.6)",
-          "rgba(16, 185, 129, 0.6)",
-          "rgba(245, 158, 11, 0.6)",
-        ],
-        borderColor: [
-          "rgba(34, 197, 94, 1)",
-          "rgba(249, 115, 22, 1)",
-          "rgba(239, 68, 68, 1)",
-          "rgba(168, 85, 247, 1)",
-          "rgba(59, 130, 246, 1)",
-          "rgba(16, 185, 129, 1)",
-          "rgba(245, 158, 11, 1)",
-        ],
-        borderWidth: 1,
-      },
-    ],
-  }), [analyticsData.toursByPopularity]);
+  const toursByPopularityChartData = useMemo(
+    () => ({
+      labels: analyticsData.toursByPopularity.map((item) => item.tourTitle),
+      datasets: [
+        {
+          label: "Passenger Count",
+          data: analyticsData.toursByPopularity.map((item) => item.count),
+          backgroundColor: [
+            "rgba(34, 197, 94, 0.6)",
+            "rgba(249, 115, 22, 0.6)",
+            "rgba(239, 68, 68, 0.6)",
+            "rgba(168, 85, 247, 0.6)",
+            "rgba(59, 130, 246, 0.6)",
+            "rgba(16, 185, 129, 0.6)",
+            "rgba(245, 158, 11, 0.6)",
+          ],
+          borderColor: [
+            "rgba(34, 197, 94, 1)",
+            "rgba(249, 115, 22, 1)",
+            "rgba(239, 68, 68, 1)",
+            "rgba(168, 85, 247, 1)",
+            "rgba(59, 130, 246, 1)",
+            "rgba(16, 185, 129, 1)",
+            "rgba(245, 158, 11, 1)",
+          ],
+          borderWidth: 1,
+        },
+      ],
+    }),
+    [analyticsData.toursByPopularity]
+  );
 
-  const ordersByProviderChartData = useMemo(() => ({
-    labels: analyticsData.ordersByProvider.map((item) => item.providerName),
-    datasets: [
-      {
-        label: "Orders Received",
-        data: analyticsData.ordersByProvider.map((item) => item.count),
-        backgroundColor: "rgba(168, 85, 247, 0.6)",
-        borderColor: "rgba(168, 85, 247, 1)",
-        borderWidth: 1,
-      },
-    ],
-  }), [analyticsData.ordersByProvider]);
+  const ordersByProviderChartData = useMemo(
+    () => ({
+      labels: analyticsData.ordersByProvider.map((item) => item.providerName),
+      datasets: [
+        {
+          label: "Orders Received",
+          data: analyticsData.ordersByProvider.map((item) => item.count),
+          backgroundColor: "rgba(168, 85, 247, 0.6)",
+          borderColor: "rgba(168, 85, 247, 1)",
+          borderWidth: 1,
+        },
+      ],
+    }),
+    [analyticsData.ordersByProvider]
+  );
 
   const chartOptions = {
     responsive: true,
@@ -305,7 +391,10 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
     scales: {
       y: {
         beginAtZero: true,
-        ticks: { precision: 0, font: { size: 12, family: "'Inter', sans-serif" } },
+        ticks: {
+          precision: 0,
+          font: { size: 12, family: "'Inter', sans-serif" },
+        },
         grid: { color: "rgba(0, 0, 0, 0.05)" },
       },
       x: {
@@ -325,7 +414,10 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
     plugins: {
       legend: {
         position: "right" as const,
-        labels: { font: { size: 12, family: "'Inter', sans-serif" }, padding: 20 },
+        labels: {
+          font: { size: 12, family: "'Inter', sans-serif" },
+          padding: 20,
+        },
       },
       tooltip: {
         backgroundColor: "rgba(0, 0, 0, 0.8)",
@@ -347,17 +439,25 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
     } else if (viewMode === "threeMonths") {
       return `${format(start, "MMM yyyy")} - ${format(end, "MMM yyyy")}`;
     } else if (viewMode === "custom" && startDate && endDate) {
-      return `${format(startDate, "MMM d, yyyy")} - ${format(endDate, "MMM d, yyyy")}`;
+      return `${format(startDate, "MMM d, yyyy")} - ${format(
+        endDate,
+        "MMM d, yyyy"
+      )}`;
     }
     return format(currentDate, "MMMM yyyy");
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[105rem] mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-          <p className="mt-2 text-gray-600">Insights on passenger registrations, tour popularity, and provider orders</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Analytics Dashboard
+          </h1>
+          <p className="mt-2 text-gray-600">
+            Insights on passenger registrations, tour popularity, and provider
+            orders
+          </p>
         </div>
 
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -368,7 +468,16 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
             <div className="flex space-x-2">
               <select
                 value={viewMode}
-                onChange={(e) => setViewMode(e.target.value as "month" | "week" | "day" | "threeMonths" | "custom")}
+                onChange={(e) =>
+                  setViewMode(
+                    e.target.value as
+                      | "month"
+                      | "week"
+                      | "day"
+                      | "threeMonths"
+                      | "custom"
+                  )
+                }
                 className="px-4 py-2 bg-gray-100 text-gray-900 rounded-md font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="month">Monthly</option>
@@ -397,10 +506,12 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
             {viewMode === "custom" && (
               <div className="flex gap-2">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Start Date:</label>
+                  <label className="text-sm font-medium text-gray-700">
+                    Start Date:
+                  </label>
                   <DatePicker
                     selected={startDate}
-                    onChange={(date: Date | null) => setStartDate(date)} 
+                    onChange={(date: Date | null) => setStartDate(date)}
                     selectsStart
                     startDate={startDate}
                     endDate={endDate}
@@ -411,14 +522,16 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">End Date:</label>
+                  <label className="text-sm font-medium text-gray-700">
+                    End Date:
+                  </label>
                   <DatePicker
                     selected={endDate}
-                    onChange={(date: Date | null) => setEndDate(date)} 
+                    onChange={(date: Date | null) => setEndDate(date)}
                     selectsEnd
                     startDate={startDate}
                     endDate={endDate}
-                    minDate={startDate? startDate : undefined}
+                    minDate={startDate ? startDate : undefined}
                     maxDate={new Date()}
                     className="px-4 py-2 bg-gray-100 text-gray-900 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     dateFormat="MMM d, yyyy"
@@ -442,7 +555,11 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 👥 Passengers Registered by User
                 <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                  {analyticsData.passengersByUser.reduce((sum, item) => sum + item.count, 0)} total
+                  {analyticsData.passengersByUser.reduce(
+                    (sum, item) => sum + item.count,
+                    0
+                  )}{" "}
+                  total
                 </span>
               </h3>
               <div className="h-80 relative">
@@ -451,11 +568,18 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl">👥</span>
                     </div>
-                    <p className="text-center">No passenger registrations for this period.</p>
-                    <p className="text-sm mt-1">Try a different period or check your data.</p>
+                    <p className="text-center">
+                      No passenger registrations for this period.
+                    </p>
+                    <p className="text-sm mt-1">
+                      Try a different period or check your data.
+                    </p>
                   </div>
                 ) : (
-                  <Bar data={passengersByUserChartData} options={chartOptions} />
+                  <Bar
+                    data={passengersByUserChartData}
+                    options={chartOptions}
+                  />
                 )}
               </div>
             </div>
@@ -465,7 +589,11 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 🗺️ Most Popular Tours
                 <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                  {analyticsData.toursByPopularity.reduce((sum, item) => sum + item.count, 0)} total
+                  {analyticsData.toursByPopularity.reduce(
+                    (sum, item) => sum + item.count,
+                    0
+                  )}{" "}
+                  total
                 </span>
               </h3>
               <div className="h-80 relative">
@@ -475,10 +603,15 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
                       <span className="text-2xl">🗺️</span>
                     </div>
                     <p className="text-center">No tour data for this period.</p>
-                    <p className="text-sm mt-1">Ensure passengers are assigned to tours.</p>
+                    <p className="text-sm mt-1">
+                      Ensure passengers are assigned to tours.
+                    </p>
                   </div>
                 ) : (
-                  <Pie data={toursByPopularityChartData} options={pieChartOptions} />
+                  <Pie
+                    data={toursByPopularityChartData}
+                    options={pieChartOptions}
+                  />
                 )}
               </div>
             </div>
@@ -488,7 +621,11 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 📋 Orders Received by Provider
                 <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                  {analyticsData.ordersByProvider.reduce((sum, item) => sum + item.count, 0)} total
+                  {analyticsData.ordersByProvider.reduce(
+                    (sum, item) => sum + item.count,
+                    0
+                  )}{" "}
+                  total
                 </span>
               </h3>
               <div className="h-80 relative">
@@ -497,11 +634,18 @@ export default function AnalyticsDashboard({ tours, orders, passengers }: Analyt
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <span className="text-2xl">📋</span>
                     </div>
-                    <p className="text-center">No provider order data for this period.</p>
-                    <p className="text-sm mt-1">Check your order visibility settings.</p>
+                    <p className="text-center">
+                      No provider order data for this period.
+                    </p>
+                    <p className="text-sm mt-1">
+                      Check your order visibility settings.
+                    </p>
                   </div>
                 ) : (
-                  <Bar data={ordersByProviderChartData} options={chartOptions} />
+                  <Bar
+                    data={ordersByProviderChartData}
+                    options={chartOptions}
+                  />
                 )}
               </div>
             </div>

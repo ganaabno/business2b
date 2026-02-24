@@ -34,29 +34,39 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
     [groupKey: string]: BookingConfirmationInput;
   }>({});
   const [activeTab, setActiveTab] = useState<"pending" | "confirmed">(
-    "pending"
+    "pending",
   );
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   // Group orders by departure date and tour title
   const groupOrders = (orders: Order[]): GroupedOrder[] => {
-    const grouped = orders.reduce((acc, order) => {
-      const key = `${order.departureDate}_${order.travel_choice}`;
-      if (!acc[key]) {
-        acc[key] = {
-          departureDate: order.departureDate,
-          travel_choice: order.travel_choice || "N/A",
-          passenger_count: 0,
-          orders: [],
-          booking_confirmation: order.booking_confirmation,
-        };
-      }
-      // Ensure passenger_count is properly summed
-      acc[key].passenger_count += Number(order.passenger_count) || 1;
-      acc[key].orders.push(order);
-      return acc;
-    }, {} as { [key: string]: GroupedOrder });
+    const grouped = orders.reduce(
+      (acc, order) => {
+        // Safely handle undefined values
+        const departure = order.departureDate || "unknown-date";
+        const travel = order.travel_choice || "N/A";
+        const key = `${departure}_${travel}`;
+
+        if (!acc[key]) {
+          acc[key] = {
+            departureDate: departure,
+            travel_choice: travel,
+            passenger_count: 0,
+            orders: [],
+            booking_confirmation: order.booking_confirmation,
+          };
+        }
+
+        // Safely sum passenger count
+        const count = order.passenger_count ?? order.passengers?.length ?? 1;
+        acc[key].passenger_count += count;
+        acc[key].orders.push(order);
+
+        return acc;
+      },
+      {} as Record<string, GroupedOrder>,
+    );
 
     return Object.values(grouped);
   };
@@ -64,7 +74,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
   const handleInputChange = (
     groupKey: string,
     field: keyof BookingConfirmationInput,
-    value: string
+    value: string,
   ) => {
     setInputs((prev) => ({
       ...prev,
@@ -81,7 +91,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
 
   const handleConfirmBooking = async (
     groupKey: string,
-    groupedOrder: GroupedOrder
+    groupedOrder: GroupedOrder,
   ) => {
     const input = inputs[groupKey];
     if (!input?.bus_number || !input?.guide_name) {
@@ -90,7 +100,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
     }
 
     try {
-      const orderIds = groupedOrder.orders.map((order) => order.id);
+      const orderIds = groupedOrder.orders.map((o) => o.id);
       const { error } = await supabase.from("booking_confirmations").upsert(
         orderIds.map((orderId) => ({
           order_id: orderId,
@@ -100,7 +110,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
           updated_by: currentUser.id,
           updated_at: new Date().toISOString(),
         })),
-        { onConflict: "order_id" }
+        { onConflict: "order_id" },
       );
 
       if (error) throw error;
@@ -119,22 +129,24 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
                   updated_at: new Date().toISOString(),
                 },
               }
-            : order
-        )
+            : order,
+        ),
       );
+
       toast.success("Booking confirmed successfully!");
+      setInputs((prev) => {
+        const { [groupKey]: _, ...rest } = prev;
+        return rest;
+      });
     } catch (error) {
-      console.error(
-        "Error confirming booking:",
-        JSON.stringify(error, null, 2)
-      );
+      console.error("Error confirming booking:", error);
       toast.error("Failed to confirm booking.");
     }
   };
 
   const handleEditBooking = async (
     groupKey: string,
-    groupedOrder: GroupedOrder
+    groupedOrder: GroupedOrder,
   ) => {
     const input = inputs[groupKey];
     if (!input?.bus_number || !input?.guide_name) {
@@ -143,7 +155,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
     }
 
     try {
-      const orderIds = groupedOrder.orders.map((order) => order.id);
+      const orderIds = groupedOrder.orders.map((o) => o.id);
       const { error } = await supabase
         .from("booking_confirmations")
         .update({
@@ -163,7 +175,7 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
             ? {
                 ...order,
                 booking_confirmation: {
-                  ...order.booking_confirmation!,
+                  order_id: order.id, // ← ALWAYS SET THIS
                   bus_number: input.bus_number,
                   guide_name: input.guide_name,
                   weather_emergency: input.weather_emergency || null,
@@ -171,13 +183,18 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
                   updated_at: new Date().toISOString(),
                 },
               }
-            : order
-        )
+            : order,
+        ),
       );
+
       setEditingOrderId(null);
       toast.success("Booking updated successfully!");
+      setInputs((prev) => {
+        const { [groupKey]: _, ...rest } = prev;
+        return rest;
+      });
     } catch (error) {
-      console.error("Error updating booking:", JSON.stringify(error, null, 2));
+      console.error("Error updating booking:", error);
       toast.error("Failed to update booking.");
     }
   };
@@ -217,15 +234,18 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
   ];
 
   const pendingOrders = groupOrders(
-    orders.filter((order) => !order.booking_confirmation)
+    orders.filter((order) => !order.booking_confirmation),
   );
   const confirmedOrders = groupOrders(
-    orders.filter((order) => order.booking_confirmation)
+    orders.filter((order) => order.booking_confirmation),
   );
+
+  const currentOrders =
+    activeTab === "pending" ? pendingOrders : confirmedOrders;
 
   return (
     <div className="my-10 px-4">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[105rem] mx-auto">
         <h2 className="text-3xl font-semibold text-gray-900 mb-2 tracking-tight">
           Booking Confirmations
         </h2>
@@ -235,34 +255,33 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
           <button
             onClick={() => setActiveTab("pending")}
             className={`
-                relative px-6 py-2.5 rounded-xl font-medium text-sm
-                transition-all duration-300 ease-out
-      ${
-        activeTab === "pending"
-          ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-105"
-          : "bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md hover:scale-102 shadow-sm"
-      } active:scale-95`}
+              relative px-6 py-2.5 rounded-xl font-medium text-sm
+              transition-all duration-300 ease-out
+              ${
+                activeTab === "pending"
+                  ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-105"
+                  : "bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md hover:scale-102 shadow-sm"
+              } active:scale-95`}
           >
             Pending Confirmation ({pendingOrders.length})
           </button>
           <button
             onClick={() => setActiveTab("confirmed")}
             className={`
-                relative px-6 py-2.5 rounded-xl font-medium text-sm
-                transition-all duration-300 ease-out
-      ${
-        activeTab === "confirmed"
-          ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-105"
-          : "bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md hover:scale-102 shadow-sm"
-      } active:scale-95`}
+              relative px-6 py-2.5 rounded-xl font-medium text-sm
+              transition-all duration-300 ease-out
+              ${
+                activeTab === "confirmed"
+                  ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-105"
+                  : "bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md hover:scale-102 shadow-sm"
+              } active:scale-95`}
           >
             Confirmed Bookings ({confirmedOrders.length})
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-          {(activeTab === "pending" ? pendingOrders : confirmedOrders)
-            .length === 0 ? (
+          {currentOrders.length === 0 ? (
             <div className="col-span-full flex flex-col items-center justify-center py-24 space-y-4">
               <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center animate-pulse">
                 <svg
@@ -286,130 +305,126 @@ const BookingConfirmationTab: React.FC<BookingConfirmationTabProps> = ({
               </p>
             </div>
           ) : (
-            (activeTab === "pending" ? pendingOrders : confirmedOrders).map(
-              (groupedOrder) => {
-                const groupKey = `${groupedOrder.departureDate}_${groupedOrder.travel_choice}`;
-                return (
-                  <div
-                    key={groupKey}
-                    className="group bg-white rounded-3xl p-8 border border-gray-100 hover:border-indigo-200 hover:shadow-2xl transition-all duration-300"
-                  >
-                    <div className="space-y-2">
-                      <div className="border-b border-gray-50">
-                        <p className="text-xs uppercase tracking-wider text-gray-400 mb-2">
-                          Tour Package
+            currentOrders.map((groupedOrder) => {
+              const groupKey = `${groupedOrder.departureDate}_${groupedOrder.travel_choice}`;
+              const isEditing = editingOrderId === groupKey;
+              const confirmation = groupedOrder.booking_confirmation;
+
+              return (
+                <div
+                  key={groupKey}
+                  className="group bg-white rounded-3xl p-8 border border-gray-100 hover:border-indigo-200 hover:shadow-2xl transition-all duration-300"
+                >
+                  <div className="space-y-2">
+                    <div className="border-b border-gray-50 pb-3">
+                      <p className="text-xs uppercase tracking-wider text-gray-400 mb-2">
+                        Tour Package
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {groupedOrder.travel_choice}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-gray-700">
+                      <div>
+                        <p className="text-xs mb-1">Departure</p>
+                        <p className="text-sm font-medium">
+                          {formatDate(groupedOrder.departureDate)}
                         </p>
-                        <p className="text-lg font-semibold text-gray-900">
-                          {groupedOrder.travel_choice}
+                      </div>
+                      <div>
+                        <p className="text-xs mb-1">Passengers</p>
+                        <p className="text-sm font-medium">
+                          {groupedOrder.passenger_count}
                         </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-gray-700">
-                        <div>
-                          <p className="text-xs mb-1">Departure</p>
-                          <p className="text-sm font-medium">
-                            {formatDate(groupedOrder.departureDate)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs mb-1">Passengers</p>
-                          <p className="text-sm font-medium">
-                            {groupedOrder.passenger_count}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 pt-2">
-                        {fields.map(({ label, key, placeholder, required }) => (
-                          <div key={key}>
-                            <label className="block text-xs font-medium text-gray-500 mb-2">
-                              {label}{" "}
-                              {required && (
-                                <span className="text-indigo-400">*</span>
-                              )}
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                inputs[groupKey]?.[key] ??
-                                groupedOrder.booking_confirmation?.[key] ??
-                                ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(groupKey, key, e.target.value)
-                              }
-                              className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all outline-none text-sm shadow-sm hover:shadow-md"
-                              placeholder={placeholder}
-                              disabled={
-                                activeTab === "confirmed" &&
-                                editingOrderId !== groupKey
-                              }
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-4">
-                        <button
-                          onClick={() =>
-                            handleButtonClick(groupKey, groupedOrder)
-                          }
-                          className="w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white py-3.5 rounded-2xl font-semibold text-sm hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 transition-all duration-300 shadow-md hover:shadow-lg"
-                        >
-                          {groupedOrder.booking_confirmation &&
-                          editingOrderId !== groupKey
-                            ? "Edit"
-                            : "Confirm Booking"}
-                        </button>
-                      </div>
-
-                      <div className="pt-4">
-                        <button
-                          onClick={() =>
-                            setExpandedGroup(
-                              expandedGroup === groupKey ? null : groupKey
-                            )
-                          }
-                          className="w-full bg-gray-100 text-gray-700 py-3 rounded-2xl font-semibold text-sm hover:bg-gray-200 focus:outline-none transition-all duration-300"
-                        >
-                          {expandedGroup === groupKey
-                            ? "Hide Passenger Details"
-                            : "Show Passenger Details"}
-                        </button>
-                        {expandedGroup === groupKey && (
-                          <div className="mt-4 p-4 bg-gray-50 rounded-2xl">
-                            {groupedOrder.orders.map((passenger) => (
-                              <div
-                                key={passenger.id}
-                                className="mb-2 last:mb-0"
-                              >
-                                <p className="text-sm font-medium text-gray-900">
-                                  {passenger.last_name || "N/A"}{" "}
-                                  {passenger.first_name || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  Email: {passenger.email || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  Room Allocation:{" "}
-                                  {passenger.room_number || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  Hotel: {passenger.hotel || "N/A"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  Passengers: {passenger.passenger_count}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
+
+                    <div className="space-y-2 pt-2">
+                      {fields.map(({ label, key, placeholder, required }) => (
+                        <div key={key}>
+                          <label className="block text-xs font-medium text-gray-500 mb-2">
+                            {label}{" "}
+                            {required && (
+                              <span className="text-indigo-400">*</span>
+                            )}
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              inputs[groupKey]?.[key] ??
+                              (isEditing ? "" : (confirmation?.[key] ?? ""))
+                            }
+                            onChange={(e) =>
+                              handleInputChange(groupKey, key, e.target.value)
+                            }
+                            className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all outline-none text-sm shadow-sm hover:shadow-md"
+                            placeholder={placeholder}
+                            disabled={activeTab === "confirmed" && !isEditing}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-4">
+                      <button
+                        onClick={() =>
+                          handleButtonClick(groupKey, groupedOrder)
+                        }
+                        className="w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white py-3.5 rounded-2xl font-semibold text-sm hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 transition-all duration-300 shadow-md hover:shadow-lg"
+                      >
+                        {confirmation && !isEditing
+                          ? "Edit"
+                          : "Confirm Booking"}
+                      </button>
+                    </div>
+
+                    <div className="pt-4">
+                      <button
+                        onClick={() =>
+                          setExpandedGroup(
+                            expandedGroup === groupKey ? null : groupKey,
+                          )
+                        }
+                        className="w-full bg-gray-100 text-gray-700 py-3 rounded-2xl font-semibold text-sm hover:bg-gray-200 focus:outline-none transition-all duration-300"
+                      >
+                        {expandedGroup === groupKey
+                          ? "Hide Passenger Details"
+                          : "Show Passenger Details"}
+                      </button>
+
+                      {expandedGroup === groupKey && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-2xl space-y-3">
+                          {groupedOrder.orders.map((order) => (
+                            <div
+                              key={order.id}
+                              className="border-b border-gray-200 pb-2 last:border-0"
+                            >
+                              <p className="text-sm font-medium text-gray-900">
+                                {order.last_name || "N/A"}{" "}
+                                {order.first_name || "N/A"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Email: {order.email || "N/A"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Room: {order.room_number || "N/A"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Hotel: {order.hotel || "N/A"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Passengers: {order.passenger_count}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              }
-            )
+                </div>
+              );
+            })
           )}
         </div>
       </div>

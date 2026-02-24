@@ -1,9 +1,11 @@
+// UserInterface.tsx
 import {
   type Dispatch,
   type SetStateAction,
   useMemo,
   useState,
   useEffect,
+  useRef,
 } from "react";
 import type {
   Tour,
@@ -24,18 +26,15 @@ import BookingSummary from "../Parts/BookingSummary";
 import { MobileFooter } from "../components/MobileFooter";
 import BookingsList from "../Pages/userInterface/BookingsList";
 import ManageLead from "../components/ManageLead";
+import ExcelDataTab from "../components/ExcelDataTab";
 import { useBooking } from "../hooks/useBooking";
 import { downloadTemplate } from "../utils/csvUtils";
+import { useTours } from "../hooks/useTours";
+import { useFlightDataStore } from "../Parts/flightDataStore";
 
 interface UserInterfaceProps {
-  tours: Tour[];
   orders: Order[];
   setOrders: Dispatch<SetStateAction<Order[]>>;
-  setTours: Dispatch<SetStateAction<Tour[]>>;
-  selectedTour: string;
-  setSelectedTour: Dispatch<SetStateAction<string>>;
-  departureDate: string;
-  setDepartureDate: Dispatch<SetStateAction<string>>;
   passengers: Passenger[];
   setPassengers: Dispatch<SetStateAction<Passenger[]>>;
   errors: ValidationError[];
@@ -45,20 +44,19 @@ interface UserInterfaceProps {
 }
 
 export default function UserInterface({
-  tours,
   orders,
   setOrders,
-  setTours,
-  selectedTour,
-  setSelectedTour,
-  departureDate,
-  setDepartureDate,
   passengers,
   setPassengers,
   errors,
   showNotification,
   currentUser,
 }: UserInterfaceProps) {
+  const userRole = currentUser.role || "user";
+  const { tours, refreshTours } = useTours({ userRole });
+  const [selectedTour, setSelectedTour] = useState("");
+  const [departureDate, setDepartureDate] = useState("");
+
   const {
     bookingPassengers,
     activeStep,
@@ -88,7 +86,6 @@ export default function UserInterface({
     handleDownloadCSV,
     handleUploadCSV,
     handleNextStep,
-    MAX_PASSENGERS,
     notification,
     setNotification,
     leadPassengerData,
@@ -96,8 +93,8 @@ export default function UserInterface({
     passengerFormData,
     setPassengerFormData,
     confirmLeadPassenger,
-    paymentMethod, // From useBooking
-    setPaymentMethod, // From useBooking
+    paymentMethod,
+    setPaymentMethod,
   } = useBooking({
     tours,
     setOrders,
@@ -106,48 +103,48 @@ export default function UserInterface({
     departureDate,
     setDepartureDate,
     errors,
-    setErrors: (newErrors) => {
-      setValidationErrors(newErrors);
-    },
+    setErrors: (newErrors) => setValidationErrors(newErrors),
     currentUser,
   });
 
   const [validationErrors, setValidationErrors] =
     useState<ValidationError[]>(errors);
   const [currentPage, setCurrentPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<"bookings" | "leads">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "leads" | "excel">(
+    "bookings"
+  );
   const [leadPassengerFormData, setLeadPassengerFormData] = useState<{
     seat_count: number;
     tour_id: string;
     departure_date: string;
   } | null>(null);
 
-  // Debug rendering and state reset
-  useEffect(() => {
-    console.log("UserInterface: Rendering", {
-      isPowerUser,
-      showPassengerPrompt,
-      bookingPassengersLength: bookingPassengers.length,
-      activeStep,
-      activeTab,
-      selectedTour,
-      departureDate,
-      passengersLength: passengers.length,
-      paymentMethod,
-    });
-  }, [
-    isPowerUser,
-    showPassengerPrompt,
-    bookingPassengers,
-    activeStep,
-    activeTab,
-    selectedTour,
-    departureDate,
-    passengers,
-    paymentMethod,
-  ]);
+  const {
+    data: flightData,
+    fetchFlightData,
+    subscribeToFlightData,
+  } = useFlightDataStore();
 
-  // Sync passengers with bookingPassengers (unsubmitted passengers)
+  useEffect(() => {
+    if (activeTab !== "excel") return;
+    const loadFlightData = async () => {
+      try {
+        await fetchFlightData({ mode: "recent", limit: 50 });
+      } catch (err: any) {
+        showNotification("error", "Өгөгдөл татахад алдаа: " + err.message);
+      }
+    };
+
+    void loadFlightData();
+    const unsubscribe = subscribeToFlightData({ mode: "recent", limit: 50 });
+    return unsubscribe;
+  }, [activeTab, fetchFlightData, subscribeToFlightData, showNotification]);
+
+  useEffect(() => {
+    refreshTours();
+  }, [refreshTours]);
+
+  // Sync unsubmitted passengers
   useEffect(() => {
     setPassengers((prev) => {
       const unsubmitted = bookingPassengers.filter((p) => p.order_id === "");
@@ -155,37 +152,23 @@ export default function UserInterface({
         ...prev.filter((p) => p.order_id !== ""),
         ...unsubmitted,
       ];
-      // Only update if passengers have actually changed to avoid infinite loop
-      if (JSON.stringify(newPassengers) !== JSON.stringify(prev)) {
-        return newPassengers;
-      }
-      return prev;
+      return JSON.stringify(newPassengers) !== JSON.stringify(prev)
+        ? newPassengers
+        : prev;
     });
   }, [bookingPassengers, setPassengers]);
 
+  // Reset on step 1
   useEffect(() => {
     if (activeStep === 1) {
-      console.log("UserInterface: Resetting props for step 1");
-      setSelectedTour((prev) => (prev === "" ? prev : ""));
-      setDepartureDate((prev) => (prev === "" ? prev : ""));
-      setPassengers((prev) => {
-        const filtered = prev.filter((p) => p.order_id !== "");
-        return JSON.stringify(filtered) !== JSON.stringify(prev)
-          ? filtered
-          : prev;
-      });
-      setValidationErrors((prev) => (prev.length === 0 ? prev : []));
-      setActiveTab((prev) => (prev === "bookings" ? prev : "bookings"));
+      setSelectedTour("");
+      setDepartureDate("");
+      setPassengers((prev) => prev.filter((p) => p.order_id !== ""));
+      setValidationErrors([]);
+      setActiveTab("bookings");
     }
-  }, [
-    activeStep,
-    setSelectedTour,
-    setDepartureDate,
-    setPassengers,
-    setActiveTab,
-  ]);
+  }, [activeStep]);
 
-  // Filter submitted passengers
   const submittedPassengers = useMemo(() => {
     return passengers.filter((p) => p.order_id !== "");
   }, [passengers]);
@@ -194,40 +177,13 @@ export default function UserInterface({
     if (passengerFormData) {
       const tour = tours.find((t) => t.id === passengerFormData.tour_id);
       if (tour) {
-        console.log("UserInterface: Setting tour and departure date", {
-          tour_title: tour.title,
-          departure_date: passengerFormData.departure_date,
-        });
-        setSelectedTour((prev) => (prev === tour.title ? prev : tour.title));
-        setDepartureDate((prev) =>
-          prev === passengerFormData.departure_date
-            ? prev
-            : passengerFormData.departure_date
-        );
+        setSelectedTour(tour.title);
+        setDepartureDate(passengerFormData.departure_date);
       }
     }
-  }, [passengerFormData, tours, setSelectedTour, setDepartureDate]);
+  }, [passengerFormData, tours]);
 
-  // Calculate max passengers for prompt
-  const maxPassengersForPrompt = Math.min(
-    MAX_PASSENGERS - bookingPassengers.length,
-    remainingSeats !== undefined ? remainingSeats : MAX_PASSENGERS,
-    leadPassengerData?.seat_count !== undefined
-      ? leadPassengerData.seat_count - bookingPassengers.length
-      : MAX_PASSENGERS
-  );
-
-  // Handle Add Passenger click
   const handleAddPassengerClick = () => {
-    console.log("UserInterface: Add Passenger clicked", {
-      isPowerUser,
-      showPassengerPrompt,
-      canAdd,
-      remainingSeats,
-      leadPassengerData,
-      selectedTour,
-      departureDate,
-    });
     if (!canAdd) {
       showNotification(
         "error",
@@ -239,77 +195,57 @@ export default function UserInterface({
   };
 
   return (
-    <div className="px-64 py-12 bg-gray-50">
+    <div className="mono-shell">
       <Notifications
         notification={notification}
         setNotification={setNotification}
       />
 
-      <div className="max-w-9xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <ProgressSteps activeStep={activeStep} />
-        <ErrorSummary errors={validationErrors} />
+      <div className="mono-container px-4 sm:px-6 lg:px-8 pt-6 pb-10 sm:pb-16">
+        <div className="mono-stack">
+          <ProgressSteps activeStep={activeStep} />
+          <ErrorSummary errors={validationErrors} />
 
+        {/* ADD PASSENGER PROMPT */}
         {showPassengerPrompt && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 debug-modal">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
-              <h3 className="text-lg font-semibold mb-4">Add Passengers</h3>
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+            <div className="mono-card p-6 w-full max-w-md">
+              <h3 className="mono-title text-lg mb-4">Add Passengers</h3>
               <div className="mb-4">
                 <label
                   htmlFor="passengerCount"
-                  className="block text-sm font-medium text-gray-700"
+                  className="block text-sm font-medium"
                 >
-                  How many passengers? (Max: {maxPassengersForPrompt})
+                  How many passengers?
                 </label>
                 <input
                   type="number"
                   id="passengerCount"
                   min="1"
-                  max={maxPassengersForPrompt}
                   value={passengerCountInput}
-                  onChange={(e) => {
-                    console.log(
-                      "UserInterface: passengerCountInput changed to",
-                      e.target.value
-                    );
-                    setPassengerCountInput(e.target.value);
-                  }}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  onChange={(e) => setPassengerCountInput(e.target.value)}
+                  className="mono-input mt-2"
                 />
               </div>
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => {
-                    console.log("UserInterface: Cancel prompt clicked");
                     setShowPassengerPrompt(false);
                     setPassengerCountInput("");
                   }}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                  className="mono-button mono-button--ghost"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    console.log(
-                      "UserInterface: Add passengers clicked, count:",
-                      passengerCountInput
-                    );
-                    const count = parseInt(passengerCountInput) || 0;
-                    if (count <= 0 || count > maxPassengersForPrompt) {
-                      showNotification(
-                        "error",
-                        `Please enter a valid number of passengers (1-${maxPassengersForPrompt})`
-                      );
-                      return;
-                    }
-                    addMultiplePassengers(count);
                     setShowPassengerPrompt(false);
                     setPassengerCountInput("");
                     newPassengerRef.current?.scrollIntoView({
                       behavior: "smooth",
-                      block: "center",
                     });
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="mono-button"
                 >
                   Add
                 </button>
@@ -318,8 +254,9 @@ export default function UserInterface({
           </div>
         )}
 
+        {/* STEP 1: TOUR SELECTION */}
         {activeStep === 1 && (
-          <div className="animate-fade-in">
+          <div className="animate-fadeIn">
             <TourSelection
               tours={tours}
               selectedTour={selectedTour}
@@ -328,12 +265,13 @@ export default function UserInterface({
               setDepartureDate={setDepartureDate}
               errors={validationErrors}
               setActiveStep={setActiveStep}
-              userRole={currentUser.role || "user"}
+              userRole={userRole}
               showAvailableSeats={false}
             />
           </div>
         )}
 
+        {/* STEP 2: LEAD PASSENGER */}
         {activeStep === 2 && (
           <LeadPassengerForm
             selectedTour={selectedTour}
@@ -348,15 +286,16 @@ export default function UserInterface({
           />
         )}
 
+        {/* STEP 3: PASSENGER LIST */}
         {activeStep === 3 && (
           <>
-            <div className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl shadow-sm border border-slate-200 mb-6">
-              <div className="px-6 py-4 border-b border-slate-200">
+            <div className="sticky top-0 z-10 mono-card mb-6">
+              <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center space-x-4">
-                    <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
+                    <div className="p-2 bg-gray-100 rounded-lg border border-gray-200">
                       <svg
-                        className="h-5 w-5 text-white"
+                        className="h-5 w-5 text-gray-700"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -370,10 +309,10 @@ export default function UserInterface({
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">
+                      <h3 className="mono-title text-lg">
                         Booking Details
                       </h3>
-                      <p className="text-sm text-slate-600 flex items-center space-x-4">
+                      <p className="text-sm text-gray-600 flex flex-wrap items-center gap-4">
                         <span className="flex items-center">
                           <svg
                             className="w-4 h-4 mr-1"
@@ -446,7 +385,7 @@ export default function UserInterface({
                   </div>
                 </div>
               </div>
-              <div className="px-6 py-4 bg-white rounded-b-xl">
+              <div className="px-6 py-4 bg-gray-50 rounded-b-xl">
                 <BookingActions
                   bookingPassengers={bookingPassengers}
                   selectedTour={selectedTour}
@@ -460,11 +399,12 @@ export default function UserInterface({
                   }
                   handleUploadCSV={handleUploadCSV}
                   newPassengerRef={newPassengerRef}
-                  maxPassengers={MAX_PASSENGERS}
                   canAddPassenger={canAdd}
+                  maxPassengers={0}
                 />
               </div>
             </div>
+
             <PassengerList
               passengers={bookingPassengers}
               selectedTourData={selectedTourData}
@@ -495,11 +435,17 @@ export default function UserInterface({
               hotels={availableHotels}
               setNotification={() => {}}
               addMainPassenger={() => addMultiplePassengers(1)}
+              setPassengers={function (
+                value: SetStateAction<Passenger[]>
+              ): void {
+                throw new Error("Function not implemented.");
+              }}
             />
-            <div className="flex gap-2 mt-8">
+
+            <div className="flex flex-col sm:flex-row gap-3 mt-8">
               <button
                 onClick={() => setActiveStep(2)}
-                className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="mono-button mono-button--ghost w-full sm:w-auto"
               >
                 <svg
                   className="w-4 h-4 mr-2"
@@ -519,7 +465,7 @@ export default function UserInterface({
               <button
                 onClick={handleNextStep}
                 disabled={bookingPassengers.length === 0}
-                className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
+                className="mono-button w-full sm:flex-1"
               >
                 Review Booking
                 <svg
@@ -540,6 +486,7 @@ export default function UserInterface({
           </>
         )}
 
+        {/* STEP 4: BOOKING SUMMARY */}
         {activeStep === 4 && (
           <BookingSummary
             selectedTour={selectedTour}
@@ -560,31 +507,52 @@ export default function UserInterface({
           />
         )}
 
+        {/* TABS: Bookings | Leads | Excel */}
         {activeStep === 1 && (
           <div className="mt-8">
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100">
-              <div className="flex border-b border-gray-200">
+            <div className="mono-card">
+              <div className="mono-tablist">
                 <button
                   onClick={() => setActiveTab("bookings")}
-                  className={`flex-1 py-4 px-6 text-sm font-semibold text-center transition-all duration-200 ${
-                    activeTab === "bookings"
-                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-900 border-b-2 border-blue-600"
-                      : "text-gray-600 hover:bg-gray-50"
+                  className={`mono-tab ${
+                    activeTab === "bookings" ? "mono-tab--active" : ""
                   }`}
                 >
                   Your Bookings
                 </button>
                 <button
                   onClick={() => setActiveTab("leads")}
-                  className={`flex-1 py-4 px-6 text-sm font-semibold text-center transition-all duration-200 ${
-                    activeTab === "leads"
-                      ? "bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-900 border-b-2 border-blue-600"
-                      : "text-gray-600 hover:bg-gray-50"
+                  className={`mono-tab ${
+                    activeTab === "leads" ? "mono-tab--active" : ""
                   }`}
                 >
                   Your Lead Passengers
                 </button>
+                <button
+                  onClick={() => setActiveTab("excel")}
+                  className={`mono-tab ${
+                    activeTab === "excel" ? "mono-tab--active" : ""
+                  }`}
+                >
+                  <span className="flex items-center justify-center">
+                    <svg
+                      className="w-4 h-4 mr-1"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    Excel Data
+                  </span>
+                </button>
               </div>
+
               <div className="p-8">
                 {activeTab === "bookings" && (
                   <BookingsList
@@ -605,10 +573,49 @@ export default function UserInterface({
                     setPassengerFormData={setLeadPassengerFormData}
                   />
                 )}
+                {activeTab === "excel" && (
+                  <div className="space-y-6">
+                    {flightData.length > 0 ? (
+                      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            Нислэгийн Мэдээлэл
+                          </h3>
+                          <div className="flex items-center gap-3"></div>
+                        </div>
+                        <ExcelDataTab data={flightData} />
+                        <p className="text-xs text-gray-500 mt-3">
+                          Data persists across tabs and reloads
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-gray-500">
+                        <svg
+                          className="w-16 h-16 mx-auto mb-4 text-gray-300"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        <p className="text-lg font-medium">Файл оруулаагүй</p>
+                        <p className="text-sm">
+                          Менежер Excel файл оруулна уу.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
+        </div>
       </div>
 
       <MobileFooter
@@ -617,17 +624,17 @@ export default function UserInterface({
         setActiveStep={setActiveStep}
         totalPrice={totalPrice}
         canAdd={canAdd}
-        maxPassengers={MAX_PASSENGERS}
         addPassenger={handleAddPassengerClick}
         clearAllPassengers={clearAllPassengers}
         handleNextStep={handleNextStep}
         newPassengerRef={newPassengerRef}
+        maxPassengers={0}
       />
 
       {loading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 flex items-center">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="mono-card px-6 py-4 flex items-center gap-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
             <span className="text-gray-900">Processing your request...</span>
           </div>
         </div>

@@ -136,7 +136,6 @@ export default function CustomTableEditor({
           filter: `table_id=eq.${tableMeta.id}`,
         },
         (payload) => {
-          console.log("Custom columns change:", payload);
           fetchColumns();
         }
       )
@@ -148,11 +147,9 @@ export default function CustomTableEditor({
             `Real-time columns subscription failed: ${error.message}`
           );
         }
-        console.log("Custom columns subscription status:", status);
       });
 
     return () => {
-      console.log("Cleaning up custom_columns subscription");
       supabase.removeChannel(channel);
     };
   }, [tableMeta.id, tableMeta.physical_table_name, showNotification]);
@@ -947,7 +944,7 @@ export default function CustomTableEditor({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full mono-table">
                   <thead className="bg-gray-50 border-b-2 border-gray-200">
                     <tr>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
@@ -1051,7 +1048,7 @@ export default function CustomTableEditor({
                 + Add Row
               </button>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-max table-auto">
+                <table className="w-full min-w-max mono-table table-auto">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">

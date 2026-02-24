@@ -1,13 +1,16 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import type { Order, User as UserType } from "../types/type";
 import { formatDate } from "../utils/tourUtils";
 import { useNotifications } from "../hooks/useNotifications";
 import { VALID_ORDER_STATUSES, type OrderStatus } from "../types/type";
+import React from "react";
+import { RotateCcw, ArrowUp } from "lucide-react";
+import { Edit } from "lucide-react";
+import EditOrderPassengersModal from "./EditOrderPassengersModal";
+import { useTranslation } from "react-i18next";
 
-const schemaCache = {
-  orders: null as boolean | null,
-};
+const schemaCache = { orders: null as boolean | null };
 
 interface OrdersTabProps {
   orders: Order[];
@@ -15,188 +18,211 @@ interface OrdersTabProps {
   currentUser: UserType;
 }
 
+const safe = (val: any) =>
+  val == null || val === "" ? "—" : String(val).trim();
+
+const shortOrderId = (id: string) => {
+  const value = String(id || "");
+  return value.length > 10 ? value.slice(0, 10) : value;
+};
+
+interface TourGroup {
+  tourTitle: string;
+  orders: Order[];
+  isCompleted: boolean;
+  key: string;
+}
+
+interface DateGroup {
+  date: string;
+  display: string;
+  tours: TourGroup[];
+  key: string;
+}
+
 export default function OrdersTab({
   orders,
   setOrders,
   currentUser,
 }: OrdersTabProps) {
+  const { t } = useTranslation();
   const { showNotification } = useNotifications();
-  const [customerNameFilter, setCustomerNameFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [tourTitleFilter, setTourTitleFilter] = useState<string>("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
-    null
-  );
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
-  const [showCompletedOnly, setShowCompletedOnly] = useState<boolean>(false);
+  const [customerNameFilter, setCustomerNameFilter] = useState("");
+  const [tourTitleFilter, setTourTitleFilter] = useState("");
+  const [departureDateFilter, setDepartureDateFilter] = useState("");
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [hasShowInProvider, setHasShowInProvider] = useState<boolean | null>(
-    null
+    null,
   );
-  const [originalOrders, setOriginalOrders] = useState<Order[]>([]);
-  const [bypassRoleFilter, setBypassRoleFilter] = useState<boolean>(false);
-  const ordersPerPage: number = 10;
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [customerNameFilter, statusFilter, tourTitleFilter, showCompletedOnly]);
-
-  useEffect(() => {
-    if (isEditMode) {
-      setOriginalOrders([...orders]);
-    }
-  }, [isEditMode, orders]);
+  const [completingDateKey, setCompletingDateKey] = useState<string | null>(
+    null,
+  );
+  const [undoingDateKey, setUndoingDateKey] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"active" | "all" | "completed">(
+    "active",
+  );
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const checkOrdersSchema = async () => {
     if (schemaCache.orders !== null) {
       setHasShowInProvider(schemaCache.orders);
-      console.log(
-        "checkOrdersSchema: show_in_provider column exists (cached):",
-        schemaCache.orders
-      );
       return;
     }
     let hasColumn = false;
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc(
-        "get_table_columns",
-        { table_name: "orders" }
-      );
-      if (rpcError) throw rpcError;
-      hasColumn =
-        Array.isArray(rpcData) &&
-        rpcData.some((col: any) => col.column_name === "show_in_provider");
-    } catch (rpcError) {
-      console.warn(
-        "checkOrdersSchema: get_table_columns RPC failed, falling back to information_schema:",
-        rpcError
-      );
-      try {
-        const { data: schemaData, error: schemaError } = await supabase
-          .from("information_schema.columns")
-          .select("column_name")
-          .eq("table_schema", "public")
-          .eq("table_name", "orders")
-          .eq("column_name", "show_in_provider");
-        if (schemaError) throw schemaError;
-        hasColumn = schemaData.length > 0;
-      } catch (schemaError) {
-        console.error(
-          "checkOrdersSchema: Error checking orders schema:",
-          schemaError
-        );
-        showNotification("error", "Failed to verify orders schema.");
-        return;
-      }
+      const { error } = await supabase
+        .from("orders")
+        .select("show_in_provider")
+        .limit(0);
+      hasColumn = !error;
+    } catch {
+      hasColumn = false;
     }
     schemaCache.orders = hasColumn;
     setHasShowInProvider(hasColumn);
-    console.log(
-      "checkOrdersSchema: show_in_provider column exists:",
-      hasColumn
-    );
+  };
+
+  const getPassengerNote = (order: Order): string => {
+    const allPax = [
+      ...(order.passengers ?? []),
+      ...(order.passenger_requests ?? []),
+    ];
+    const note = allPax.map((p) => p.notes).find((n) => n && n.trim() !== "");
+    return note?.trim() || "";
+  };
+
+  const getMainPassengerId = (order: Order): string | null => {
+    const allPax = [
+      ...(order.passengers ?? []),
+      ...(order.passenger_requests ?? []),
+    ];
+    const main = allPax.find((p) => p.main_passenger_id == null);
+    return main?.id || allPax[0]?.id || null;
   };
 
   const fetchOrders = async () => {
     try {
-      // Fetch orders and their associated passengers
       const { data, error } = await supabase
         .from("orders")
         .select(
           `
-          *,
-          created_by:users!created_by(id, email),
-          passenger_requests(status),
-          passengers(status)
-        `
+      *,
+        created_by:users!created_by(id, email, username, first_name, last_name),
+        passengers!order_id(
+          id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          status,
+          age,
+          gender,
+          passport_number,
+          passport_expire,           
+          date_of_birth,             
+          nationality,               
+          room_allocation,
+          hotel,                 
+          main_passenger_id,
+          serial_no,
+          roomType,
+          notes,
+          group_color,
+          is_related_to_next,
+          pax_type,                  
+          itinerary_status,          
+          has_baby_bed,
+          allergy,
+          emergency_phone,
+          travel_group_name,
+          is_traveling_with_others
+        ),
+        passenger_requests!order_id(
+          id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          status,
+          room_allocation,
+          hotel,
+          main_passenger_id,
+          serial_no,
+          roomType,
+          notes,
+          passport_number,
+          passport_expire,           
+          date_of_birth,
+          nationality,
+          gender
+        ),
+        tours!tour_id(id, title)
+      `,
         )
         .in("status", VALID_ORDER_STATUSES);
-      if (error) {
-        console.error("fetchOrders: Error fetching orders:", error);
-        showNotification("error", `Failed to fetch orders: ${error.message}`);
-        return;
-      }
-      console.log("fetchOrders: Fetched raw orders:", data);
 
-      // Filter orders to only include those with at least one active passenger
-      const validOrders = data.filter((order: any) => {
-        const hasActivePassenger =
-          (order.passengers &&
-            order.passengers.some((p: any) => p.status === "active")) ||
-          (order.passenger_requests &&
-            order.passenger_requests.some((p: any) => p.status === "active"));
-        const isValid = hasActivePassenger || order.status !== "pending";
-        console.log("fetchOrders: Order validation", {
-          orderId: order.id,
-          hasActivePassenger,
-          orderStatus: order.status,
-          isValid,
-        });
-        return isValid;
+      if (error) throw error;
+
+      const mapped: Order[] = (data || []).map((o: any): Order => {
+        const creator = o.created_by?.[0];
+        return {
+          id: String(o.id),
+          user_id: String(o.user_id),
+          tour_id: String(o.tour_id),
+          phone: o.phone ?? null,
+          last_name: o.last_name ?? null,
+          first_name: o.first_name ?? null,
+          email: o.email ?? null,
+          age: o.age ?? null,
+          gender: o.gender ?? null,
+          tour: o.tours?.title ?? o.tour ?? null,
+          passport_number: o.passport_number ?? null,
+          passport_expire: o.passport_expire ?? null,
+          created_by: o.created_by ? String(o.created_by) : null,
+          createdBy: creator
+            ? `${creator.first_name ?? ""} ${creator.last_name ?? ""} (@${
+                creator.username ?? creator.email ?? ""
+              })`.trim()
+            : null,
+          status: o.status as OrderStatus,
+          hotel: o.hotel ?? null,
+          payment_method: o.payment_method ?? null,
+          created_at: o.created_at,
+          updated_at: o.updated_at,
+          passenger_count: [
+            ...(o.passengers || []),
+            ...(o.passenger_requests || []),
+          ].length,
+          departureDate: o.departureDate ?? undefined,
+          total_price: Number(o.total_price) || 0,
+          show_in_provider: !!o.show_in_provider,
+          order_id: String(o.id),
+          passengers: o.passengers || [],
+          passenger_requests: o.passenger_requests || [],
+          tour_title: o.tours?.title ?? undefined,
+          note: o.note ?? null,
+
+          passport_copy: null,
+          passport_copy_url: null,
+          commission: null,
+          edited_by: null,
+          edited_at: null,
+          travel_choice: "",
+          room_number: null,
+          total_amount: 0,
+          paid_amount: 0,
+          balance: 0,
+          booking_confirmation: null,
+          room_allocation: "",
+          travel_group: null,
+        };
       });
 
-      console.log(
-        "fetchOrders: Valid orders after passenger filter:",
-        validOrders
-      );
-
-      const mappedOrders = validOrders.map(
-        (order: any) =>
-          ({
-            id: String(order.id),
-            user_id: String(order.user_id),
-            tour_id: String(order.tour_id),
-            phone: order.phone ?? null,
-            last_name: order.last_name ?? null,
-            first_name: order.first_name ?? null,
-            email: order.email ?? null,
-            age: order.age ?? null,
-            gender: order.gender ?? null,
-            tour: order.tour ?? null,
-            passport_number: order.passport_number ?? null,
-            passport_expire: order.passport_expire ?? null,
-            passport_copy: order.passport_copy ?? null,
-            commission: order.commission ?? null,
-            created_by: order.created_by ? String(order.created_by.id) : null,
-            edited_by: order.edited_by ? String(order.edited_by) : null,
-            edited_at: order.edited_at ?? null,
-            travel_choice: order.travel_choice ?? "",
-            status: order.status as OrderStatus,
-            hotel: order.hotel ?? null,
-            room_number: order.room_number ?? null,
-            payment_method: order.payment_method ?? null,
-            created_at: order.created_at,
-            updated_at: order.updated_at,
-            departureDate: order.departure_date ?? order.departureDate ?? "",
-            createdBy: order.created_by?.email ?? order.createdBy ?? null,
-            total_price: order.total_price,
-            total_amount: order.total_amount,
-            paid_amount: order.paid_amount,
-            balance: order.balance,
-            order_id: String(order.id),
-            passenger_count:
-              (order.passengers?.length || 0) +
-              (order.passenger_requests?.length || 0),
-            booking_confirmation: order.booking_confirmations
-              ? {
-                  order_id: String(order.id),
-                  bus_number: order.booking_confirmations.bus_number ?? null,
-                  guide_name: order.booking_confirmations.guide_name ?? null,
-                  weather_emergency:
-                    order.booking_confirmations.weather_emergency ?? null,
-                  updated_by: order.booking_confirmations.updated_by ?? null,
-                  updated_at: order.booking_confirmations.updated_at ?? null,
-                }
-              : null,
-            passport_copy_url: null,
-            show_in_provider: order.show_in_provider ?? false,
-          } as Order)
-      );
-      setOrders(mappedOrders);
-      console.log("fetchOrders: Set orders state:", mappedOrders);
-    } catch (error) {
-      console.error("fetchOrders: Unexpected error:", error);
-      showNotification("error", "Unexpected error fetching orders");
+      setOrders(mapped);
+      showNotification("success", `Loaded ${mapped.length} orders!`);
+    } catch (e: any) {
+      showNotification("error", `Fetch failed: ${e.message}`);
     }
   };
 
@@ -204,1018 +230,967 @@ export default function OrdersTab({
     checkOrdersSchema();
     fetchOrders();
   }, []);
-
+  // Fixed realtime subscription
   useEffect(() => {
     if (hasShowInProvider === null) return;
-
-    const orderSubscription = supabase
-      .channel(`orders_tab_${Math.random().toString(36).substring(2)}`)
+    const channel = supabase
+      .channel("orders_tab")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-          filter: [
-            hasShowInProvider ? "show_in_provider=eq.true" : null,
-            `status=in.(${VALID_ORDER_STATUSES.join(",")})`,
-          ]
-            .filter(Boolean)
-            .join(" and "),
-        },
-        async (payload) => {
-          console.log("Received orders subscription payload:", payload);
-
-          // For INSERT and UPDATE, check passenger status
-          if (
-            payload.eventType === "INSERT" ||
-            payload.eventType === "UPDATE"
-          ) {
-            // Fetch associated passengers to validate
-            const { data: passengersData, error: passengersError } =
-              await supabase
-                .from("passenger_requests")
-                .select("status")
-                .eq("order_id", payload.new.id);
-            const { data: activePassengersData, error: activePassengersError } =
-              await supabase
-                .from("passengers")
-                .select("status")
-                .eq("order_id", payload.new.id);
-
-            if (passengersError || activePassengersError) {
-              console.error("Order subscription: Error fetching passengers:", {
-                passengersError,
-                activePassengersError,
-              });
-              return;
-            }
-
-            const hasActivePassenger =
-              (passengersData &&
-                passengersData.some((p: any) => p.status === "active")) ||
-              (activePassengersData &&
-                activePassengersData.some((p: any) => p.status === "active"));
-            const isValid =
-              hasActivePassenger || payload.new.status !== "pending";
-
-            if (!isValid) {
-              console.log("Skipping order due to no active passengers:", {
-                orderId: payload.new.id,
-                status: payload.new.status,
-              });
-              return;
-            }
-
-            if (!VALID_ORDER_STATUSES.includes(payload.new.status)) {
-              console.log(
-                "Skipping update for invalid status:",
-                payload.new.status
-              );
-              return;
-            }
-
-            if (payload.eventType === "UPDATE") {
-              setOrders((prev) =>
-                prev.map((order) =>
-                  order.id === String(payload.new.id)
-                    ? ({
-                        ...order,
-                        ...payload.new,
-                        id: String(payload.new.id),
-                        user_id: String(payload.new.user_id),
-                        tour_id: String(payload.new.tour_id),
-                        created_by: payload.new.created_by
-                          ? String(payload.new.created_by)
-                          : null,
-                        edited_by: payload.new.edited_by
-                          ? String(payload.new.edited_by)
-                          : null,
-                        passengers:
-                          payload.new.passengers ?? order.passenger_count,
-                        total_price: payload.new.total_price,
-                        total_amount: payload.new.total_amount,
-                        paid_amount: payload.new.paid_amount,
-                        balance: payload.new.balance,
-                        show_in_provider: payload.new.show_in_provider ?? false,
-                        createdBy:
-                          payload.new.created_by_email ??
-                          payload.new.createdBy ??
-                          null,
-                        departureDate:
-                          payload.new.departure_date ??
-                          payload.new.departureDate ??
-                          "",
-                        status: payload.new.status as OrderStatus,
-                      } as Order)
-                    : order
-                )
-              );
-              console.log("Order updated:", payload.new);
-            } else if (payload.eventType === "INSERT") {
-              setOrders((prev) => [
-                ...prev,
-                {
-                  id: String(payload.new.id),
-                  user_id: String(payload.new.user_id),
-                  tour_id: String(payload.new.tour_id),
-                  phone: payload.new.phone ?? null,
-                  last_name: payload.new.last_name ?? null,
-                  first_name: payload.new.first_name ?? null,
-                  email: payload.new.email ?? null,
-                  age: payload.new.age ?? null,
-                  gender: payload.new.gender ?? null,
-                  tour: payload.new.tour ?? null,
-                  passport_number: payload.new.passport_number ?? null,
-                  passport_expire: payload.new.passport_expire ?? null,
-                  commission: payload.new.commission ?? null,
-                  created_by: payload.new.created_by
-                    ? String(payload.new.created_by)
-                    : null,
-                  edited_by: payload.new.edited_by
-                    ? String(payload.new.edited_by)
-                    : null,
-                  edited_at: payload.new.edited_at ?? null,
-                  travel_choice: payload.new.travel_choice ?? "",
-                  status: payload.new.status as OrderStatus,
-                  hotel: payload.new.hotel ?? null,
-                  room_number: payload.new.room_number ?? null,
-                  payment_method: payload.new.payment_method ?? null,
-                  created_at: payload.new.created_at,
-                  updated_at: payload.new.updated_at,
-                  departureDate:
-                    payload.new.departure_date ??
-                    payload.new.departureDate ??
-                    "",
-                  createdBy:
-                    payload.new.created_by_email ??
-                    payload.new.createdBy ??
-                    null,
-                  total_price: payload.new.total_price,
-                  total_amount: payload.new.total_amount,
-                  paid_amount: payload.new.paid_amount,
-                  balance: payload.new.balance,
-                  order_id: String(payload.new.id),
-                  passenger_count:
-                    (payload.new.passengers?.length || 0) +
-                    (payload.new.passenger_requests?.length || 0),
-                  booking_confirmation: payload.new.booking_confirmations
-                    ? {
-                        order_id: String(payload.new.id),
-                        bus_number:
-                          payload.new.booking_confirmations.bus_number ?? null,
-                        guide_name:
-                          payload.new.booking_confirmations.guide_name ?? null,
-                        weather_emergency:
-                          payload.new.booking_confirmations.weather_emergency ??
-                          null,
-                        updated_by:
-                          payload.new.booking_confirmations.updated_by ?? null,
-                        updated_at:
-                          payload.new.booking_confirmations.updated_at ?? null,
-                      }
-                    : null,
-                  passport_copy_url: null,
-                  show_in_provider: payload.new.show_in_provider ?? false,
-                } as Order,
-              ]);
-              console.log("Order inserted:", payload.new);
-            }
-          } else if (payload.eventType === "DELETE") {
-            setOrders((prev) =>
-              prev.filter((order) => order.id !== String(payload.old.id))
-            );
-            console.log("Order deleted:", payload.old.id);
-          }
-        }
+        { event: "*", schema: "public", table: "orders" },
+        fetchOrders,
       )
-      .subscribe((status, error) => {
-        if (error) {
-          console.error("Order subscription error:", error);
-          showNotification(
-            "error",
-            `Real-time subscription failed: ${error.message}`
-          );
-        } else {
-          console.log("Order subscription status:", status);
-        }
-      });
-
+      .subscribe();
     return () => {
-      supabase.removeChannel(orderSubscription);
+      supabase.removeChannel(channel);
     };
-  }, [hasShowInProvider, setOrders]);
+  }, [hasShowInProvider]);
 
   const fetchWithRetry = async (
     fn: () => Promise<any>,
     retries = 3,
-    delay = 1000
+    delay = 1000,
   ) => {
     for (let i = 0; i < retries; i++) {
       try {
         return await fn();
       } catch (error) {
-        if (i < retries - 1) {
-          console.warn(
-            `fetchWithRetry: Retry ${i + 1}/${retries} after error:`,
-            error
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        } else {
-          throw error;
-        }
+        if (i === retries - 1) throw error;
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   };
+  const updateOrder = async (id: string, updates: Partial<Order>) => {
+    const prev = [...orders];
+    setOrders((os) => os.map((o) => (o.id === id ? { ...o, ...updates } : o)));
+    try {
+      const payload: any = {
+        ...updates,
+        updated_at: new Date().toISOString(),
+        edited_by: currentUser.id,
+      };
+      await fetchWithRetry(async () => {
+        const { error } = await supabase
+          .from("orders")
+          .update(payload)
+          .eq("id", id);
+        if (error) throw error;
+      });
+      showNotification("success", "Updated!");
+    } catch (e: any) {
+      showNotification("error", e.message || "Update failed");
+      setOrders(prev);
+    }
+  };
+  const updateRoomType = async (orderId: string, newRoomType: string) => {
+    const trimmed = newRoomType.trim() || null;
 
-  const handleOrderChange = async (
-    id: string,
-    field: keyof Order,
-    value: any
-  ) => {
-    const previousOrders = [...orders];
-    setOrders((prevOrders) =>
-      prevOrders.map((o) => {
-        if (o.id === id) {
-          const updatedOrder = { ...o, [field]: value };
-          if (field === "status" && value === "Completed") {
-            showNotification("success", "Travel done completely! Good Job 😎");
-          }
-          return updatedOrder;
-        }
-        return o;
-      })
+    // 1. Optimistic UI update (instant feedback)
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId
+          ? {
+              ...ord,
+              passengers: (ord.passengers || []).map((p: any) => ({
+                ...p,
+                roomType: trimmed,
+              })),
+              passenger_requests: (ord.passenger_requests || []).map(
+                (p: any) => ({
+                  ...p,
+                  roomType: trimmed,
+                }),
+              ),
+            }
+          : ord,
+      ),
     );
 
-    if (field === "show_in_provider" && hasShowInProvider) {
-      console.log(
-        `handleOrderChange: Toggling show_in_provider for order ${id} to ${value}`
-      );
-      try {
-        const updateData = {
-          show_in_provider: value,
-          updated_at: new Date().toISOString(),
-          edited_by: currentUser.id,
-        };
-        const { error } = await fetchWithRetry(async () =>
-          supabase.from("orders").update(updateData).eq("id", id)
-        );
-        if (error) throw error;
-        console.log(
-          `handleOrderChange: Successfully updated show_in_provider to ${value} for order ${id}`
-        );
-        showNotification("success", "Show in provider updated! 😎");
-      } catch (error: any) {
-        console.error(
-          `handleOrderChange: Error updating show_in_provider for order ${id}:`,
-          error
-        );
-        showNotification(
-          "error",
-          `Failed to update show_in_provider: ${error.message}`
-        );
-        setOrders(previousOrders);
-      }
-    } else if (field === "status") {
-      console.log(
-        `handleOrderChange: Updating status for order ${id} to ${value}`
-      );
-      try {
-        const updateData = {
-          status: value,
-          updated_at: new Date().toISOString(),
-          edited_by: currentUser.id,
-        };
-        const { error } = await fetchWithRetry(async () =>
-          supabase.from("orders").update(updateData).eq("id", id)
-        );
-        if (error) throw error;
-        console.log(
-          `handleOrderChange: Successfully updated status to ${value} for order ${id}`
-        );
-        showNotification("success", `Order status updated to ${value}! 😎`);
-      } catch (error: any) {
-        console.error(
-          `handleOrderChange: Error updating status for order ${id}:`,
-          error
-        );
-        if (error.code === "23514") {
-          showNotification(
-            "error",
-            `Invalid status "${value}". Allowed statuses: ${VALID_ORDER_STATUSES.join(
-              ", "
-            )}`
-          );
-        } else {
-          showNotification(
-            "error",
-            `Failed to update order status: ${error.message}`
-          );
-        }
-        setOrders(previousOrders);
-      }
-    }
-  };
-
-  const handleSaveEdits = async () => {
-    const updatedOrders = showCompletedOnly
-      ? orders
-      : orders.filter(
-          (order) =>
-            order.status !== "Travel ended completely" &&
-            order.status !== "Completed"
-        );
-
-    const previousOrders = [...orders];
-
     try {
-      for (const order of updatedOrders) {
-        const updateData: Partial<Order> = {
-          ...order,
+      // 2. FIND ALL PASSENGER IDs IN THIS ORDER
+      const order = orders.find((o) => o.id === orderId);
+      const passengerIds = [
+        ...(order?.passengers ?? []),
+        ...(order?.passenger_requests ?? []),
+      ]
+        .map((p) => p.id)
+        .filter((id): id is string => !!id);
+
+      if (passengerIds.length === 0) {
+        showNotification("warning", "No passengers to update room type");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("passengers")
+        .update({
+          roomType: trimmed,
           updated_at: new Date().toISOString(),
-          edited_by: currentUser.id,
-        };
-
-        if (hasShowInProvider === false) {
-          delete updateData.show_in_provider;
-        }
-
-        if (!VALID_ORDER_STATUSES.includes(updateData.status as OrderStatus)) {
-          console.error("handleSaveEdits: Invalid status for order", {
-            orderId: order.id,
-            status: updateData.status,
-            validStatuses: VALID_ORDER_STATUSES,
-          });
-          showNotification(
-            "error",
-            `Invalid status "${updateData.status}" for order ${
-              order.id
-            }. Allowed statuses: ${VALID_ORDER_STATUSES.join(", ")}`
-          );
-          continue;
-        }
-
-        const { error } = await fetchWithRetry(async () =>
-          supabase.from("orders").update(updateData).eq("id", order.id)
-        );
-
-        if (error) throw error;
-      }
-
-      showNotification("success", "Saved completely! 😎");
-      setIsEditMode(false);
-    } catch (error: any) {
-      console.error("handleSaveEdits: Error updating orders:", error);
-      if (error.code === "23514") {
-        showNotification(
-          "error",
-          `Invalid status or value: ${
-            error.message
-          }. Choose from allowed statuses: ${VALID_ORDER_STATUSES.join(", ")}`
-        );
-      } else {
-        showNotification(
-          "error",
-          `Failed to update orders: ${error.message || "Unknown error"}`
-        );
-      }
-      setOrders(previousOrders);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    if (
-      orders.some(
-        (order, index) =>
-          JSON.stringify(order) !== JSON.stringify(originalOrders[index])
-      )
-    ) {
-      showNotification(
-        "success",
-        "You have unsaved changes. Save or discard before exiting edit mode."
-      );
-    } else {
-      setIsEditMode(false);
-      setOrders([...originalOrders]);
-    }
-  };
-
-  const handleDeleteOrder = async (id: string) => {
-    const previousOrders = [...orders];
-    setOrders(orders.filter((o) => o.id !== id));
-
-    try {
-      const { data, error } = await fetchWithRetry(async () =>
-        supabase.from("orders").delete().eq("id", id).select()
-      );
+        })
+        .in("id", passengerIds);
 
       if (error) throw error;
 
-      showNotification("success", "Order deleted successfully");
-      setShowDeleteConfirm(null);
-    } catch (err: unknown) {
-      console.error("handleDeleteOrder: Error deleting order:", err);
-      if (err instanceof Error) {
-        showNotification("error", `Failed to delete order: ${err.message}`);
-      } else {
-        showNotification("error", "Failed to delete order: Unknown error");
+      showNotification("success", "Room type updated!");
+    } catch (err: any) {
+      showNotification("error", "Failed to save room type");
+      // Rollback on error
+      await fetchOrders();
+    }
+  };
+  const updatePassengerNote = async (passengerId: string, note: string) => {
+    const trimmed = note.trim() || null;
+    try {
+      const { error } = await supabase
+        .from("passengers")
+        .update({ notes: trimmed, updated_at: new Date().toISOString() })
+        .eq("id", passengerId);
+      if (error) throw error;
+      // Optimistically update local state
+      setOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          passengers:
+            order.passengers?.map((p) =>
+              p.id === passengerId ? { ...p, notes: trimmed } : p,
+            ) ?? [],
+          passenger_requests:
+            order.passenger_requests?.map((p) =>
+              p.id === passengerId ? { ...p, notes: trimmed } : p,
+            ) ?? [],
+        })),
+      );
+      showNotification("success", "Note saved!");
+    } catch (e: any) {
+      showNotification("error", "Failed to save note");
+    }
+  };
+
+  const handleCompleteAllInDate = async (dateKey: string) => {
+    if (completingDateKey || undoingDateKey) return;
+    setCompletingDateKey(dateKey);
+    const dateGroup = groupedData.find((dg) => dg.key === dateKey);
+    if (!dateGroup) {
+      setCompletingDateKey(null);
+      return;
+    }
+    const passengerIds: string[] = dateGroup.tours
+      .flatMap((tour) =>
+        tour.orders.flatMap((o) => [
+          ...(o.passengers ?? []),
+          ...(o.passenger_requests ?? []),
+        ]),
+      )
+      .map((p) => p.id)
+      .filter((id): id is string => id != null);
+    if (passengerIds.length === 0) {
+      showNotification("warning", "No passengers to complete");
+      setCompletingDateKey(null);
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from("passengers")
+        .update({ status: "completed", updated_at: new Date().toISOString() })
+        .in("id", passengerIds);
+      if (error) throw error;
+      showNotification(
+        "success",
+        `Completed ${passengerIds.length} passengers!`,
+      );
+      await fetchOrders();
+      setActiveTab("completed");
+    } catch (e: any) {
+      showNotification("error", `Failed: ${e.message}`);
+    } finally {
+      setCompletingDateKey(null);
+    }
+  };
+  const handleUndoAllInDate = async (dateKey: string) => {
+    if (undoingDateKey || completingDateKey) return;
+    setUndoingDateKey(dateKey);
+    const dateGroup = groupedData.find((dg) => dg.key === dateKey);
+    if (!dateGroup) {
+      setUndoingDateKey(null);
+      return;
+    }
+    const passengerIds: string[] = dateGroup.tours
+      .flatMap((tour) =>
+        tour.orders.flatMap((o) => [
+          ...(o.passengers ?? []),
+          ...(o.passenger_requests ?? []),
+        ]),
+      )
+      .map((p) => p.id)
+      .filter((id): id is string => id != null);
+    if (passengerIds.length === 0) {
+      showNotification("warning", "No passengers to undo");
+      setUndoingDateKey(null);
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from("passengers")
+        .update({ status: "active", updated_at: new Date().toISOString() })
+        .in("id", passengerIds);
+      if (error) throw error;
+      showNotification(
+        "success",
+        `Reopened ${passengerIds.length} passengers!`,
+      );
+      await fetchOrders();
+      setActiveTab("active");
+    } catch (e: any) {
+      showNotification("error", `Undo failed: ${e.message}`);
+    } finally {
+      setUndoingDateKey(null);
+    }
+  };
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const handleDeleteOrder = async (orderId: string) => {
+    if (
+      !confirm(
+        "Are you 100% sure you want to delete this entire order?\nThis cannot be undone!",
+      )
+    ) {
+      return;
+    }
+    setDeletingOrderId(orderId);
+    try {
+      const allPax = orders.find((o) => o.id === orderId);
+      const passengerIds = [
+        ...(allPax?.passengers ?? []),
+        ...(allPax?.passenger_requests ?? []),
+      ]
+        .map((p) => p.id)
+        .filter(Boolean);
+      if (passengerIds.length > 0) {
+        const { error: paxError } = await supabase
+          .from("passengers")
+          .delete()
+          .in("id", passengerIds);
+        if (paxError) throw paxError;
       }
-      setOrders(previousOrders);
-      setShowDeleteConfirm(null);
+      // Then delete the order
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+      if (error) throw error;
+      // Remove from local state
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      showNotification("success", "Order deleted permanently!");
+    } catch (e: any) {
+      showNotification("error", `Delete failed: ${e.message}`);
+    } finally {
+      setDeletingOrderId(null);
     }
   };
+  const groupedData = useMemo(() => {
+    const map: { [date: string]: DateGroup } = {};
+    orders.forEach((order) => {
+      const iso = order.departureDate
+        ? new Date(order.departureDate).toISOString().split("T")[0]
+        : "no-date";
+      if (!map[iso]) {
+        map[iso] = {
+          date: iso,
+          display: iso === "no-date" ? "No Date" : formatDate(iso),
+          tours: [],
+          key: iso,
+        };
+      }
+      const tourTitle = order.tour || "Unknown Tour";
+      const tourKey = `${iso}|||${tourTitle}`;
+      let tour = map[iso].tours.find((t) => t.key === tourKey);
+      if (!tour) {
+        tour = { tourTitle, orders: [], isCompleted: false, key: tourKey };
+        map[iso].tours.push(tour);
+      }
+      tour.orders.push(order);
+      const allPax = [
+        ...(order.passengers ?? []),
+        ...(order.passenger_requests ?? []),
+      ];
+      if (
+        order.status === "cancelled" ||
+        (allPax.length > 0 && allPax.every((p) => p.status === "completed"))
+      ) {
+        tour.isCompleted = true;
+      }
+    });
+    return Object.values(map);
+  }, [orders]);
 
-  const filteredOrders = useMemo(() => {
-    console.log("filteredOrders: Initial orders:", orders);
-    const validOrders = orders.filter(
-      (order) =>
-        order && order.id && VALID_ORDER_STATUSES.includes(order.status)
-    );
-    console.log("filteredOrders: After status filter:", validOrders);
-    const filtered = validOrders
-      .sort((a, b) => {
-        const dateA = a.departureDate ? new Date(a.departureDate) : new Date(0);
-        const dateB = b.departureDate ? new Date(b.departureDate) : new Date(0);
-        return dateA.getTime() - dateB.getTime();
-      })
-      .filter((order) => {
-        const customerName = `${order.first_name || ""} ${
-          order.last_name || ""
-        }`.toLowerCase();
-        const matchesCustomerName = customerName.includes(
-          customerNameFilter.toLowerCase()
-        );
-        const matchesStatus =
-          statusFilter === "all" || order.status === statusFilter;
-        const matchesTourTitle =
-          order.tour?.toLowerCase().includes(tourTitleFilter.toLowerCase()) ||
-          false;
-        const isCompleted =
-          order.status === "Completed" ||
-          order.status === "Travel ended completely";
-        const isManager = ["admin", "manager", "superadmin"].includes(
-          currentUser.role || ""
-        );
-        const matchesApproval =
-          bypassRoleFilter || isManager || order.status !== "approved";
-        const result =
-          matchesCustomerName &&
-          matchesStatus &&
-          matchesTourTitle &&
-          matchesApproval &&
-          (showCompletedOnly ? isCompleted : !isCompleted);
-        console.log("filteredOrders: Order filter result:", {
-          orderId: order.id,
-          status: order.status,
-          matchesCustomerName,
-          matchesStatus,
-          matchesTourTitle,
-          matchesApproval,
-          showCompletedOnly,
-          isCompleted,
-          result,
-        });
-        return result;
-      });
-    console.log("filteredOrders: Final filtered orders:", filtered);
-    return filtered;
+  const activeDates = groupedData
+    .map((d) => ({ ...d, tours: d.tours.filter((t) => !t.isCompleted) }))
+    .filter((d) => d.tours.length > 0);
+  const completedDates = groupedData
+    .map((d) => ({ ...d, tours: d.tours.filter((t) => t.isCompleted) }))
+    .filter((d) => d.tours.length > 0);
+  activeDates.sort((a, b) => a.date.localeCompare(b.date));
+  completedDates.sort((a, b) => b.date.localeCompare(a.date));
+  const tabs = [
+    ...(activeDates.length > 0
+      ? [
+          {
+            id: "active",
+            label: "Active",
+            count: activeDates.reduce(
+              (s, d) => s + d.tours.reduce((ss, t) => ss + t.orders.length, 0),
+              0,
+            ),
+          },
+        ]
+      : []),
+
+    { id: "all", label: "All", count: orders.length },
+
+    ...(completedDates.length > 0
+      ? [
+          {
+            id: "completed",
+            label: "Completed",
+            count: completedDates.reduce(
+              (s, d) => s + d.tours.reduce((ss, t) => ss + t.orders.length, 0),
+              0,
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const visibleDateGroups = useMemo(() => {
+    let list: DateGroup[] =
+      activeTab === "all"
+        ? departureDateFilter
+          ? groupedData.filter((g) => g.date === departureDateFilter)
+          : groupedData
+        : activeTab === "active"
+          ? activeDates
+          : completedDates;
+    if (customerNameFilter || tourTitleFilter) {
+      const cTerm = customerNameFilter.toLowerCase();
+      const tTerm = tourTitleFilter.toLowerCase();
+      list = list
+        .map((dg) => ({
+          ...dg,
+          tours: dg.tours
+            .map((tg) => ({
+              ...tg,
+              orders: tg.orders.filter((o) => {
+                const lead =
+                  o.passengers?.[0] || o.passenger_requests?.[0] || o;
+                const name = `${safe(lead.first_name)} ${safe(
+                  lead.last_name,
+                )}`.toLowerCase();
+                const tour = safe(o.tour).toLowerCase();
+                return (
+                  (!cTerm || name.includes(cTerm)) &&
+                  (!tTerm || tour.includes(tTerm))
+                );
+              }),
+            }))
+            .filter((tg) => tg.orders.length > 0),
+        }))
+        .filter((dg) => dg.tours.length > 0);
+    }
+    return list;
   }, [
-    orders,
+    activeTab,
+    departureDateFilter,
+    groupedData,
+    activeDates,
+    completedDates,
     customerNameFilter,
-    statusFilter,
     tourTitleFilter,
-    showCompletedOnly,
-    currentUser.role,
-    bypassRoleFilter,
   ]);
-
-  const totalPages: number = Math.ceil(
-    (filteredOrders?.length || 0) / ordersPerPage
-  );
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (currentPage - 1) * ordersPerPage;
-    const paginated = filteredOrders.slice(
-      startIndex,
-      startIndex + ordersPerPage
-    );
-    console.log("paginatedOrders:", paginated);
-    return paginated;
-  }, [filteredOrders, currentPage, ordersPerPage]);
-
-  const handlePreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage((prev) => prev - 1);
+  // ADD THIS FUNCTION — SUPER SIMPLE
+  const getGroupColor = (orders: Order[], currentOrderIndex: number) => {
+    const currentMain =
+      orders[currentOrderIndex].passengers?.[0] ||
+      orders[currentOrderIndex].passenger_requests?.[0];
+    if (!currentMain?.is_related_to_next) return "";
+    // If current is related to next → same color as previous group
+    if (currentOrderIndex > 0) {
+      const prevMain =
+        orders[currentOrderIndex - 1].passengers?.[0] ||
+        orders[currentOrderIndex - 1].passenger_requests?.[0];
+      if (prevMain?.is_related_to_next) {
+        return "bg-rose-100"; // or any color you want
+      }
     }
+    // Start of a new related chain
+    const colors = [
+      "bg-rose-100",
+      "bg-amber-100",
+      "bg-emerald-100",
+      "bg-sky-100",
+      "bg-purple-100",
+      "bg-pink-100",
+    ];
+    const colorIndex = Math.floor(currentOrderIndex / 3); // every 3 orders = new color
+    return colors[colorIndex % colors.length];
   };
-
-  const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage((prev) => prev + 1);
-    }
+  const scrollToTop = () => {
+    containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    setShowBackToTop(false);
   };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: "bg-amber-100 text-amber-800 border-amber-200",
-      "Information given": "bg-blue-100 text-blue-800 border-blue-200",
-      "Need to give information":
-        "bg-yellow-100 text-yellow-800 border-yellow-200",
-      "Need to tell got a seat/in waiting":
-        "bg-purple-100 text-purple-800 border-purple-200",
-      "Need to conclude a contract":
-        "bg-green-100 text-green-800 border-green-200",
-      "Concluded a contract": "bg-teal-100 text-teal-800 border-teal-200",
-      "Postponed the travel": "bg-orange-100 text-orange-800 border-orange-200",
-      "Interested in other travel": "bg-pink-100 text-pink-800 border-pink-200",
-      cancelled: "bg-red-100 text-red-800 border-red-200",
-      "Cancelled after confirmed": "bg-red-200 text-red-900 border-red-300",
-      "Cancelled after ordered a seat":
-        "bg-red-300 text-red-900 border-red-400",
-      "Cancelled after take a information":
-        "bg-red-400 text-red-900 border-red-500",
-      "Paid the advance payment":
-        "bg-indigo-100 text-indigo-800 border-indigo-200",
-      "Need to meet": "bg-gray-100 text-gray-800 border-gray-200",
-      "Sent a claim": "bg-red-100 text-red-800 border-red-200",
-      "Fam Tour": "bg-violet-100 text-violet-800 border-violet-200",
-      confirmed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-      "The travel is going": "bg-blue-200 text-blue-900 border-blue-300",
-      "Has taken seat from another company":
-        "bg-orange-200 text-orange-900 border-orange-300",
-      "Swapped seat with another company":
-        "bg-purple-200 text-purple-900 border-purple-300",
-      "Gave seat to another company":
-        "bg-teal-200 text-teal-900 border-teal-300",
-      "Cancelled and bought travel from another country":
-        "bg-red-500 text-white border-red-600",
-      Completed: "bg-gray-200 text-gray-900 border-gray-300",
-      "Travel ended completely": "bg-gray-200 text-gray-900 border-gray-300",
-      approved: "bg-green-100 text-green-800 border-green-200",
-      partially_approved: "bg-yellow-100 text-yellow-800 border-yellow-200",
-      rejected: "bg-red-100 text-red-800 border-red-200",
-    };
-    return (
-      statusConfig[status as keyof typeof statusConfig] ||
-      "bg-gray-100 text-gray-800 border-gray-200"
-    );
-  };
-
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 border-b border-gray-100">
-        <div className="flex items-center justify-between mb-6">
+    <div className="mono-card overflow-hidden">
+      <div className="p-6 border-b border-gray-200 bg-gray-50">
+        <div className="mono-header">
           <div>
-            <h3 className="text-2xl font-bold text-gray-900">
-              Orders Management
-            </h3>
-            <p className="text-gray-600 mt-1">
-              Manage and track all confirmed tour orders
+            <h3 className="mono-title text-2xl">{t("ordersManagement")}</h3>
+            <p className="mono-subtitle mt-2">
+              All changes save instantly • Complete/Undo entire date
             </p>
           </div>
-          <div className="flex items-center space-x-4">
-            <div className="bg-white px-4 py-2 rounded-full shadow-sm border">
-              <span className="text-sm font-medium text-gray-600">
-                {filteredOrders.length}{" "}
-                {filteredOrders.length === 1 ? "order" : "orders"}
-              </span>
-            </div>
-            <button
-              onClick={() => setBypassRoleFilter(!bypassRoleFilter)}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-semibold"
-            >
-              {bypassRoleFilter ? "Enable Role Filter" : "Bypass Role Filter"}
-            </button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              👤 Search by Customer Name
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={customerNameFilter}
-                onChange={(e) => setCustomerNameFilter(e.target.value)}
-                placeholder="Enter customer name..."
-                className="w-full px-4 py-3 pl-10 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
-              />
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              🏷️ Tour Title
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={tourTitleFilter}
-                onChange={(e) => setTourTitleFilter(e.target.value)}
-                placeholder="Search by tour title..."
-                className="w-full px-4 py-3 pl-10 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
-              />
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">
-              📊 Status Filter
-            </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input
+              placeholder="Customer name..."
+              value={customerNameFilter}
+              onChange={(e) => setCustomerNameFilter(e.target.value)}
+              className="mono-input"
+            />
+            <input
+              placeholder="Tour title..."
+              value={tourTitleFilter}
+              onChange={(e) => setTourTitleFilter(e.target.value)}
+              className="mono-input"
+            />
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-blue-100 focus:border-blue-400 transition-all duration-200 bg-white shadow-sm"
+              value={departureDateFilter}
+              onChange={(e) => setDepartureDateFilter(e.target.value)}
+              className="mono-input"
             >
-              <option value="all">All Statuses</option>
-              {VALID_ORDER_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
+              <option value="">{t("allDates")}</option>
+              {Array.from(new Set(orders.map((o) => o.departureDate)))
+                .filter(Boolean)
+                .sort()
+                .map((d) => (
+                  <option key={d} value={d!}>
+                    {formatDate(d!)}
+                  </option>
+                ))}
             </select>
-            <div className="mt-2 space-y-2">
-              <button
-                onClick={() => {
-                  if (isEditMode) {
-                    handleCancelEdit();
-                  } else {
-                    setIsEditMode(true);
-                  }
-                }}
-                className="w-full px-28 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-all duration-200 font-semibold text-sm"
-              >
-                {isEditMode ? "Cancel Edit" : "Edit Orders"}
-              </button>
-              {isEditMode && (
-                <button
-                  onClick={handleSaveEdits}
-                  className="w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-all duration-200 font-semibold text-sm"
-                >
-                  Save Changes
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setShowCompletedOnly(!showCompletedOnly);
-                  setStatusFilter("all");
-                  showNotification(
-                    "success",
-                    showCompletedOnly
-                      ? "Back to all orders!"
-                      : "Showing completed orders!"
-                  );
-                }}
-                className="w-full px-4 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-all duration-200 font-semibold text-sm"
-              >
-                {showCompletedOnly
-                  ? "Show All Orders"
-                  : "Show Completed Orders"}
-              </button>
-            </div>
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-100">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-0 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
-                Order ID
-              </th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-24 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
-                Tour
-              </th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider sticky left-68 z-10 bg-gray-50 w-28 shadow-sm border-r border-gray-200">
-                Passenger
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Departure
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Total Price
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Hotel
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Room
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Payment
-              </th>
-              <th className="px-28 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Status
-              </th>
-              {hasShowInProvider && (
-                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Show to Provider
-                </th>
-              )}
-              <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-50">
-            {paginatedOrders.map((order, index) => (
-              <tr
-                key={order.id}
-                className={`hover:bg-blue-25 transition-all duration-200 ${
-                  index % 2 === 0 ? "bg-white" : "bg-gray-25"
+      <div className="border-b border-gray-200">
+        <div className="px-3 py-3 overflow-x-auto scrollbar-hide">
+          <div className="mono-nav min-w-max">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`mono-nav-item ${
+                  activeTab === tab.id ? "mono-nav-item--active" : ""
                 }`}
               >
-                <td className="px-4 py-2 whitespace-nowrap sticky left-0 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
-                  <div className="flex items-center">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
-                    <div className="text-sm font-bold text-gray-900 bg-gray-50 px-2 py-1 rounded-full">
-                      #{order.id}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap sticky left-24 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
-                  <input
-                    type="text"
-                    value={order.tour || ""}
-                    onChange={(e) =>
-                      handleOrderChange(order.id, "tour", e.target.value)
-                    }
-                    className="w-full min-w-[140px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                    disabled={!isEditMode}
-                    placeholder="Tour title..."
-                  />
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap sticky left-68 z-10 bg-white w-28 shadow-sm border-r border-gray-100">
-                  <div className="space-y-1">
-                    <div className="text-sm font-semibold text-gray-900">
-                      {order.first_name || "N/A"} {order.last_name || "N/A"}
-                    </div>
-                    <div className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded-full inline-block">
-                      {order.email || "N/A"}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="space-y-1">
-                    <input
-                      type="date"
-                      value={order.departureDate || ""}
-                      onChange={(e) =>
-                        handleOrderChange(
-                          order.id,
-                          "departureDate",
-                          e.target.value
-                        )
-                      }
-                      className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                      disabled={!isEditMode}
-                    />
-                    <div className="text-xs text-gray-500 font-medium">
-                      {formatDate(order.departureDate)}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      value={order.total_price || ""}
-                      onChange={(e) =>
-                        handleOrderChange(
-                          order.id,
-                          "total_price",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="w-full min-w-[100px] pl-6 pr-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                      disabled={!isEditMode}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={order.hotel || ""}
-                    onChange={(e) =>
-                      handleOrderChange(order.id, "hotel", e.target.value)
-                    }
-                    className="w-full min-w-[120px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                    disabled={!isEditMode}
-                    placeholder="Hotel name..."
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={order.room_number || ""}
-                    onChange={(e) =>
-                      handleOrderChange(order.id, "room_number", e.target.value)
-                    }
-                    className="w-full min-w-[80px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                    disabled={!isEditMode}
-                    placeholder="Room #..."
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    value={order.payment_method || ""}
-                    onChange={(e) =>
-                      handleOrderChange(
-                        order.id,
-                        "payment_method",
-                        e.target.value
-                      )
-                    }
-                    className="w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 bg-white hover:border-gray-300"
-                    disabled={!isEditMode}
-                  >
-                    <option value="">Select method</option>
-                    <option value="manual">💰 Cash</option>
-                    <option value="credit_card">💳 Credit Card</option>
-                    <option value="bank_transfer">🏦 Bank Transfer</option>
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    value={order.status || "pending"}
-                    onChange={(e) =>
-                      handleOrderChange(order.id, "status", e.target.value)
-                    }
-                    className={`w-full min-w-[100px] px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200 font-semibold ${getStatusBadge(
-                      order.status || "pending"
-                    )}`}
-                    disabled={!isEditMode}
-                  >
-                    {VALID_ORDER_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                {hasShowInProvider && (
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-center">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={order.show_in_provider || false}
-                          onChange={(e) =>
-                            handleOrderChange(
-                              order.id,
-                              "show_in_provider",
-                              e.target.checked
-                            )
-                          }
-                          className="sr-only peer"
-                        />
-                        <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                        <span className="ml-2 text-sm font-medium text-gray-700">
-                          {order.show_in_provider ? "✅" : "❌"}
-                        </span>
-                      </label>
-                    </div>
-                  </td>
-                )}
-                <td className="px-3 py-2">
-                  {showDeleteConfirm === order.id ? (
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleDeleteOrder(order.id)}
-                        className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-all duration-200 shadow-sm font-semibold text-sm"
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(null)}
-                        className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-all duration-200 shadow-sm font-semibold text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowDeleteConfirm(order.id)}
-                      className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all duration-200 group"
-                      title="Delete order"
-                    >
-                      <svg
-                        className="w-4 h-4 group-hover:scale-110 transition-transform duration-200"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </td>
-              </tr>
+                {tab.label} ({tab.count})
+              </button>
             ))}
+          </div>
+        </div>
+      </div>
+      <div
+        ref={containerRef}
+        className="overflow-auto"
+        style={{ maxHeight: "calc(100vh - 320px)" }}
+        onScroll={(e) => setShowBackToTop(e.currentTarget.scrollTop > 500)}
+      >
+        <style>{`
+          .date-group-header {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+          }
+          .table-header {
+            position: sticky;
+            top: 0px;
+            z-index: 200;
+          }
+        `}</style>
+        <table className="min-w-full mono-table mono-table--compact border-separate border-spacing-0">
+          <tbody className="bg-white">
+            {visibleDateGroups.map((dg) => {
+              const totalOrders = dg.tours.reduce(
+                (s, t) => s + t.orders.length,
+                0,
+              );
+              const hasActive = dg.tours.some((t) => !t.isCompleted);
+              const hasCompleted = dg.tours.some((t) => t.isCompleted);
+              const mainTourTitle = dg.tours[0]?.tourTitle || "Unknown Tour";
+              return (
+                <React.Fragment key={dg.key}>
+                  {/* Header — untouched */}
+                  <tr>
+                    <td colSpan={hasShowInProvider ? 16 : 15} className="p-0">
+                      <div className="date-group-header bg-gray-100 px-3 py-4 font-semibold text-base flex items-center justify-between border-b border-gray-200">
+                        <div className="flex flex-wrap items-center gap-3 text-gray-900">
+                          <span className="mono-title text-base">
+                            {mainTourTitle}
+                          </span>
+                          <span className="text-gray-400">—</span>
+                          <span className="text-gray-700">
+                            Departure: {dg.display}
+                          </span>
+                          <span className="mono-badge">
+                            {totalOrders} order{totalOrders !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          {hasActive && (
+                            <button
+                              onClick={() => handleCompleteAllInDate(dg.key)}
+                              disabled={!!completingDateKey || !!undoingDateKey}
+                              className="mono-button mono-button--sm"
+                            >
+                              {completingDateKey === dg.key
+                                ? "Completing..."
+                                : "Complete"}
+                            </button>
+                          )}
+                          {hasCompleted && (
+                            <button
+                              onClick={() => handleUndoAllInDate(dg.key)}
+                              disabled={!!undoingDateKey || !!completingDateKey}
+                              className="mono-button mono-button--ghost mono-button--sm"
+                            >
+                              {undoingDateKey === dg.key ? (
+                                "Undoing..."
+                              ) : (
+                                <>
+                                  <RotateCcw className="w-4 h-4" /> Undo All
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <tr className="table-header bg-gray-50">
+                    <th className="sticky left-0 z-30 px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] bg-gray-50 w-14 min-w-[56px] max-w-[56px]">
+                      #
+                    </th>
+                    <th className="sticky left-14 z-20 px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] bg-gray-50 w-32 min-w-[128px] max-w-[128px]">
+                      {t("orderId")}
+                    </th>
+                    <th className="sticky left-[142px] z-10 px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] bg-gray-50 min-w-[140px]">
+                      {t("lastName")}
+                    </th>
+                    <th className="sticky left-[282px] z-10 px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] bg-gray-50 min-w-[140px]">
+                      {t("firstName")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("gender")}
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("email")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("phone")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("price")}
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("payment")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("status")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("hotel")}
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("roomType")}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("room")}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] min-w-[320px]">
+                      {t("notes")}
+                    </th>
+                    {hasShowInProvider && (
+                      <th className="px-2 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                        Prov
+                      </th>
+                    )}
+                    <th className="px-12 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      {t("actions")}
+                    </th>
+                  </tr>
+
+                  {dg.tours.length > 1 &&
+                    dg.tours.slice(1).map((tour) => (
+                      <tr key={tour.key}>
+                        <td
+                          colSpan={hasShowInProvider ? 16 : 15}
+                          className="bg-gray-50 px-3 py-2 text-sm font-medium text-gray-600 border-b border-dashed border-gray-300"
+                        >
+                          Also: <strong>{tour.tourTitle}</strong> (
+                          {tour.orders.length} order
+                          {tour.orders.length > 1 ? "s" : ""})
+                        </td>
+                      </tr>
+                    ))}
+
+                  {(() => {
+                    const ordersWithPassengers = dg.tours
+                      .flatMap((t) => t.orders)
+                      .map((order) => ({
+                        ...order,
+                        allPax: [
+                          ...(order.passengers ?? []),
+                          ...(order.passenger_requests ?? []),
+                        ],
+                      }));
+
+                    return ordersWithPassengers.map((o, orderIndex) => {
+                      const paxInOrder = o.allPax;
+                      const mainPax =
+                        paxInOrder.find((p) => p.main_passenger_id == null) ||
+                        paxInOrder[0] ||
+                        null;
+                      const room = safe(
+                        mainPax?.room_allocation ?? o.room_number,
+                      );
+                      const displayRoomType =
+                        paxInOrder
+                          .map((p) => p.roomType)
+                          .find((rt) => rt?.trim())
+                          ?.trim() || "";
+                      const mainPassengerId = getMainPassengerId(o);
+                      const isOrderLinked = paxInOrder.some(
+                        (p) => p.is_related_to_next,
+                      );
+                      const orderColor = mainPax?.group_color || null;
+                      const rowBg =
+                        isOrderLinked && orderColor
+                          ? `${orderColor}20`
+                          : "#ffffff";
+                      const rowCellStyle = { backgroundColor: rowBg } as const;
+
+                      if (paxInOrder.length === 0) {
+                        return (
+                          <tr
+                            key={o.id}
+                            className="hover:bg-gray-50 transition-colors"
+                          >
+                            <td className="sticky left-0 z-30 px-3 py-3 text-xs font-bold text-gray-700 bg-white border-r border-gray-200 w-14 min-w-[56px] max-w-[56px]">
+                              {orderIndex + 1}
+                            </td>
+                            <td
+                              className="sticky left-14 z-20 px-3 py-3 text-xs font-medium bg-white border-r border-gray-200 w-32 min-w-[128px] max-w-[128px] whitespace-nowrap overflow-hidden text-ellipsis"
+                              title={String(o.id)}
+                            >
+                              #{shortOrderId(o.id)}
+                            </td>
+                            <td
+                              colSpan={hasShowInProvider ? 14 : 13}
+                              className="px-3 py-3 text-xs italic text-gray-400"
+                            >
+                              {t("noPassengers")}
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return paxInOrder.map((pax, idx, arr) => {
+                        const isFirst = idx === 0;
+
+                        return (
+                          <tr
+                            key={pax.id}
+                            className="transition-all duration-100 relative hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.04)]"
+                            style={{
+                              backgroundColor: rowBg,
+                              borderLeft:
+                                isOrderLinked && orderColor
+                                  ? `4px solid ${orderColor}`
+                                  : "4px solid transparent",
+                            }}
+                          >
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="sticky left-0 z-30 px-3 py-3 text-xs font-bold text-gray-700 border-r border-gray-200 w-14 min-w-[56px] max-w-[56px]"
+                                style={rowCellStyle}
+                              >
+                                {orderIndex + 1}
+                              </td>
+                            )}
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="sticky left-14 z-20 px-3 py-3 text-xs font-medium border-r border-gray-200 w-32 min-w-[128px] max-w-[128px] whitespace-nowrap overflow-hidden text-ellipsis"
+                                style={rowCellStyle}
+                                title={String(o.id)}
+                              >
+                                #{shortOrderId(o.id)}
+                              </td>
+                            )}
+
+                            <td
+                              className="sticky left-[142px] z-10 px-3 py-3 text-xs min-w-[140px] border-r border-gray-200"
+                              style={rowCellStyle}
+                            >
+                              {safe(pax.last_name)}
+                            </td>
+                            <td
+                              className="sticky left-[282px] z-10 px-3 py-3 text-xs font-semibold text-gray-900 min-w-[140px] border-r border-gray-200"
+                              style={rowCellStyle}
+                            >
+                              {safe(pax.first_name)}
+                            </td>
+                            <td className="px-3 py-3 text-xs">
+                              {safe(pax.gender)}
+                            </td>
+                            <td className="px-4 py-3 text-xs">
+                              {safe(pax.email)}
+                            </td>
+                            <td className="px-3 py-3 text-xs">
+                              {safe(pax.phone)}
+                            </td>
+
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-3 py-3 text-xs font-bold"
+                              >
+                                ${o.total_price}
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td rowSpan={arr.length} className="px-4 py-3">
+                                <select
+                                  value={safe(o.payment_method)}
+                                  onChange={(e) =>
+                                    updateOrder(o.id, {
+                                      payment_method: e.target.value || null,
+                                    })
+                                  }
+                                  className="w-full min-w-[120px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option>Cash</option>
+                                  <option>Card</option>
+                                  <option>Bank</option>
+                                </select>
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td rowSpan={arr.length} className="px-3 py-3">
+                                <select
+                                  value={o.status}
+                                  onChange={(e) =>
+                                    updateOrder(o.id, {
+                                      status: e.target.value as OrderStatus,
+                                    })
+                                  }
+                                  className="w-full min-w-[170px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
+                                >
+                                  {VALID_ORDER_STATUSES.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-3 py-3 text-xs"
+                              >
+                                {safe(o.hotel ?? pax.hotel)}
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td rowSpan={arr.length} className="px-4 py-3">
+                                <input
+                                  type="text"
+                                  defaultValue={displayRoomType}
+                                  onBlur={(e) => {
+                                    if (
+                                      e.target.value.trim() !== displayRoomType
+                                    ) {
+                                      updateRoomType(o.id, e.target.value);
+                                    }
+                                  }}
+                                  className="w-full min-w-[140px] px-2 py-2 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  placeholder="Twin, Single..."
+                                />
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-3 py-3 text-xs"
+                              >
+                                {room}
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-6 py-3 align-top min-w-[320px]"
+                              >
+                                <textarea
+                                  defaultValue={getPassengerNote(o)}
+                                  onBlur={(e) => {
+                                    if (!mainPassengerId) return;
+                                    if (
+                                      e.target.value.trim() !==
+                                      getPassengerNote(o)
+                                    ) {
+                                      updatePassengerNote(
+                                        mainPassengerId,
+                                        e.target.value,
+                                      );
+                                    }
+                                  }}
+                                  className="w-full min-h-20 px-3 py-2 text-xs border border-gray-300 rounded resize-none focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                                  placeholder="No note yet..."
+                                  rows={4}
+                                />
+                              </td>
+                            )}
+
+                            {hasShowInProvider && isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-2 py-3 text-center"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={o.show_in_provider}
+                                  onChange={(e) =>
+                                    updateOrder(o.id, {
+                                      show_in_provider: e.target.checked,
+                                    })
+                                  }
+                                />
+                              </td>
+                            )}
+
+                            {isFirst && (
+                              <td
+                                rowSpan={arr.length}
+                                className="px-4 py-3 text-center"
+                              >
+                                <div className="flex items-center justify-center gap-3">
+                                  <button
+                                    onClick={() => {
+                                      if (
+                                        (o.passengers ?? []).length === 0 &&
+                                        (o.passenger_requests ?? []).length ===
+                                          0
+                                      ) {
+                                        alert("No passengers in this order!");
+                                        return;
+                                      }
+                                      setEditingOrder(o);
+                                    }}
+                                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shadow-md"
+                                    title="Edit passengers"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </button>
+
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteOrder(o.id);
+                                    }}
+                                    disabled={deletingOrderId === o.id}
+                                    className={`w-9 h-8 rounded-lg text-white text-sm font-medium transition ${
+                                      deletingOrderId === o.id
+                                        ? "bg-gray-500"
+                                        : "bg-red-600 hover:bg-red-700"
+                                    }`}
+                                  >
+                                    {deletingOrderId === o.id ? "..." : "X"}
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      });
+                    });
+                  })()}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
-        {filteredOrders.length > ordersPerPage && (
-          <div className="flex justify-end p-4">
-            <div className="flex space-x-2">
-              <button
-                onClick={handlePreviousPage}
-                disabled={currentPage === 1}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
-                  currentPage === 1
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                }`}
-              >
-                Previous
-              </button>
-              <span className="self-center text-sm text-gray-700">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={handleNextPage}
-                disabled={currentPage >= totalPages}
-                className={`px-4 py-2 rounded-md text-sm font-semibold transition-all duration-200 ${
-                  currentPage >= totalPages
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                }`}
-              >
-                Next
-              </button>
-            </div>
+        {visibleDateGroups.length === 0 && (
+          <div className="text-center py-20 text-gray-500 text-lg">
+            {t("noOrdersMatchFilters")}
           </div>
         )}
-        {filteredOrders.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg
-                className="w-12 h-12 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No orders found
-            </h3>
-            <p className="text-gray-500 max-w-md mx-auto">
-              No orders match the current filters.
-            </p>
-            <button
-              onClick={() => fetchOrders()}
-              className="mt-4 px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm font-semibold"
-            >
-              Refresh Orders
-            </button>
-          </div>
+        {showBackToTop && (
+          <button
+            onClick={scrollToTop}
+            className="fixed bottom-8 right-8 z-50 p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full shadow-2xl hover:scale-110 transition"
+          >
+            <ArrowUp className="w-6 h-6" />
+          </button>
         )}
       </div>
+
+      {editingOrder && (
+        <EditOrderPassengersModal
+          orderId={editingOrder.id}
+          passengers={[
+            ...(editingOrder.passengers ?? []),
+            ...(editingOrder.passenger_requests ?? []),
+          ].map((p: any) => ({
+            id: p.id,
+            order_id: p.order_id, // шаардлагатай байж болно
+            first_name: p.first_name ?? null,
+            last_name: p.last_name ?? null,
+            email: p.email ?? null,
+            phone: p.phone ?? null,
+            passport_number: p.passport_number ?? null,
+            passport_expire: p.passport_expire ?? null,
+            date_of_birth: p.date_of_birth ?? null,
+            gender: p.gender ?? null,
+            nationality: p.nationality ?? "Mongolia",
+            hotel: p.hotel ?? null,
+            roomType: p.roomType ?? null,
+            pax_type: p.pax_type ?? null,
+            itinerary_status: p.itinerary_status ?? "No itinerary",
+            allergy: p.allergy ?? null,
+            notes: p.notes ?? null,
+            has_baby_bed: p.has_baby_bed ?? false,
+            group_color: p.group_color ?? null,
+            main_passenger_id: p.main_passenger_id ?? null,
+            is_related_to_next: p.is_related_to_next ?? false,
+            serial_no: p.serial_no ?? null,
+            room_allocation: p.room_allocation ?? null,
+            emergency_phone: p.emergency_phone ?? null,
+            travel_group_name: p.travel_group_name ?? null,
+            is_traveling_with_others: p.is_traveling_with_others ?? false,
+          }))}
+          isOpen={!!editingOrder}
+          onClose={() => setEditingOrder(null)}
+          onSaved={() => {
+            fetchOrders();
+            showNotification("success", "Passengers updated successfully!");
+          }}
+        />
+      )}
     </div>
   );
 }

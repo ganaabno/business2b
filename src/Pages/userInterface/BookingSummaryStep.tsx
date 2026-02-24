@@ -57,17 +57,6 @@ export default function BookingSummaryStep({
 }: BookingSummaryStepProps) {
   const selectedTourData = tours.find((t: Tour) => t.title === selectedTour);
 
-  // Log props for debugging
-  console.log("BookingSummaryStep: Props", {
-    selectedTour,
-    departureDate,
-    passengersLength: passengers.length,
-    paymentMethod,
-    errors,
-    loading,
-    showInProvider,
-  });
-
   const handleDownloadCSV = useCallback(() => {
     if (passengers.length === 0) {
       showNotification("error", "No unsubmitted passengers to export");
@@ -134,7 +123,7 @@ export default function BookingSummaryStep({
   }, [passengers, selectedTourData, showNotification]);
 
   const saveOrder = useCallback(async () => {
-    console.log("BookingSummaryStep: saveOrder called", {
+    console.log("", {
       paymentMethod,
       passengersLength: passengers.length,
       selectedTour,
@@ -194,10 +183,6 @@ export default function BookingSummaryStep({
         passenger_count: passengers.length,
       };
 
-      console.log("BookingSummaryStep: saveOrder inserting order", {
-        newOrder,
-      });
-
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .insert([newOrder])
@@ -223,10 +208,6 @@ export default function BookingSummaryStep({
             rest.serial_no ||
             `PASS-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
         };
-      });
-
-      console.log("BookingSummaryStep: Inserting passengers", {
-        passengersWithOrderId,
       });
 
       const { error: passengerError } = await supabase

@@ -10,6 +10,8 @@ import {
   Save,
   User,
   EyeIcon,
+  CheckCircle2,
+  CheckCircle,
 } from "lucide-react";
 import type {
   Passenger,
@@ -17,6 +19,7 @@ import type {
   User as UserType,
 } from "../types/type";
 import React, { useEffect, useMemo } from "react";
+import { toast } from "react-toastify";
 
 interface BookingSummaryProps {
   selectedTour?: string;
@@ -199,7 +202,6 @@ export default function BookingSummary({
     const newPaymentMethods = paymentMethod.includes(method)
       ? paymentMethod.filter((m) => m !== method)
       : [...paymentMethod, method];
-    console.log("BookingSummary: Updated paymentMethod", newPaymentMethods);
     setPaymentMethod(newPaymentMethods);
     if (newPaymentMethods.length > 0) {
       setErrors((prev) => prev.filter((e) => e.field !== "payment"));
@@ -207,13 +209,6 @@ export default function BookingSummary({
   };
 
   const handleSaveOrder = async () => {
-    console.log("BookingSummary: handleSaveOrder called", {
-      paymentMethod,
-      passengersLength: cleanedPassengers.length,
-      hasValidationErrors,
-      errors,
-    });
-
     // Clear previous errors
     setErrors([]);
 
@@ -223,10 +218,6 @@ export default function BookingSummary({
     );
     if (passengerErrors.length > 0) {
       setErrors(passengerErrors);
-      console.log(
-        "BookingSummary: Passenger validation errors",
-        passengerErrors
-      );
       return;
     }
 
@@ -238,18 +229,31 @@ export default function BookingSummary({
           message: "At least one payment method is required",
         },
       ]);
-      console.log("BookingSummary: Payment method validation failed");
       return;
     }
 
     try {
-      console.log(
-        "BookingSummary: Calling saveOrder with paymentMethod:",
-        paymentMethod
-      );
       await saveOrder();
-      console.log("BookingSummary: saveOrder successful, moving to step 1");
-      setActiveStep(1); // Changed to step 1 for "super normal" flow
+
+      const leadId = (window as any).__currentLeadId;
+      if (leadId) {
+        window.dispatchEvent(
+          new CustomEvent("booking-completed-from-lead", {
+            detail: { leadId },
+          })
+        );
+        delete (window as any).__currentLeadId;
+
+        toast.success("Passenger registered — Lead marked as Completed!", {
+          icon: <CheckCircle className="w-5 h-5 text-green-500" />,
+        });
+      } else {
+        toast.success("Booking confirmed successfully!", {
+          icon: <CheckCircle className="w-5 h-5 text-green-500" />,
+        });
+      }
+
+      setActiveStep(1);
     } catch (error) {
       console.error("BookingSummary: Save error:", error);
       setErrors([
@@ -261,36 +265,12 @@ export default function BookingSummary({
     }
   };
 
-  // Log button state for debugging
-  // useEffect(() => {
-  //   const passengerErrors = cleanedPassengers.flatMap((p) =>
-  //     validatePassenger(p, departureDate)
-  //   );
-  //   console.log("BookingSummary: Confirm Booking button state", {
-  //     loading,
-  //     paymentMethod,
-  //     paymentMethodLength: paymentMethod.length,
-  //     passengersLength: cleanedPassengers.length,
-  //     hasValidationErrors,
-  //     errors,
-  //     passengerErrors,
-  //     cleanedPassengers,
-  //   });
-  // }, [
-  //   loading,
-  //   paymentMethod,
-  //   cleanedPassengers,
-  //   hasValidationErrors,
-  //   errors,
-  //   departureDate,
-  // ]);
-
   return (
-    <div className="space-y-6">
+    <div className="mono-stack">
       {errors.length > 0 && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center">
-            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+        <div className="mono-panel p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
             <div>
               <p className="text-sm text-red-800 font-medium">
                 Please fix the following validation errors before proceeding:
@@ -309,15 +289,15 @@ export default function BookingSummary({
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+      <div className="mono-card p-6">
+        <h3 className="mono-title text-lg mb-6 flex items-center">
           <Eye className="w-5 h-5 mr-2" />
           Booking Summary
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div className="space-y-4">
-            <div className="flex items-center p-4 bg-blue-50 rounded-lg">
-              <MapPin className="w-8 h-8 text-blue-600 mr-3" />
+            <div className="flex items-center p-4 mono-panel">
+              <MapPin className="w-8 h-8 text-gray-700 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Tour Package</h4>
                 <p className="text-sm text-gray-600">
@@ -325,8 +305,8 @@ export default function BookingSummary({
                 </p>
               </div>
             </div>
-            <div className="flex items-center p-4 bg-green-50 rounded-lg">
-              <Calendar className="w-8 h-8 text-green-600 mr-3" />
+            <div className="flex items-center p-4 mono-panel">
+              <Calendar className="w-8 h-8 text-gray-700 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Departure Date</h4>
                 <p className="text-sm text-gray-600">
@@ -343,8 +323,8 @@ export default function BookingSummary({
             </div>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center p-4 bg-purple-50 rounded-lg">
-              <Users className="w-8 h-8 text-purple-600 mr-3" />
+            <div className="flex items-center p-4 mono-panel">
+              <Users className="w-8 h-8 text-gray-700 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Total Passengers</h4>
                 <p className="text-sm text-gray-600">
@@ -352,8 +332,8 @@ export default function BookingSummary({
                 </p>
               </div>
             </div>
-            <div className="flex items-center p-4 bg-orange-50 rounded-lg">
-              <DollarSign className="w-8 h-8 text-orange-600 mr-3" />
+            <div className="flex items-center p-4 mono-panel">
+              <DollarSign className="w-8 h-8 text-gray-700 mr-3" />
               <div>
                 <h4 className="font-medium text-gray-900">Total Price</h4>
                 <p className="text-lg font-bold text-gray-900">
@@ -368,15 +348,15 @@ export default function BookingSummary({
         </div>
       </div>
 
-      <div className="border-t pt-6">
-        <h4 className="font-medium text-gray-900 mb-4">Payment Methods</h4>
+      <div className="mono-card p-6">
+        <h4 className="mono-title text-base mb-4">Payment Methods</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {paymentMethods.map((method) => (
             <label
               key={method}
               className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
                 paymentMethod.includes(method)
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  ? "border-gray-900 bg-gray-100 text-gray-900"
                   : "border-gray-300 hover:border-gray-400"
               }`}
             >
@@ -401,14 +381,14 @@ export default function BookingSummary({
       </div>
 
       {currentUser.role !== "user" && setShowInProvider && (
-        <div className="border-t pt-6">
-          <h4 className="font-medium text-gray-900 mb-4">Booking Options</h4>
+        <div className="mono-card p-6">
+          <h4 className="mono-title text-base mb-4">Booking Options</h4>
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
               type="checkbox"
               checked={showInProvider ?? false}
               onChange={(e) => setShowInProvider(e.target.checked)}
-              className="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+              className="h-5 w-5 rounded border-gray-300"
               aria-label="Show booking in provider dashboard (optional)"
             />
             <EyeIcon className="w-5 h-5 text-gray-600" />
@@ -419,17 +399,17 @@ export default function BookingSummary({
         </div>
       )}
 
-      <div className="border-t pt-6">
-        <h4 className="font-medium text-gray-900 mb-4">Passenger Details</h4>
+      <div className="mono-card p-6">
+        <h4 className="mono-title text-base mb-4">Passenger Details</h4>
         <div className="space-y-3">
           {cleanedPassengers.map((passenger) => (
             <div
               key={passenger.id}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+              className="flex items-center justify-between p-4 mono-panel"
             >
               <div className="flex items-center">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                  <User className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mr-3 border border-gray-200">
+                  <User className="w-5 h-5 text-gray-700" />
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">
@@ -465,23 +445,20 @@ export default function BookingSummary({
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <div className="flex flex-col sm:flex-row gap-4">
+      <div className="mono-card p-6">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={() => {
-              console.log(
-                "BookingSummary: Back button clicked, moving to step 3"
-              );
               onBack();
             }}
-            className="flex items-center justify-center px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            className="mono-button mono-button--ghost"
           >
             Back to Passengers
           </button>
           <button
             onClick={downloadCSV}
             disabled={cleanedPassengers.length === 0}
-            className="flex items-center justify-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="mono-button mono-button--ghost"
           >
             <Download className="w-4 h-4 mr-2" />
             Download CSV
@@ -494,7 +471,7 @@ export default function BookingSummary({
               cleanedPassengers.length === 0 ||
               hasValidationErrors
             }
-            className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex-1"
+            className="mono-button flex-1"
           >
             {loading ? (
               <>
@@ -509,10 +486,10 @@ export default function BookingSummary({
             )}
           </button>
         </div>
-        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-          <div className="flex items-start">
-            <AlertTriangle className="w-5 h-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-blue-800">
+        <div className="mt-4 mono-panel p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-gray-700 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-gray-700">
               <p className="font-medium mb-1">Important Notes:</p>
               <ul className="space-y-1 text-xs">
                 <li>

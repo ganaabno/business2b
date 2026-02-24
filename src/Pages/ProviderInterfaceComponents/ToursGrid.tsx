@@ -24,7 +24,7 @@ export default function ToursGrid({ tours, formatDate }: ToursGridProps) {
         <div className="text-center py-12">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <MapPin className="w-8 h-8 text-gray-400" />
-          </div>
+          </div> 
           <p className="text-gray-500 text-lg font-medium mb-2">
             {t("noToursAvailable")}
           </p>
@@ -71,7 +71,7 @@ export default function ToursGrid({ tours, formatDate }: ToursGridProps) {
                       </span>
                     </div>
                     <span className="text-sm font-semibold text-gray-900">
-                      {formatDate(tour.departure_date)}
+                      {formatDate(tour.departure_date ?? null)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">

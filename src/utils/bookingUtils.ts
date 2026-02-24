@@ -1,4 +1,3 @@
-// utils/bookingUtils.ts
 import type { UserType, Passenger, Tour } from "../types/type";
 import { isValid } from "date-fns";
 
@@ -121,6 +120,9 @@ export const createNewPassenger = (
     has_sub_passengers: false,
     booking_number: null,
     pax_type: "Adult",
+    orders: null,
+    note: "",
+    is_request: undefined,
   };
 };
 
@@ -136,7 +138,7 @@ export function createNewPassengerLocal(
     main_passenger_id?: string | null;
     roomType?: string;
     room_allocation?: string;
-    serial_no?: string;
+    serial_no?: string; // 🚀 This is passed but not used properly!
     departureDate?: string;
   } = {}
 ): Passenger {
@@ -144,14 +146,15 @@ export function createNewPassengerLocal(
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
     user.role || "user"
   );
-  const mainPassengerCount =
-    passengers.filter((p) => !p.main_passenger_id).length + 1;
-  const serialNo = extraFields.main_passenger_id
-    ? extraFields.serial_no ||
-      passengers.find((p) => p.id === extraFields.main_passenger_id)
-        ?.serial_no ||
-      mainPassengerCount.toString()
-    : mainPassengerCount.toString();
+
+  // 🚀 FIX: Use the provided serial_no from extraFields FIRST
+  const serialNo =
+    extraFields.serial_no ||
+    (extraFields.main_passenger_id
+      ? passengers.find((p) => p.id === extraFields.main_passenger_id)
+          ?.serial_no
+      : (passengers.filter((p) => !p.main_passenger_id).length + 1).toString());
+
   const defaultHotel = hotels.length > 0 ? hotels[0] : "";
 
   return {
@@ -166,7 +169,7 @@ export function createNewPassengerLocal(
         ? `${extraFields.first_name} ${extraFields.last_name}`.trim()
         : undefined,
     room_allocation: extraFields.room_allocation || "",
-    serial_no: serialNo,
+    serial_no: serialNo, // 🚀 Now this will use the main passenger's serial_no
     passenger_number: `PAX-${serialNo}`,
     last_name: extraFields.last_name || "",
     first_name: extraFields.first_name || "",
@@ -176,7 +179,7 @@ export function createNewPassengerLocal(
     passport_number: "",
     passport_expire: null,
     nationality: "Mongolia",
-    roomType: extraFields.roomType || "",
+    roomType: extraFields.roomType || "", // 🚀 This should use main's room type
     hotel: defaultHotel,
     additional_services: [],
     price: tourData?.base_price || 0,
@@ -197,5 +200,8 @@ export function createNewPassengerLocal(
     has_sub_passengers: false,
     booking_number: null,
     pax_type: "Adult",
+    orders: null,
+    note: "",
+    is_request: undefined,
   };
 }

@@ -131,6 +131,11 @@ export const createNewPassenger = (
     main_passenger_id: null,
     sub_passenger_count: 0,
     has_sub_passengers: false,
+    booking_number: null,
+    orders: null,
+    note: "",
+    is_request: undefined,
+    pax_type: "Adult",
   };
 };
 
@@ -170,12 +175,12 @@ export const validatePassenger = (
       field: `passenger_${passenger.id}_last_name`,
       message: "Last name is required",
     });
-  if (!passenger.email.trim() || !/\S+@\S+\.\S+/.test(passenger.email))
+  if (!passenger.email?.trim() || !/\S+@\S+\.\S+/.test(passenger.email))
     errors.push({
       field: `passenger_${passenger.id}_email`,
       message: "Valid email is required",
     });
-  if (!passenger.phone.trim())
+  if (!passenger.phone?.trim())
     errors.push({
       field: `passenger_${passenger.id}_phone`,
       message: "Phone number is required",
@@ -190,7 +195,7 @@ export const validatePassenger = (
       field: `passenger_${passenger.id}_gender`,
       message: "Gender is required",
     });
-  if (!passenger.passport_number.trim())
+  if (!passenger.passport_number?.trim())
     errors.push({
       field: `passenger_${passenger.id}_passport_number`,
       message: "Passport number is required",
@@ -327,6 +332,11 @@ export const usePassengerSubscriptions = ({
                     main_passenger_id: p.mainPassengerId,
                     has_sub_passengers: p.hasSubPassengers,
                     sub_passenger_count: p.subPassengerCount,
+                    booking_number: null,
+                    orders: null,
+                    note: "",
+                    is_request: undefined,
+                    pax_type: "Adult",
                   })
                 )
                 .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
@@ -417,6 +427,9 @@ export const usePassengerSubscriptions = ({
                 passport_copy_url: o.passport_copy_url,
                 passenger_count: o.passenger_count,
                 booking_confirmation: o.booking_confirmation || null,
+                room_allocation: "",
+                passenger_requests: [],
+                travel_group: null
               })
             )
           );
@@ -463,13 +476,14 @@ export const usePassengerSubscriptions = ({
             );
             return;
           }
-          const validatedTours = data.filter((tour): tour is Tour => {
-            const isValid = tour.id && tour.title;
-            if (!isValid) {
-              console.warn("Invalid tour data:", tour);
-            }
-            return isValid;
-          });
+          const validatedTours = data
+            .filter((tour) => {
+              const isValid = tour.id && tour.title;
+              if (!isValid) console.warn("Invalid tour data:", tour);
+              return isValid;
+            })
+            .map((tour) => tour as Tour); // cast after filtering
+
           setTours(validatedTours);
           if (selectedTourData?.id && departureDate) {
             const { isValid, message } = await checkSeatLimit(
@@ -1024,10 +1038,15 @@ export const saveOrder = async ({
       updated_at: new Date().toISOString(),
       departureDate: departureDate,
       show_in_provider: true,
-      total_price: bookingPassengers.reduce((sum, p) => sum + p.price, 0),
+
+      // ✅ fix: ensure null prices are treated as 0
+      total_price: bookingPassengers.reduce(
+        (sum, p) => sum + (p.price ?? 0),
+        0
+      ),
       total_amount: bookingPassengers.length,
       paid_amount: 0,
-      balance: bookingPassengers.reduce((sum, p) => sum + p.price, 0),
+      balance: bookingPassengers.reduce((sum, p) => sum + (p.price ?? 0), 0),
     };
 
     const { data: orderData, error: orderError } = await supabase
@@ -1232,6 +1251,11 @@ export const handleUploadCSV = ({
           main_passenger_id: null,
           sub_passenger_count: 0,
           has_sub_passengers: false,
+          booking_number: null,
+          orders: null,
+          note: "",
+          is_request: undefined,
+          pax_type: "Adult",
         };
         if (tourData && passenger.additional_services.length > 0) {
           passenger.price = calculateServicePrice(

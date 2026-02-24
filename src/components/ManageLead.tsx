@@ -58,7 +58,6 @@ export default function ManageLead({
   useEffect(() => {
     const fetchPassengers = async () => {
       setLoading(true);
-      console.log("Fetching lead passengers for user:", currentUser.id);
       try {
         const { data, error } = await supabase
           .from("passengers_in_lead")
@@ -84,13 +83,11 @@ export default function ManageLead({
           .order("created_at", { ascending: false });
 
         if (error) {
-          console.error("Error fetching lead passengers:", error);
           showNotification("error", `Failed to fetch leads: ${error.message}`);
           setPassengers([]);
           return;
         }
 
-        console.log("Supabase response:", data);
 
         const mapped = (data || []).map((row: any) => ({
           ...row,
@@ -99,10 +96,8 @@ export default function ManageLead({
           created_by: row.users?.username || "Unknown",
         }));
 
-        console.log("Mapped lead passengers:", mapped);
         setPassengers(mapped);
       } catch (error) {
-        console.error("Unexpected error fetching lead passengers:", error);
         showNotification(
           "error",
           "An unexpected error occurred while fetching leads."
@@ -110,7 +105,6 @@ export default function ManageLead({
         setPassengers([]);
       } finally {
         setLoading(false);
-        console.log("Loading state:", false);
       }
     };
 
@@ -127,7 +121,6 @@ export default function ManageLead({
           filter: `user_id=eq.${currentUser.id}`,
         },
         async (payload) => {
-          console.log("Real-time payload:", payload);
 
           const newRow = payload.new as
             | (PassengerInLead & { users?: { username: string } })
@@ -143,7 +136,6 @@ export default function ManageLead({
               .eq("id", userId)
               .single();
             if (error) {
-              console.error("Error fetching username:", error);
               return "Unknown";
             }
             return data?.username || "Unknown";
@@ -157,7 +149,6 @@ export default function ManageLead({
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time INSERT:", mappedRow);
             setPassengers((prev) => [mappedRow, ...prev]);
           } else if (payload.eventType === "UPDATE" && newRow) {
             const username = await fetchUsername(newRow.user_id);
@@ -167,12 +158,10 @@ export default function ManageLead({
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time UPDATE:", mappedRow);
             setPassengers((prev) =>
               prev.map((p) => (p.id === newRow.id ? mappedRow : p))
             );
           } else if (payload.eventType === "DELETE" && oldRow) {
-            console.log("Real-time DELETE:", oldRow.id);
             setPassengers((prev) => prev.filter((p) => p.id !== oldRow.id));
             actionButtonRefs.current.delete(oldRow.id); // Clean up ref on delete
           }
@@ -180,13 +169,11 @@ export default function ManageLead({
       )
       .subscribe((status, error) => {
         if (error) {
-          console.error("Subscription error:", error);
           showNotification(
             "error",
             `Real-time subscription failed: ${error.message}`
           );
         }
-        console.log("Subscription status:", status);
       });
 
     return () => {
@@ -243,7 +230,6 @@ export default function ManageLead({
         `Lead confirmed, adding ${passenger.seat_count} passenger forms`
       );
     } catch (error) {
-      console.error("Error confirming lead:", error);
       showNotification("error", "Failed to confirm lead");
       setPassengers(previousPassengers);
     } finally {
@@ -260,7 +246,6 @@ export default function ManageLead({
         .delete()
         .eq("id", id);
       if (error) {
-        console.error("Error deleting lead passenger:", error);
         showNotification(
           "error",
           `Failed to delete lead passenger: ${error.message}`
@@ -271,7 +256,6 @@ export default function ManageLead({
         showNotification("success", "Lead passenger deleted successfully");
       }
     } catch (error) {
-      console.error("Unexpected error deleting lead passenger:", error);
       showNotification(
         "error",
         "An unexpected error occurred while deleting the lead passenger."
@@ -399,7 +383,7 @@ export default function ManageLead({
         ) : (
           <>
             <div className="relative overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full mono-table divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">

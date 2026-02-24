@@ -20,7 +20,11 @@ function formatDisplayDate(s: string | undefined): string {
   if (!s) return "";
   const d = new Date(s);
   return !Number.isNaN(d.getTime())
-    ? d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    ? d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
     : s;
 }
 
@@ -35,13 +39,9 @@ export default function TourSelectionUser({
   userRole,
   showAvailableSeats = userRole === "admin" || userRole === "superadmin",
 }: TourSelectionUserProps) {
-  const [availableSeats, setAvailableSeats] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    console.log("TourSelectionUser mounted, userRole:", userRole, "showAvailableSeats:", showAvailableSeats);
-    console.log("Tours received:", JSON.stringify(tours, null, 2));
-    return () => console.log("TourSelectionUser unmounted");
-  }, [userRole, showAvailableSeats, tours]);
+  const [availableSeats, setAvailableSeats] = useState<number | undefined>(
+    undefined
+  );
 
   const mergedTours = useMemo(() => {
     const map = new Map<string, Tour & { dates: string[] }>();
@@ -76,21 +76,27 @@ export default function TourSelectionUser({
           : typeof tour.dates === "string"
           ? [tour.dates]
           : [];
-        if (tour.departure_date && !additionalDates.includes(tour.departure_date)) {
+        if (
+          tour.departure_date &&
+          !additionalDates.includes(tour.departure_date)
+        ) {
           additionalDates.push(tour.departure_date);
         }
-        existing.dates = Array.from(new Set([...existing.dates, ...additionalDates]));
+        existing.dates = Array.from(
+          new Set([...existing.dates, ...additionalDates])
+        );
       }
     }
     const result = Array.from(map.values());
-    console.log("Merged tours:", JSON.stringify(result, null, 2));
     return result;
   }, [tours]);
 
   const selectedTourData = useMemo(() => {
     if (!selectedTour) return undefined;
-    const tour = mergedTours.find((tour) => tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase());
-    console.log("Selected tour data:", JSON.stringify(tour, null, 2));
+    const tour = mergedTours.find(
+      (tour) =>
+        tour.title.trim().toLowerCase() === selectedTour.trim().toLowerCase()
+    );
     return tour;
   }, [mergedTours, selectedTour]);
 
@@ -98,7 +104,6 @@ export default function TourSelectionUser({
     if (selectedTourData?.id && departureDate) {
       checkSeatLimit(selectedTourData.id, departureDate)
         .then(({ isValid, message, seats }) => {
-          console.log("Seat check:", { isValid, message, seats });
           setAvailableSeats(seats);
           if (!isValid) {
             toast.error(message);
@@ -119,7 +124,7 @@ export default function TourSelectionUser({
   const hasDates = (selectedTourData?.dates?.length ?? 0) > 0;
 
   const handleContinue = async () => {
-    console.log("Continue to Passengers clicked, selectedTour:", selectedTour, "departureDate:", departureDate);
+  
     if (!selectedTour || !departureDate) {
       toast.error("Please select a tour and departure date.");
       return;
@@ -131,8 +136,10 @@ export default function TourSelectionUser({
     }
 
     try {
-      const seatCheck = await checkSeatLimit(selectedTourData.id, departureDate);
-      console.log("Seat check result:", seatCheck);
+      const seatCheck = await checkSeatLimit(
+        selectedTourData.id,
+        departureDate
+      );
       if (!seatCheck.isValid) {
         toast.error(seatCheck.message);
         return;
@@ -145,8 +152,8 @@ export default function TourSelectionUser({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 flex items-center mb-6">
+    <div className="mono-card p-6">
+      <h3 className="mono-title text-lg flex items-center mb-6">
         <MapPin className="w-5 h-5 mr-2" />
         Choose Your Tour
       </h3>
@@ -158,18 +165,18 @@ export default function TourSelectionUser({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
-            <label htmlFor="tourSelectUser" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="tourSelectUser"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Tour
             </label>
             <select
               id="tourSelectUser"
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                hasTourError ? "border-red-300" : "border-gray-300"
-              }`}
+              className={`mono-input ${hasTourError ? "border-red-300" : ""}`}
               value={selectedTour}
               onChange={(e) => {
                 const newTour = e.target.value;
-                console.log("Tour selected:", newTour);
                 setSelectedTour(newTour);
                 if (!newTour) {
                   setDepartureDate("");
@@ -194,26 +201,32 @@ export default function TourSelectionUser({
           </div>
 
           <div>
-            <label htmlFor="dateSelectUser" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="dateSelectUser"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Departure Date
             </label>
             <div className="relative">
               <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <select
                 id="dateSelectUser"
-                className={`w-full pl-10 pr-3 py-2 border rounded-lg ${
-                  hasDepartureError ? "border-red-300" : "border-gray-300"
+                className={`mono-input pl-10 pr-3 ${
+                  hasDepartureError ? "border-red-300" : ""
                 }`}
                 value={departureDate}
                 onChange={(e) => {
-                  console.log("Departure date selected:", e.target.value);
                   setDepartureDate(e.target.value);
                 }}
                 disabled={!selectedTour || !hasDates}
                 aria-invalid={hasDepartureError}
-                aria-describedby={hasDepartureError ? "departure-error" : undefined}
+                aria-describedby={
+                  hasDepartureError ? "departure-error" : undefined
+                }
               >
-                <option value="">{selectedTour ? "Select a date" : "Select a tour first"}</option>
+                <option value="">
+                  {selectedTour ? "Select a date" : "Select a tour first"}
+                </option>
                 {hasDates &&
                   selectedTourData!.dates.map((d, index) => (
                     <option key={`${d}-${index}`} value={d}>
@@ -238,59 +251,80 @@ export default function TourSelectionUser({
 
       {selectedTourData && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h4 className="text-sm font-medium text-gray-900 mb-3">Tour Details</h4>
+          <h4 className="text-sm font-medium text-gray-900 mb-3">
+            Tour Details
+          </h4>
           <div className="space-y-2">
             <p className="text-sm text-gray-600">
-              <span className="font-medium">Title:</span> {selectedTourData.title}
+              <span className="font-medium">Title:</span>{" "}
+              {selectedTourData.title}
             </p>
-            {selectedTourData.name && selectedTourData.name !== selectedTourData.title && (
-              <p className="text-sm text-gray-600">
-                <span className="font-medium">Name:</span> {selectedTourData.name}
-              </p>
-            )}
+            {selectedTourData.name &&
+              selectedTourData.name !== selectedTourData.title && (
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Name:</span>{" "}
+                  {selectedTourData.name}
+                </p>
+              )}
             {selectedTourData.description && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Description:</span> {selectedTourData.description}
+                <span className="font-medium">Description:</span>{" "}
+                {selectedTourData.description}
               </p>
             )}
             {showAvailableSeats && availableSeats !== undefined && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Available Seats:</span> {availableSeats}
+                <span className="font-medium">Available Seats:</span>{" "}
+                {availableSeats}
               </p>
             )}
             {selectedTourData.base_price !== undefined && (
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Base Price:</span> ${selectedTourData.base_price.toLocaleString()}
+                <span className="font-medium">Base Price:</span> $
+                {selectedTourData.base_price.toLocaleString()}
               </p>
             )}
-            {selectedTourData.hotels && selectedTourData.hotels.length > 0 && (
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center">
-                  <Hotel className="w-4 h-4 mr-1" />
-                  <span className="font-medium">Hotels:</span>
+            {selectedTourData.hotels &&
+              (() => {
+                const hotels = Array.isArray(selectedTourData.hotels)
+                  ? selectedTourData.hotels
+                  : selectedTourData.hotels
+                  ? [selectedTourData.hotels]
+                  : [];
+                if (hotels.length === 0) return null;
+
+                return (
+                  <div className="text-sm text-gray-600">
+                    <div className="flex items-center">
+                      <Hotel className="w-4 h-4 mr-1" />
+                      <span className="font-medium">Hotels:</span>
+                    </div>
+                    <ul className="ml-5 list-disc">
+                      {hotels.map((hotel, index) => (
+                        <li key={index} className="text-sm text-gray-600">
+                          {hotel}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
+            {selectedTourData.services &&
+              selectedTourData.services.length > 0 && (
+                <div className="text-sm text-gray-600">
+                  <div className="flex items-center">
+                    <Package className="w-4 h-4 mr-1" />
+                    <span className="font-medium">Services:</span>
+                  </div>
+                  <ul className="ml-5 list-disc">
+                    {selectedTourData.services.map((service, index) => (
+                      <li key={index} className="text-sm text-gray-600">
+                        {service.name} (${service.price})
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="ml-5 list-disc">
-                  {selectedTourData.hotels.map((hotel, index) => (
-                    <li key={index} className="text-sm text-gray-600">{hotel}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {selectedTourData.services && selectedTourData.services.length > 0 && (
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center">
-                  <Package className="w-4 h-4 mr-1" />
-                  <span className="font-medium">Services:</span>
-                </div>
-                <ul className="ml-5 list-disc">
-                  {selectedTourData.services.map((service, index) => (
-                    <li key={index} className="text-sm text-gray-600">
-                      {service.name} (${service.price})
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+              )}
           </div>
         </div>
       )}
@@ -299,7 +333,7 @@ export default function TourSelectionUser({
         <button
           onClick={handleContinue}
           disabled={!selectedTour || !departureDate || mergedTours.length === 0}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          className="mono-button"
         >
           Continue to Passengers
         </button>

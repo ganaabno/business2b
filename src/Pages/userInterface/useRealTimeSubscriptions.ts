@@ -9,57 +9,6 @@ import type {
 } from "../../types/type";
 import { checkSeatLimit } from "../../utils/seatLimitChecks";
 
-interface SupabasePassenger {
-  blacklisted_date: null;
-  seat_count: number;
-  id: string;
-  order_id: string;
-  user_id: string | null;
-  tour_title: string;
-  departure_date: string | null;
-  name: string;
-  room_number: string;
-  serial_no: string;
-  last_name: string;
-  first_name: string;
-  date_of_birth: string | null;
-  age: number | null;
-  gender: string | null;
-  passport_number: string | null;
-  passport_expiry: string | null;
-  nationality: string | null;
-  roomType: string | null;
-  hotel: string | null;
-  additional_services: string[] | null;
-  price: number | null;
-  email: string | null;
-  phone: string | null;
-  passport_upload: string | null;
-  allergy: string | null;
-  emergency_phone: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  is_blacklisted?: boolean;
-  notes?: string | null;
-  booking_number: string | null;
-  status:
-    | "pending"
-    | "approved"
-    | "rejected"
-    | "active"
-    | "inactive"
-    | "cancelled";
-  orders?: {
-    id: string;
-    tour_id: string;
-    departureDate: string | null;
-    tours?: {
-      id: string;
-      title: string;
-    };
-  };
-}
-
 interface UseRealTimeSubscriptionsProps {
   currentUser: UserType;
   setPassengers: Dispatch<SetStateAction<Passenger[]>>;
@@ -86,11 +35,11 @@ export default function useRealTimeSubscriptions({
   useEffect(() => {
     const selectedTourData = tours.find((t: Tour) => t.title === selectedTour);
 
-    // Passenger subscription
+    // === PASSENGER SUBSCRIPTION ===
     const passengerSubscription = supabase
-      .channel(`passengers_channel_${Math.random().toString(36).substring(2)}`) // Unique channel name
+      .channel(`passengers_channel_${Math.random().toString(36).substring(2)}`)
       .on(
-        "postgres_changes" as any, // Workaround for older supabase-js versions
+        "postgres_changes" as any,
         {
           event: "*",
           schema: "public",
@@ -98,10 +47,6 @@ export default function useRealTimeSubscriptions({
           filter: `user_id=eq.${currentUser.userId}`,
         },
         async (payload: any) => {
-          console.log(
-            "Passenger subscription payload:",
-            JSON.stringify(payload, null, 2)
-          );
           try {
             const { data, error } = await supabase
               .from("passengers")
@@ -131,29 +76,23 @@ export default function useRealTimeSubscriptions({
               );
               return;
             }
-            console.log(
-              "Fetched passenger data:",
-              data.map((p: SupabasePassenger) => ({
-                id: p.id,
-                date_of_birth: p.date_of_birth || "Missing date_of_birth",
-                notes: p.notes || "No notes",
-                booking_number: p.booking_number || "No booking_number",
-              }))
-            );
+         
             setPassengers((prev) => {
               const existingIds = new Set(prev.map((p) => p.id));
               return [
                 ...prev.filter((p) => p.order_id !== ""),
                 ...data
                   .map(
-                    (p: SupabasePassenger): Passenger => ({
+                    (p: any): Passenger => ({
                       id: p.id,
                       order_id: p.order_id,
                       user_id: p.user_id,
-                      tour_title: p.orders?.tours?.title ||
+                      tour_title:
+                        p.orders?.tours?.title ||
                         p.tour_title ||
                         "Unknown Tour",
-                      departure_date: p.orders?.departureDate || p.departure_date || null,
+                      departure_date:
+                        p.orders?.departureDate || p.departure_date || null,
                       tour_id: p.orders?.tour_id || "",
                       passenger_number: p.serial_no || "",
                       name: p.name,
@@ -187,7 +126,10 @@ export default function useRealTimeSubscriptions({
                       sub_passenger_count: 0,
                       has_sub_passengers: false,
                       booking_number: p.booking_number || null,
-                      pax: null
+                      orders: null,
+                      note: "",
+                      is_request: undefined,
+                      pax_type: "Adult",
                     })
                   )
                   .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
@@ -219,7 +161,7 @@ export default function useRealTimeSubscriptions({
         }
       });
 
-    // Order subscription
+    // === ORDER SUBSCRIPTION ===
     const orderSubscription = supabase
       .channel(`orders_channel_${Math.random().toString(36).substring(2)}`)
       .on(
@@ -231,10 +173,6 @@ export default function useRealTimeSubscriptions({
           filter: `user_id=eq.${currentUser.userId}`,
         },
         async (payload: any) => {
-          console.log(
-            "Order subscription payload:",
-            JSON.stringify(payload, null, 2)
-          );
           try {
             const { data, error } = await supabase
               .from("orders")
@@ -300,6 +238,8 @@ export default function useRealTimeSubscriptions({
                   passport_copy_url: o.passport_copy_url || null,
                   booking_confirmation: o.booking_confirmation || null,
                   room_allocation: o.room_number || "",
+                  passenger_requests: [],
+                  travel_group: null
                 })
               )
             );
@@ -329,7 +269,8 @@ export default function useRealTimeSubscriptions({
         }
       });
 
-    // Tour subscription
+    // === TOUR SUBSCRIPTION — FIXED BLOCK ===
+    // === TOUR SUBSCRIPTION — FINAL FIXED VERSION ===
     const tourSubscription = supabase
       .channel(`tours_channel_${Math.random().toString(36).substring(2)}`)
       .on(
@@ -340,48 +281,60 @@ export default function useRealTimeSubscriptions({
           table: "tours",
         },
         async (payload: any) => {
-          console.log(
-            "Tour subscription payload:",
-            JSON.stringify(payload, null, 2)
-          );
+     
           try {
             const { data, error } = await supabase.from("tours").select(`
-                id,
-                title,
-                name,
-                description,
-                seats,
-                base_price,
-                dates,
-                hotels,
-                services
-              `);
+            id,
+            title,
+            name,
+            description,
+            seats,
+            base_price,
+            dates,
+            hotels,
+            services
+          `);
+
             if (error) {
-              console.error(
-                "Error fetching updated tours:",
-                JSON.stringify(error, null, 2)
-              );
+              console.error("Error fetching updated tours:", error);
               wrappedShowNotification(
                 "error",
                 `Failed to refresh tours: ${error.message}`
               );
               return;
             }
-            const validatedTours = data.filter((tour): tour is Tour => {
-              const isValid = tour.id && tour.title;
-              if (!isValid) {
-                console.warn(
-                  "Invalid tour data:",
-                  JSON.stringify(tour, null, 2)
-                );
-              }
-              return isValid;
-            });
-            console.log(
-              "Updated tours:",
-              JSON.stringify(validatedTours, null, 2)
-            );
+
+            // FORCE TYPE + FILTER + MAP
+            const validatedTours: Tour[] = (data as any[])
+              .filter((tour: any) => tour?.id && tour?.title)
+              .map(
+                (t: any): Tour => ({
+                  ...t,
+                  creator_name: t.creator_name ?? "Unknown",
+                  tour_number: t.tour_number ?? "",
+                  created_by: t.created_by ?? "system",
+                  created_at: t.created_at ?? null,
+                  updated_at: t.updated_at ?? null,
+                  name: t.name ?? "",
+                  description: t.description ?? "",
+                  seats: t.seats ?? 0,
+                  base_price: t.base_price ?? 0,
+                  dates: Array.isArray(t.dates)
+                    ? t.dates
+                    : t.dates
+                    ? [t.dates]
+                    : [],
+                  hotels: Array.isArray(t.hotels)
+                    ? t.hotels
+                    : t.hotels
+                    ? [t.hotels]
+                    : [],
+                  services: Array.isArray(t.services) ? t.services : [],
+                  departure_date: t.departure_date ?? undefined,
+                })
+              );
             setTours(validatedTours);
+
             if (selectedTourData?.id && departureDate) {
               const { isValid, message } = await checkSeatLimit(
                 selectedTourData.id,
@@ -390,20 +343,14 @@ export default function useRealTimeSubscriptions({
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
-            console.error(
-              "Error in tour real-time handler:",
-              JSON.stringify(error, null, 2)
-            );
+            console.error("Error in tour real-time handler:", error);
             wrappedShowNotification("error", "Failed to refresh tours");
           }
         }
       )
       .subscribe((status, error) => {
         if (error) {
-          console.error(
-            "Tour subscription error:",
-            JSON.stringify(error, null, 2)
-          );
+          console.error("Tour subscription error:", error);
           wrappedShowNotification("error", "Tour subscription failed");
         }
       });

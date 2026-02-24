@@ -389,7 +389,7 @@ export default function CustomTablesTab({
         .stagger-3 { animation-delay: 0.3s; }
       `}</style>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[105rem] mx-auto">
         {/* Hero Header */}
         <div
           className={`glass-effect rounded-3xl p-8 mb-8 shadow-2xl ${

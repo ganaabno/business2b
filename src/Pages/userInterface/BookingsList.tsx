@@ -39,18 +39,28 @@ export default function BookingsList({
   const itemsPerPage = 10;
   const [pendingRequests, setPendingRequests] = useState<Passenger[]>([]);
 
+  const ordersById = useMemo(
+    () => new Map(orders.map((order) => [String(order.id), order])),
+    [orders]
+  );
+  const toursById = useMemo(
+    () => new Map(tours.map((tour) => [String(tour.id), tour])),
+    [tours]
+  );
+
   const fetchPendingRequests = useCallback(async () => {
     const { data, error } = await supabase
       .from("passenger_requests")
       .select("*")
       .eq("user_id", currentUser.id)
       .eq("status", "pending");
+
     if (error) {
       console.error("Error fetching pending requests:", error);
       return;
     }
-    console.log("Fetched pending requests:", JSON.stringify(data, null, 2));
-    setPendingRequests(data || []);
+
+    setPendingRequests((data as Passenger[]) || []);
   }, [currentUser.id]);
 
   useEffect(() => {
@@ -73,14 +83,18 @@ export default function BookingsList({
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [fetchPendingRequests, currentUser.id]);
+  }, [fetchPendingRequests]);
 
   const sortedPassengers = useMemo(() => {
     const userPassengers = passengers
       .filter((p) => p.user_id === currentUser.id)
       .map((passenger) => {
-        const order = orders.find((o) => o.id === passenger.order_id);
-        const tour = tours.find((t) => t.id === order?.tour_id);
+        const order = passenger.order_id
+          ? ordersById.get(String(passenger.order_id))
+          : undefined;
+        const tour = order?.tour_id
+          ? toursById.get(String(order.tour_id))
+          : undefined;
         return {
           ...passenger,
           tour_title: tour?.title || passenger.tour_title || "Unknown Tour",
@@ -88,58 +102,71 @@ export default function BookingsList({
             order?.departureDate || passenger.departure_date || "",
         };
       });
-    return [...userPassengers].sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [passengers, orders, tours, currentUser.id]);
 
-  const sortedPendingRequests = useMemo(() => {
-    return [...pendingRequests].sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [pendingRequests]);
-
-  const paginatedItems = useMemo(() => {
-    // Combine pending requests and passengers with a source indicator
-    const pendingWithSource = sortedPendingRequests.map((item) => ({
-      ...item,
-      source: "pending_request",
-    }));
-    const passengersWithSource = sortedPassengers.map((item) => ({
-      ...item,
-      source: "passenger",
-    }));
-    // Combine and sort by created_at
-    return [...pendingWithSource, ...passengersWithSource]
+    return userPassengers
+      .filter(
+        (p): p is { created_at: string } & typeof p => p.created_at !== null
+      )
       .sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+  }, [passengers, ordersById, toursById, currentUser.id]);
+
+  const sortedPendingRequests = useMemo(() => {
+    return pendingRequests
+      .filter(
+        (p): p is { created_at: string } & typeof p => p.created_at !== null
       )
-      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  }, [sortedPendingRequests, sortedPassengers, currentPage, itemsPerPage]);
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+  }, [pendingRequests]);
 
-  const totalPages = Math.ceil(
-    (sortedPassengers.length + sortedPendingRequests.length) / itemsPerPage
-  );
+  const paginatedItems = useMemo(() => {
+    const pendingWithSource = sortedPendingRequests.map((item) => ({
+      ...item,
+      source: "pending_request" as const,
+    }));
 
-  return sortedPassengers.length > 0 || sortedPendingRequests.length > 0 ? (
-    <div className="mt-8 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-8 py-6 border-b border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900">Your Bookings</h3>
-        <p className="text-sm text-gray-600 mt-1">
+    const passengersWithSource = sortedPassengers.map((item) => ({
+      ...item,
+      source: "passenger" as const,
+    }));
+
+    const combined = [...pendingWithSource, ...passengersWithSource];
+
+    const totalItems = combined.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+    return {
+      items: combined.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+      ),
+      totalPages,
+    };
+  }, [sortedPendingRequests, sortedPassengers, currentPage]);
+
+  const { items: displayItems, totalPages } = paginatedItems;
+
+  return displayItems.length > 0 ? (
+    <div className="mt-8 mono-card overflow-hidden">
+      <div className="px-6 py-5 border-b border-gray-200 bg-gray-100">
+        <h3 className="mono-title text-xl">Your Bookings</h3>
+        <p className="mono-subtitle text-sm mt-1">
           Manage and view your travel reservations and pending requests
         </p>
       </div>
-      <div className="p-8">
+      <div className="p-6">
         <div className="space-y-6">
-          {paginatedItems.map((item) => (
+          {displayItems.map((item) => (
             <div
               key={`${item.source}-${item.id}`}
-              className="group bg-gray-50 hover:bg-gray-100 rounded-lg p-6 transition-all duration-200 border border-gray-200 hover:border-gray-300 hover:shadow-md"
+              className="mono-card mono-card--hover p-6 transition-all duration-200"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Tour
@@ -167,12 +194,12 @@ export default function BookingsList({
                     Status
                   </p>
                   <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    className={`mono-badge ${
                       item.status === "active"
-                        ? "bg-green-100 text-green-800"
+                        ? "mono-badge--success"
                         : item.status === "pending"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-gray-100 text-gray-800"
+                        ? "mono-badge--warning"
+                        : ""
                     }`}
                   >
                     {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
@@ -182,12 +209,13 @@ export default function BookingsList({
             </div>
           ))}
         </div>
+
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+              className="mono-button mono-button--ghost"
             >
               <svg
                 className="w-4 h-4 mr-2"
@@ -213,7 +241,7 @@ export default function BookingsList({
                 setCurrentPage((prev) => Math.min(prev + 1, totalPages))
               }
               disabled={currentPage === totalPages}
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+              className="mono-button mono-button--ghost"
             >
               Next
               <svg
@@ -235,8 +263,8 @@ export default function BookingsList({
       </div>
     </div>
   ) : (
-    <div className="mt-8 bg-white rounded-xl shadow-lg border border-gray-100 p-8">
-      <p className="text-gray-600">No bookings or pending requests found.</p>
+    <div className="mt-8 mono-card p-6">
+      <p className="mono-subtitle">No bookings or pending requests found.</p>
     </div>
   );
 }

@@ -83,7 +83,6 @@ export default function PassengerForm({
 
   // 🚀 NEXT BUTTON HANDLER - SIMPLIFIED
   const handleNextClick = async () => {
-    console.log("Passenger data before next:", passengers);
 
     const passengerErrors = errors.filter((e) =>
       e.field?.startsWith("passenger_")

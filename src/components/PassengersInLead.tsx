@@ -32,7 +32,6 @@ export default function PassengersInLead({
   useEffect(() => {
     const fetchPassengers = async () => {
       setLoading(true);
-      console.log("Fetching passengers for user:", currentUser.id);
       try {
         let { data, error } = await supabase
           .from("passengers_in_lead")
@@ -64,8 +63,6 @@ export default function PassengersInLead({
           return;
         }
 
-        console.log("Supabase response:", data);
-
         const mapped = (data || []).map((row: any) => ({
           ...row,
           tour: { title: row.tour_title || "No Tour" },
@@ -73,7 +70,6 @@ export default function PassengersInLead({
           created_by: row.users?.username || "Unknown",
         }));
 
-        console.log("Mapped passengers:", mapped);
         setPassengers(mapped);
       } catch (error) {
         console.error("Unexpected error fetching passengers:", error);
@@ -84,7 +80,6 @@ export default function PassengersInLead({
         setPassengers([]);
       } finally {
         setLoading(false);
-        console.log("Loading state:", false);
       }
     };
 
@@ -101,8 +96,6 @@ export default function PassengersInLead({
           filter: `user_id=eq.${currentUser.id}`,
         },
         async (payload) => {
-          console.log("Real-time payload:", payload);
-
           const newRow = payload.new as
             | (PassengerInLead & { users?: { username: string } })
             | undefined;
@@ -136,7 +129,6 @@ export default function PassengersInLead({
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time INSERT:", mappedRow);
             setPassengers((prev) => [mappedRow, ...prev]);
           } else if (payload.eventType === "UPDATE" && newRow) {
             const username = await fetchUsername(newRow.user_id);
@@ -146,12 +138,10 @@ export default function PassengersInLead({
               tour_title: newRow.tour_title || "No Tour",
               created_by: username,
             };
-            console.log("Real-time UPDATE:", mappedRow);
             setPassengers((prev) =>
               prev.map((p) => (p.id === newRow.id ? mappedRow : p))
             );
           } else if (payload.eventType === "DELETE" && oldRow) {
-            console.log("Real-time DELETE:", oldRow.id);
             setPassengers((prev) => prev.filter((p) => p.id !== oldRow.id));
           }
         }
@@ -164,7 +154,6 @@ export default function PassengersInLead({
             `Real-time subscription failed: ${error.message}`
           );
         }
-        console.log("Subscription status:", status);
       });
 
     return () => {
@@ -228,7 +217,7 @@ export default function PassengersInLead({
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="max-w-[105rem] mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <ToastContainer />
       <div className="bg-white rounded-xl shadow-sm border">
         <div className="p-6 border-b border-gray-200">
@@ -277,7 +266,7 @@ export default function PassengersInLead({
               </p>
             </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full mono-table divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">

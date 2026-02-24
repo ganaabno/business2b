@@ -15,7 +15,7 @@ interface AdminOverviewProps {
 
 export default function AdminOverview({ orders }: AdminOverviewProps) {
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[105rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between">
@@ -94,7 +94,7 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
               <p className="text-gray-500">No bookings available yet.</p>
             </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full mono-table divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -145,7 +145,9 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center text-sm text-gray-900">
                         <Calendar className="w-4 h-4 mr-1 text-gray-400" />
-                        {new Date(order.departureDate).toLocaleDateString()}
+                        {order.departureDate
+                          ? new Date(order.departureDate).toLocaleDateString()
+                          : "N/A"}
                       </div>
                     </td>
 

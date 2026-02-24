@@ -34,7 +34,6 @@ export default function ResetPassword() {
           data: { session },
           error,
         } = response as any;
-        console.log("Session Check:", { session, error });
         if (error) {
           setFormState((prev) => ({
             ...prev,
@@ -75,7 +74,6 @@ export default function ResetPassword() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log("Auth State Change:", { event, session });
         if (event === "PASSWORD_RECOVERY") {
           setFormState((prev) => ({ ...prev, sessionReady: true }));
         }

@@ -69,7 +69,6 @@ export async function loginUser(
     };
     return user;
   } catch (err: any) {
-    console.error("Login error:", err);
     return null;
   }
 }
@@ -88,7 +87,6 @@ export async function signupUser(
       },
     });
     if (error) throw error;
-    console.log("Signup request sent:", data);
     return true;
   } catch (err: any) {
     console.error("Signup error:", err);

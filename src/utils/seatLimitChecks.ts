@@ -1,4 +1,3 @@
-// seatLimitChecks.ts
 import { supabase } from "../supabaseClient";
 
 export interface SeatCheckResult {
@@ -7,7 +6,6 @@ export interface SeatCheckResult {
   seats: number;
 }
 
-// ✅ ROLE-AWARE SEAT CHECK - Managers get unlimited power!
 export async function checkSeatLimit(
   tourId: string, 
   departureDate: string,
@@ -16,7 +14,6 @@ export async function checkSeatLimit(
   try {
     // 👑 MANAGER BYPASS - Immediate return for managers
     if (userRole === "manager" || userRole === "superadmin") {
-      console.log("👑 MANAGER MODE: Bypassing seat limit check!");
       return {
         isValid: true,
         message: "Unlimited seats available (Manager mode)",
@@ -37,9 +34,6 @@ export async function checkSeatLimit(
     }
 
     const totalSeats = tourData.seats ?? 0;
-    console.log(`Total seats for tour ${tourId}: ${totalSeats}`);
-
-    // Count passengers by joining through orders
     const { data: orderData, error: orderError } = await supabase
       .from("orders")
       .select("id")
@@ -64,10 +58,6 @@ export async function checkSeatLimit(
 
     const bookedSeats = count ?? 0;
     const remainingSeats = totalSeats - bookedSeats;
-
-    console.log(
-      `Total seats: ${totalSeats}, Booked seats: ${bookedSeats}, Remaining seats: ${remainingSeats}`
-    );
 
     if (remainingSeats <= 0) {
       return {

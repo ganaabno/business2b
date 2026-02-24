@@ -106,7 +106,11 @@ const createNewPassenger = (
     main_passenger_id: "", // <-- added
     sub_passenger_count: 0, // <-- added
     has_sub_passengers: false, // <-- added
-    booking_number: 0,
+    booking_number: "",
+    orders: null,
+    note: "",
+    is_request: undefined,
+    pax_type: "Adult",
   };
 };
 
@@ -158,9 +162,6 @@ export default function PassengerManagementStep({
     if (selectedTourData?.id && departureDate) {
       checkSeatLimit(selectedTourData.id, departureDate)
         .then(({ seats }) => {
-          console.log(
-            `Updated remaining seats for tour ${selectedTourData.id}: ${seats}`
-          );
           setRemainingSeats(seats);
         })
         .catch((error) => {
@@ -467,12 +468,12 @@ export default function PassengerManagementStep({
         field: `passenger_${passenger.id}_last_name`,
         message: "Last name is required",
       });
-    if (!passenger.email.trim() || !/\S+@\S+\.\S+/.test(passenger.email))
+    if (!passenger.email?.trim() || !/\S+@\S+\.\S+/.test(passenger.email))
       errors.push({
         field: `passenger_${passenger.id}_email`,
         message: "Valid email is required",
       });
-    if (!passenger.phone.trim())
+    if (!passenger.phone?.trim())
       errors.push({
         field: `passenger_${passenger.id}_phone`,
         message: "Phone number is required",
@@ -487,7 +488,7 @@ export default function PassengerManagementStep({
         field: `passenger_${passenger.id}_gender`,
         message: "Gender is required",
       });
-    if (!passenger.passport_number.trim())
+    if (!passenger.passport_number?.trim())
       errors.push({
         field: `passenger_${passenger.id}_passport_number`,
         message: "Passport number is required",
@@ -663,7 +664,11 @@ export default function PassengerManagementStep({
             main_passenger_id: "", // <-- added
             sub_passenger_count: 0, // <-- added
             has_sub_passengers: false, // <-- added
-            booking_number: 0,
+            booking_number: "",
+            orders: null,
+            note: "",
+            is_request: undefined,
+            pax_type: "Adult",
           };
           if (tourData && passenger.additional_services.length > 0) {
             passenger.price = calculateServicePrice(
@@ -711,7 +716,5 @@ export default function PassengerManagementStep({
     e.target.value = "";
   };
 
-  return (
-   0
-  );
+  return 0;
 }

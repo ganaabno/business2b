@@ -147,8 +147,6 @@ export default function PassengerForm({
 
   // 🚀 NEXT BUTTON HANDLER
   const handleNextClick = async () => {
-    console.log("Passenger data before next:", passengers);
-
     const passengerErrors = errors.filter((e) =>
       e.field?.startsWith("passenger_")
     );
@@ -609,7 +607,7 @@ export default function PassengerForm({
                   {/* 🛎️ ADDITIONAL SERVICES */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Additional Services
+                      Additional Services are gay
                     </label>
                     <input
                       type="text"

@@ -1,8 +1,11 @@
 // src/components/AuthRequest.tsx - STABLE NO-LOOP VERSION
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../supabaseClient';
-import { supabaseAdmin } from '../utils/adminClient';
-import bcrypt from 'bcryptjs';
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  approvePendingUserAdmin,
+  declinePendingUserAdmin,
+  getPendingUserAdmin,
+  listPendingUsersAdmin,
+} from "../api/admin";
 import {
   Users,
   Mail,
@@ -15,16 +18,17 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  AlertTriangle
-} from 'lucide-react';
+  AlertTriangle,
+} from "lucide-react";
 
 interface PendingUser {
   id: string;
   email: string;
   username: string;
-  password: string;
-  role_requested: 'user' | 'manager' | 'provider';
-  status: 'pending' | 'approved' | 'declined';
+  password?: string;
+  password_hash?: string;
+  role_requested: "user" | "manager" | "provider";
+  status: "pending" | "approved" | "declined";
   created_at: string;
   approved_by?: string;
   approved_at?: string;
@@ -40,17 +44,19 @@ interface AuthRequestProps {
 export default function AuthRequest({
   currentUserId,
   onRefresh,
-  onPendingCountChange
+  onPendingCountChange,
 }: AuthRequestProps) {
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>(
+    {}
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [autoSlide, setAutoSlide] = useState(true);
-  const [view, setView] = useState<'feed' | 'list'>('feed');
+  const [view, setView] = useState<"feed" | "list">("feed");
   const slideIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);  // 🔥 Debounce ref
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 🔥 Debounce ref
 
   // 🔥 STABLE: Memoized fetch function (prevents useEffect loops)
   const fetchAllRequests = useCallback(async () => {
@@ -63,48 +69,12 @@ export default function AuthRequest({
     fetchTimeoutRef.current = setTimeout(async () => {
       try {
         setLoading(true);
-        console.log('🔄 [FETCH_ALL] Starting (debounced)...');
 
-        // 🔥 Try admin client first
-        let allData: PendingUser[] = [];
-        try {
-          const { data, error } = await supabaseAdmin
-            .from('pending_users')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(50);
+        const allData = await listPendingUsersAdmin<PendingUser>();
 
-          if (!error && data) {
-            allData = data;
-            console.log('✅ [FETCH_ALL] Admin client:', allData.length, 'requests');
-          }
-        } catch (adminError) {
-          console.warn('⚠️ [FETCH_ALL] Admin client failed, trying regular...');
-        }
-
-        // Fallback to regular client
-        if (allData.length === 0) {
-          try {
-            const { data, error } = await supabase
-              .from('pending_users')
-              .select('*')
-              .order('created_at', { ascending: false })
-              .limit(50);
-
-            if (!error && data) {
-              allData = data;
-              console.log('✅ [FETCH_ALL] Regular client:', allData.length, 'requests');
-            }
-          } catch (regularError) {
-            console.warn('⚠️ [FETCH_ALL] Regular client failed');
-          }
-        }
-
-        console.log('🎯 [FETCH_ALL] Total:', allData.length);
         setAllUsers(allData);
 
-        const pendingData = allData.filter(user => user.status === 'pending');
-        console.log('⏳ [FETCH_ALL] Pending:', pendingData.length);
+        const pendingData = allData.filter((user) => user.status === "pending");
         setPendingUsers(pendingData);
 
         onPendingCountChange?.(pendingData.length);
@@ -112,21 +82,18 @@ export default function AuthRequest({
         if (pendingData.length > 0) {
           setCurrentIndex(0);
         }
-
       } catch (error) {
-        console.error('💥 [FETCH_ALL] Error:', error);
         setAllUsers([]);
         setPendingUsers([]);
         onPendingCountChange?.(0);
       } finally {
         setLoading(false);
       }
-    }, 300);  // 300ms debounce
-  }, [onPendingCountChange]);  // Only depend on callback
+    }, 300); // 300ms debounce
+  }, [onPendingCountChange]); // Only depend on callback
 
   // 🔥 STABLE: useEffect with proper dependencies
   useEffect(() => {
-    console.log('🔥 [USEEFFECT] Component mounted - initial fetch');
     fetchAllRequests();
 
     // Cleanup timeout on unmount
@@ -135,16 +102,15 @@ export default function AuthRequest({
         clearTimeout(fetchTimeoutRef.current);
       }
     };
-  }, []);  // Empty deps - only run once on mount
+  }, []); // Empty deps - only run once on mount
 
   // 🔥 Manual refresh trigger
   const handleManualRefresh = useCallback(() => {
-    console.log('🔄 [MANUAL] Refresh triggered');
     fetchAllRequests();
   }, [fetchAllRequests]);
 
   useEffect(() => {
-    if (autoSlide && pendingUsers.length > 0 && view === 'feed') {
+    if (autoSlide && pendingUsers.length > 0 && view === "feed") {
       slideIntervalRef.current = setInterval(() => {
         setCurrentIndex((prev) => (prev + 1) % pendingUsers.length);
       }, 4000);
@@ -155,280 +121,110 @@ export default function AuthRequest({
         clearInterval(slideIntervalRef.current);
       }
     };
-  }, [pendingUsers.length, autoSlide, view]);  // Stable deps
+  }, [pendingUsers.length, autoSlide, view]); // Stable deps
 
   // 🔥 BULLETPROOF: Fetch single user
-  const fetchSinglePendingUser = useCallback(async (userId: string): Promise<PendingUser | null> => {
-    console.log('🔍 [SINGLE_FETCH] userId:', userId);
-    
-    // Admin client methods
-    const adminMethods = [
-      () => supabaseAdmin.from('pending_users').select('*').eq('id', userId).maybeSingle(),
-      () => supabaseAdmin.from('pending_users').select('*').eq('id', userId)
-    ];
-
-    // Regular client methods
-    const regularMethods = [
-      () => supabase.from('pending_users').select('*').eq('id', userId).maybeSingle(),
-      () => supabase.from('pending_users').select('*').eq('id', userId)
-    ];
-
-    // Try all methods
-    for (const method of [...adminMethods, ...regularMethods]) {
-      try {
-        const { data, error } = await method();
-        
-        if (!error) {
-          if (data && (Array.isArray(data) ? data.length === 1 : true)) {
-            const user = Array.isArray(data) ? data[0] : data;
-            console.log('✅ [SINGLE_FETCH] Success:', user.email);
-            return user;
-          }
-        }
-      } catch (methodError) {
-        // Continue to next method
-      }
-    }
-
-    console.error('💥 [SINGLE_FETCH] All methods failed');
-    return null;
-  }, []);
+  const fetchSinglePendingUser = useCallback(
+    async (userId: string): Promise<PendingUser | null> => {
+      return getPendingUserAdmin<PendingUser>(userId);
+    },
+    []
+  );
 
   // 🔥 BULLETPROOF: Approve
-  const handleApprove = useCallback(async (userId: string) => {
-    setActionLoading(prev => ({ ...prev, [userId]: true }));
-    let pendingUser: PendingUser | null = null;
+  const handleApprove = useCallback(
+    async (userId: string) => {
+      setActionLoading((prev) => ({ ...prev, [userId]: true }));
+      let pendingUser: PendingUser | null = null;
 
-    console.log('🚀 [APPROVE] Starting approval for:', userId);
-
-    try {
-      // Fetch user
-      pendingUser = await fetchSinglePendingUser(userId);
-      if (!pendingUser) {
-        throw new Error('Could not fetch pending user');
-      }
-
-      console.log('✅ [APPROVE] User found:', pendingUser.email, pendingUser.role_requested);
-
-      if (pendingUser.status !== 'pending') {
-        throw new Error(`User not pending (status: ${pendingUser.status})`);
-      }
-
-      if (!pendingUser.password) {
-        throw new Error('No password in pending user record');
-      }
-
-      // Check existing auth user
-      let authUserId: string | null = null;
       try {
-        const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
-        const existing = users.find((user: any) => user.email === "");
-        if (existing) {
-          authUserId = existing.id;
-          console.log('ℹ️ [APPROVE] Using existing auth user:', authUserId);
+        pendingUser = await fetchSinglePendingUser(userId);
+        if (!pendingUser) {
+          throw new Error("Could not fetch pending user");
         }
-      } catch (checkError) {
-        console.warn('⚠️ [APPROVE] Auth check failed:', checkError);
+
+        if (pendingUser.status !== "pending") {
+          throw new Error(`User not pending (status: ${pendingUser.status})`);
+        }
+        await approvePendingUserAdmin(userId);
+        await fetchAllRequests();
+        onRefresh?.();
+
+        showNotification(
+          `✅ ${pendingUser.username} approved! They can now log in.`,
+          "success"
+        );
+      } catch (error: any) {
+
+        let message = "Failed to approve user";
+        if (error.message) {
+          message = error.message;
+        }
+
+        showNotification(`Approval failed: ${message}`, "error");
+      } finally {
+        setActionLoading((prev) => ({ ...prev, [userId]: false }));
+        await fetchAllRequests(); // refresh anyway so UI doesn't lie
       }
-
-      // Create auth user if needed
-      if (!authUserId) {
-        console.log('🔥 [APPROVE] Creating new auth user...');
-        const { data: authResult, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: pendingUser.email,
-          password: pendingUser.password,
-          email_confirm: true,
-          user_metadata: {
-            username: pendingUser.username,
-            role: pendingUser.role_requested,
-            approved_by: currentUserId,
-            approved_at: new Date().toISOString(),
-          },
-        });
-
-        if (authError) {
-          throw new Error(`Auth creation failed: ${authError.message}`);
-        }
-
-        if (!authResult?.user?.id) {
-          throw new Error('Auth user created but no ID returned');
-        }
-
-        authUserId = authResult.user.id;
-        console.log('✅ [APPROVE] Auth user created:', authUserId);
-      }
-
-      // Create/update users table record
-      const { data: existingUser } = await supabaseAdmin
-        .from('users')
-        .select('id, auth_user_id')
-        .eq('email', pendingUser.email)
-        .single();
-
-      let userRecordId: string;
-      if (existingUser) {
-        // Update existing
-        console.log('ℹ️ [APPROVE] Updating existing user record...');
-        const { error } = await supabaseAdmin
-          .from('users')
-          .update({
-            auth_user_id: authUserId,
-            role: pendingUser.role_requested,
-            status: 'approved',
-            access: 'active',
-            updatedAt: new Date().toISOString(),
-          })
-          .eq('id', existingUser.id);
-
-        if (error) {
-          throw new Error(`Failed to update user record: ${error.message}`);
-        }
-
-        userRecordId = existingUser.id;
-      } else {
-        // Create new
-        console.log('✅ [APPROVE] Creating new user record...');
-        const newUserId = crypto.randomUUID();
-        const userData = {
-          id: newUserId,
-          auth_user_id: authUserId,
-          email: pendingUser.email,
-          username: pendingUser.username,
-          first_name: pendingUser.username.includes(' ') ? pendingUser.username.split(' ')[0] : pendingUser.username,
-          last_name: pendingUser.username.includes(' ') ? pendingUser.username.split(' ').slice(1).join(' ') : '',
-          role: pendingUser.role_requested,
-          phone: '',
-          blacklist: false,
-          company: '',
-          access: 'active',
-          status: 'approved',
-          birth_date: '',
-          id_card_number: '',
-          travel_history: [],
-          passport_number: '',
-          passport_expire: '',
-          allergy: '',
-          emergency_phone: '',
-          membership_rank: 'basic',
-          membership_points: 0,
-          registered_by: currentUserId,
-          createdBy: currentUserId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        const { error } = await supabaseAdmin.from('users').insert(userData);
-        if (error) {
-          // Cleanup auth user
-          if (!existingUser) {
-            await supabaseAdmin.auth.admin.deleteUser(authUserId);
-          }
-          throw new Error(`Failed to create user record: ${error.message}`);
-        }
-
-        userRecordId = newUserId;
-      }
-
-      // Update pending user
-      console.log('🔥 [APPROVE] Marking pending as approved...');
-      const hashedPassword = await bcrypt.hash(pendingUser.password, 12);
-      const { error: pendingError } = await supabaseAdmin
-        .from('pending_users')
-        .update({
-          status: 'approved',
-          approved_by: currentUserId,
-          approved_at: new Date().toISOString(),
-          password: hashedPassword,
-          notes: `Approved - Auth: ${authUserId} User: ${userRecordId}`
-        })
-        .eq('id', userId);
-
-      if (pendingError) {
-        console.warn('⚠️ [APPROVE] Pending update failed:', pendingError.message);
-      }
-
-      console.log('🎉 [APPROVE] SUCCESS!');
-      console.log(`✅ ${pendingUser.username} approved`);
-      console.log(`✅ Auth ID: ${authUserId}`);
-      console.log(`✅ User ID: ${userRecordId}`);
-
-      await fetchAllRequests();
-      onRefresh?.();
-
-      showNotification(
-        `✅ ${pendingUser.username} approved! They can now log in.`,
-        'success'
-      );
-
-    } catch (error: any) {
-      console.error('💥 [APPROVE] Failed:', error.message);
-      showNotification(`❌ Failed to approve: ${error.message}`, 'error');
-    } finally {
-      setActionLoading(prev => ({ ...prev, [userId]: false }));
-    }
-  }, [currentUserId, fetchSinglePendingUser, onRefresh]);
+    },
+    [currentUserId, fetchSinglePendingUser, onRefresh]
+  );
 
   // 🔥 Decline (works already)
-  const handleDecline = useCallback(async (userId: string) => {
-    setActionLoading(prev => ({ ...prev, [userId]: true }));
-    
-    try {
-      const pendingUser = await fetchSinglePendingUser(userId);
-      if (!pendingUser) {
-        throw new Error('User not found for decline');
+  const handleDecline = useCallback(
+    async (userId: string) => {
+      setActionLoading((prev) => ({ ...prev, [userId]: true }));
+
+      try {
+        const pendingUser = await fetchSinglePendingUser(userId);
+        if (!pendingUser) {
+          throw new Error("User not found for decline");
+        }
+
+        await declinePendingUserAdmin(userId, `Declined by ${currentUserId}`);
+
+        await fetchAllRequests();
+        onRefresh?.();
+
+        showNotification(
+          `❌ ${pendingUser.username}'s request declined`,
+          "error"
+        );
+      } catch (error: any) {
+        showNotification(`❌ Failed to decline: ${error.message}`, "error");
+      } finally {
+        setActionLoading((prev) => ({ ...prev, [userId]: false }));
       }
-
-      const { error } = await supabaseAdmin
-        .from('pending_users')
-        .update({
-          status: 'declined',
-          notes: `Declined by ${currentUserId}`,
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (error) {
-        throw new Error(`Decline failed: ${error.message}`);
-      }
-
-      await fetchAllRequests();
-      onRefresh?.();
-
-      showNotification(
-        `❌ ${pendingUser.username}'s request declined`,
-        'error'
-      );
-
-    } catch (error: any) {
-      console.error('💥 [DECLINE] Failed:', error.message);
-      showNotification(`❌ Failed to decline: ${error.message}`, 'error');
-    } finally {
-      setActionLoading(prev => ({ ...prev, [userId]: false }));
-    }
-  }, [currentUserId, fetchSinglePendingUser, onRefresh]);
+    },
+    [currentUserId, fetchSinglePendingUser, onRefresh]
+  );
 
   // UI functions
-  const sendApprovalEmail = async (email: string, username: string, role: string) => {
-    console.log(`📧 Would send approval email to ${email}`);
-  };
+  const sendApprovalEmail = async (
+    email: string,
+    username: string,
+    role: string
+  ) => {};
 
-  const showNotification = (message: string, type: 'success' | 'error') => {
-    const notification = document.createElement('div');
+  const showNotification = (message: string, type: "success" | "error") => {
+    const notification = document.createElement("div");
     notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 ease-in-out max-w-sm ${
-      type === 'success' ? 'bg-green-500 text-white' :
-      type === 'error' ? 'bg-red-500 text-white' :
-      'bg-blue-500 text-white'
+      type === "success"
+        ? "bg-green-500 text-white"
+        : type === "error"
+        ? "bg-red-500 text-white"
+        : "bg-blue-500 text-white"
     }`;
     notification.innerHTML = `<div class="font-medium">${message}</div>`;
 
     document.body.appendChild(notification);
 
     setTimeout(() => {
-      notification.classList.remove('translate-x-full');
+      notification.classList.remove("translate-x-full");
     }, 100);
 
     setTimeout(() => {
-      notification.classList.add('translate-x-full');
+      notification.classList.add("translate-x-full");
       setTimeout(() => {
         if (document.body.contains(notification)) {
           document.body.removeChild(notification);
@@ -438,41 +234,44 @@ export default function AuthRequest({
   };
 
   const getRoleColor = (role: string) => ({
-    bg: role === 'user' ? 'from-blue-500' : role === 'manager' ? 'from-yellow-500' : 'from-green-500',
-    to: role === 'user' ? 'to-blue-600' : role === 'manager' ? 'to-yellow-600' : 'to-green-600',
-    text: role === 'user' ? 'text-blue-100' : role === 'manager' ? 'text-yellow-100' : 'text-green-100'
+    bg:
+      role === "user"
+        ? "from-blue-500"
+        : role === "manager"
+        ? "from-yellow-500"
+        : "from-green-500",
+    to:
+      role === "user"
+        ? "to-blue-600"
+        : role === "manager"
+        ? "to-yellow-600"
+        : "to-green-600",
+    text:
+      role === "user"
+        ? "text-blue-100"
+        : role === "manager"
+        ? "text-yellow-100"
+        : "text-green-100",
   });
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'approved': return 'bg-green-100 text-green-800';
-      case 'declined': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case "pending":
+        return "bg-yellow-100 text-yellow-800";
+      case "approved":
+        return "bg-green-100 text-green-800";
+      case "declined":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
     }
   };
 
   // 🔥 DEBUG BUTTONS (development only)
-  const renderDebugButtons = () => (
-    process.env.NODE_ENV === 'development' ? (
+  const renderDebugButtons = () =>
+    process.env.NODE_ENV === "development" ? (
       <div className="p-4 bg-blue-50 border-b border-blue-200">
         <div className="flex space-x-2 text-xs">
-          <button
-            onClick={async () => {
-              console.log('🧪 Testing admin client...');
-              try {
-                const { data, error } = await supabaseAdmin
-                  .from('pending_users')
-                  .select('count')
-                  .single();
-                alert(`Admin client: ${data?.count || 0} pending users`);
-              } catch (e) {
-              }
-            }}
-            className="px-2 py-1 bg-blue-600 text-white rounded"
-          >
-            🧪 Test Admin
-          </button>
           <button
             onClick={handleManualRefresh}
             className="px-2 py-1 bg-green-600 text-white rounded"
@@ -481,8 +280,7 @@ export default function AuthRequest({
           </button>
         </div>
       </div>
-    ) : null
-  );
+    ) : null;
 
   const currentRequest = pendingUsers[currentIndex];
 
@@ -502,7 +300,7 @@ export default function AuthRequest({
   return (
     <div className="bg-white rounded-xl shadow-sm border">
       {renderDebugButtons()}
-      
+
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -513,7 +311,9 @@ export default function AuthRequest({
               )}
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Account Requests</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Account Requests
+              </h3>
               <p className="text-sm text-gray-500">
                 {pendingUsers.length} pending • {allUsers.length} total
               </p>
@@ -528,23 +328,25 @@ export default function AuthRequest({
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setView(view === 'feed' ? 'list' : 'feed')}
+              onClick={() => setView(view === "feed" ? "list" : "feed")}
               className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
             >
-              {view === 'feed' ? 'List View' : 'Feed View'}
+              {view === "feed" ? "List View" : "Feed View"}
             </button>
           </div>
         </div>
       </div>
 
-      {view === 'feed' ? (
+      {view === "feed" ? (
         <div className="relative">
           {pendingUsers.length === 0 ? (
             <div className="p-6 text-center">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-400" />
               </div>
-              <h4 className="text-lg font-medium text-gray-900 mb-2">No Pending Requests</h4>
+              <h4 className="text-lg font-medium text-gray-900 mb-2">
+                No Pending Requests
+              </h4>
               <p className="text-gray-500">All account requests processed</p>
               <button
                 onClick={handleManualRefresh}
@@ -560,14 +362,18 @@ export default function AuthRequest({
                   className="flex transition-transform duration-700 ease-in-out h-full"
                   style={{
                     transform: `translateX(-${currentIndex * 100}%)`,
-                    width: `${pendingUsers.length * 100}%`
+                    width: `${pendingUsers.length * 100}%`,
                   }}
                 >
                   {pendingUsers.map((request, index) => (
                     <div key={request.id} className="w-full flex-shrink-0 p-6">
                       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/30 h-full flex flex-col">
                         <div className="flex items-start space-x-4 mb-4 flex-1">
-                          <div className={`p-3 rounded-full ${getRoleColor(request.role_requested).bg} ${getRoleColor(request.role_requested).to}`}>
+                          <div
+                            className={`p-3 rounded-full ${
+                              getRoleColor(request.role_requested).bg
+                            } ${getRoleColor(request.role_requested).to}`}
+                          >
                             <Users className="w-6 h-6 text-white" />
                           </div>
 
@@ -576,23 +382,34 @@ export default function AuthRequest({
                               <h4 className="font-semibold text-gray-900 truncate">
                                 {request.username}
                               </h4>
-                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(request.role_requested).text}`}>
+                              <span
+                                className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                  getRoleColor(request.role_requested).text
+                                }`}
+                              >
                                 {request.role_requested}
                               </span>
                             </div>
 
                             <p className="text-sm text-gray-600 mb-2">
-                              wants to join as a <span className="font-medium">{request.role_requested}</span>
+                              wants to join as a{" "}
+                              <span className="font-medium">
+                                {request.role_requested}
+                              </span>
                             </p>
 
                             <div className="space-y-1 text-xs text-gray-500">
                               <div className="flex items-center">
                                 <Mail className="w-3 h-3 mr-1" />
-                                <span className="truncate">{request.email}</span>
+                                <span className="truncate">
+                                  {request.email}
+                                </span>
                               </div>
                               <div className="flex items-center">
                                 <Calendar className="w-3 h-3 mr-1" />
-                                {new Date(request.created_at).toLocaleDateString()}
+                                {new Date(
+                                  request.created_at
+                                ).toLocaleDateString()}
                               </div>
                             </div>
                           </div>
@@ -656,7 +473,9 @@ export default function AuthRequest({
                         key={index}
                         onClick={() => setCurrentIndex(index)}
                         className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                          index === currentIndex ? 'bg-blue-600 w-6' : 'bg-gray-300'
+                          index === currentIndex
+                            ? "bg-blue-600 w-6"
+                            : "bg-gray-300"
                         }`}
                       />
                     ))}
@@ -664,13 +483,23 @@ export default function AuthRequest({
 
                   <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none z-10">
                     <button
-                      onClick={() => setCurrentIndex((prev) => (prev - 1 + pendingUsers.length) % pendingUsers.length)}
+                      onClick={() =>
+                        setCurrentIndex(
+                          (prev) =>
+                            (prev - 1 + pendingUsers.length) %
+                            pendingUsers.length
+                        )
+                      }
                       className="pointer-events-auto bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:shadow-xl transition-shadow border"
                     >
                       <ChevronLeft className="w-5 h-5 text-gray-600" />
                     </button>
                     <button
-                      onClick={() => setCurrentIndex((prev) => (prev + 1) % pendingUsers.length)}
+                      onClick={() =>
+                        setCurrentIndex(
+                          (prev) => (prev + 1) % pendingUsers.length
+                        )
+                      }
                       className="pointer-events-auto bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:shadow-xl transition-shadow border"
                     >
                       <ChevronRight className="w-5 h-5 text-gray-600" />
@@ -688,33 +517,53 @@ export default function AuthRequest({
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-400" />
               </div>
-              <h4 className="text-lg font-medium text-gray-900 mb-2">No Requests</h4>
+              <h4 className="text-lg font-medium text-gray-900 mb-2">
+                No Requests
+              </h4>
               <p className="text-gray-500">No account requests found</p>
             </div>
           ) : (
             <div className="space-y-4">
               {allUsers.map((request) => (
-                <div key={request.id} className="border-b border-gray-100 pb-4 last:border-b-0">
+                <div
+                  key={request.id}
+                  className="border-b border-gray-100 pb-4 last:border-b-0"
+                >
                   <div className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div className={`p-3 rounded-full ${getRoleColor(request.role_requested).bg} ${getRoleColor(request.role_requested).to}`}>
+                    <div
+                      className={`p-3 rounded-full ${
+                        getRoleColor(request.role_requested).bg
+                      } ${getRoleColor(request.role_requested).to}`}
+                    >
                       <Users className="w-6 h-6 text-white" />
                     </div>
 
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <h4 className="font-semibold text-gray-900">{request.username}</h4>
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(request.status)}`}>
+                        <h4 className="font-semibold text-gray-900">
+                          {request.username}
+                        </h4>
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                            request.status
+                          )}`}
+                        >
                           {request.status.toUpperCase()}
                         </span>
                       </div>
 
                       <p className="text-sm text-gray-600 mb-2">
-                        <span className="font-medium capitalize">{request.role_requested}</span> account - {request.status}
+                        <span className="font-medium capitalize">
+                          {request.role_requested}
+                        </span>{" "}
+                        account - {request.status}
                       </p>
 
                       <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
                         <span className="truncate">{request.email}</span>
-                        <span>{new Date(request.created_at).toLocaleDateString()}</span>
+                        <span>
+                          {new Date(request.created_at).toLocaleDateString()}
+                        </span>
                       </div>
 
                       {request.notes && (
@@ -724,7 +573,7 @@ export default function AuthRequest({
                       )}
                     </div>
 
-                    {request.status === 'pending' && (
+                    {request.status === "pending" && (
                       <div className="flex flex-col space-y-2">
                         <button
                           onClick={() => handleApprove(request.id)}

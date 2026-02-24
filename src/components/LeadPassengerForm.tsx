@@ -186,10 +186,6 @@ export default function LeadPassengerForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log(
-      "LeadPassengerForm: handleSubmit called with leadPassenger:",
-      leadPassenger
-    );
     if (!validateForm()) {
       setNotification({
         type: "error",
@@ -242,7 +238,6 @@ export default function LeadPassengerForm({
       if (error) throw new Error(`Lead submission failed: ${error.message}`);
       if (!data) throw new Error("No data returned from lead submission");
 
-      console.log("LeadPassengerForm: Inserted leadData:", leadData);
       setLeadId(data.id);
       setLeadPassengerData(data);
       setTimeLeft(expiryHours * 3600);
@@ -344,9 +339,6 @@ export default function LeadPassengerForm({
   };
 
   const handleSkip = () => {
-    console.log(
-      "LeadPassengerForm: handleSkip called, setting activeStep to 3"
-    );
     setActiveStep(3);
   };
 
@@ -371,13 +363,13 @@ export default function LeadPassengerForm({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-      <div className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl shadow-sm border border-slate-200 mb-6">
-        <div className="px-6 py-4 border-b border-slate-200">
+    <div className="mono-stack">
+      <div className="sticky top-0 z-10 mono-card mb-6">
+        <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center space-x-4">
-            <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
+            <div className="p-2 bg-gray-100 rounded-lg border border-gray-200">
               <svg
-                className="h-5 w-5 text-white"
+                className="h-5 w-5 text-gray-700"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -391,10 +383,10 @@ export default function LeadPassengerForm({
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">
+              <h3 className="mono-title text-lg">
                 Lead Passenger Information
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-gray-600">
                 Tour: {selectedTourData?.title || "Not selected"} |{" "}
                 {calculateLeadExpiryHours(departureDate)} hour
                 {calculateLeadExpiryHours(departureDate) !== 1 ? "s" : ""} to
@@ -542,9 +534,6 @@ export default function LeadPassengerForm({
           <button
             type="button"
             onClick={() => {
-              console.log(
-                "LeadPassengerForm: Back button clicked, moving to step 1"
-              );
               setActiveStep(1);
             }}
             className="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"

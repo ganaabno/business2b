@@ -1,25 +1,34 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthProvider";
 import { supabase } from "../supabaseClient";
-import { supabaseAdmin } from "../utils/adminClient";  
-import { 
-  Eye, 
-  EyeOff, 
-  Mail, 
-  User, 
-  Lock, 
+import { hash } from "bcryptjs";
+import { checkEmailExists } from "../api/admin";
+import {
+  Eye,
+  EyeOff,
+  Mail,
+  User,
+  Lock,
+  Building2,
+  Phone,
   AlertCircle,
   Clock,
-  CheckCircle 
+  CheckCircle,
 } from "lucide-react";
+import illustriation from "../assets/illustriation.jpg";
+import Logo from "../assets/last logo.png";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function Signup() {
-  const { hasPendingRequest } = useAuth();
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "pending">("idle");
+  const [isCompany, setIsCompany] = useState(false); // ← NEW: checkbox
+  const [companyName, setCompanyName] = useState(""); // ← NEW: optional
+  const [companyPhone, setCompanyPhone] = useState(""); // ← NEW: optional
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "success" | "error" | "pending"
+  >("idle");
   const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
@@ -29,20 +38,41 @@ export default function Signup() {
     setStatus("loading");
     setMessage("");
 
-    // Basic validation
     if (!email || !username || !password) {
       setStatus("error");
       setMessage("Please fill in all fields");
       return;
     }
-
     if (password.length < 6) {
       setStatus("error");
       setMessage("Password must be at least 6 characters");
       return;
     }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      setStatus("error");
+      setMessage("Username can only contain letters, numbers, and underscores");
+      return;
+    }
+    if (username.length < 3 || username.length > 20) {
+      setStatus("error");
+      setMessage("Username must be 3–20 characters");
+      return;
+    }
 
-    // Check for pending request
+    // ---- COMPANY VALIDATION (only if checkbox checked) ----
+    if (isCompany) {
+      if (!companyName.trim()) {
+        setStatus("error");
+        setMessage("Company name is required when registering as a company");
+        return;
+      }
+      if (!companyPhone.trim()) {
+        setStatus("error");
+        setMessage("Company phone is required");
+        return;
+      }
+    }
+
     let hasPending = false;
     try {
       const { data, error } = await supabase
@@ -51,56 +81,71 @@ export default function Signup() {
         .eq("email", email)
         .maybeSingle();
 
-      if (error) {
-        if (error.message.includes('406') || error.message.includes('PGRST116')) {
-          console.log('✅ No pending request found - proceeding with signup');
-          hasPending = false;
-        } else {
-          console.error('❌ Error checking pending:', error);
-          setStatus("error");
-          setMessage("Error checking account status. Please try again.");
-          return;
-        }
-      } else {
-        hasPending = !!data;
+      if (error && !error.message.includes("PGRST116")) {
+        console.error("Error checking pending:", error);
+        setStatus("error");
+        setMessage("Error checking account status. Please try again.");
+        return;
       }
-    } catch (error: any) {
-      console.error('❌ Unexpected error checking pending:', error);
+      hasPending = !!data;
+    } catch (error) {
+      console.error("Unexpected error:", error);
       hasPending = false;
     }
 
     if (hasPending) {
       setStatus("pending");
-      setMessage("You already have a pending account request. Please wait for admin approval.");
+      setMessage(
+        "You already have a pending account request. Please wait for admin approval."
+      );
       return;
     }
 
     try {
-      // Check if user already exists
       let userExists = false;
       try {
-        if (supabaseAdmin) {
-          const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
-          userExists = users.some((user: any) => user.email === email);
-        } else {
-          console.log('⚠️ No admin client available - skipping auth check');
+        userExists = await checkEmailExists(email);
+      } catch {
+        const { data: existingUser, error: existingUserError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", email)
+          .maybeSingle();
+
+        if (!existingUserError && existingUser) {
+          userExists = true;
         }
-      } catch (adminError: any) {
-        console.log('⚠️ Admin API error (expected for non-admin):', adminError.message);
-        userExists = false;
       }
-      
+
       if (userExists) {
         setStatus("error");
-        setMessage("An account with this email already exists. Please log in instead.");
+        setMessage(
+          "An account with this email already exists. Please log in instead."
+        );
         return;
       }
 
-      // Create pending request with default role
+      const { data: usernameCheck } = await supabase
+        .from("pending_users")
+        .select("id")
+        .eq("username", username)
+        .maybeSingle();
+
+      if (usernameCheck) {
+        setStatus("error");
+        setMessage("This username is already taken.");
+        return;
+      }
+
+      const passwordHash = await hash(password, 12);
       const { error } = await supabase.from("pending_users").insert({
         email,
         username,
-        password,
+        password_hash: passwordHash,
+        role_requested: "user", // or whatever you use
+        company_name: isCompany ? companyName : null,
+        company_phone: isCompany ? companyPhone : null,
+        is_company: isCompany,
         created_at: new Date().toISOString(),
       });
 
@@ -111,15 +156,13 @@ export default function Signup() {
 
       setStatus("success");
       setMessage("Account request sent! An admin will review it shortly.");
-      
-      // Clear form
       setEmail("");
       setUsername("");
       setPassword("");
-      
-      // Redirect to login after 3 seconds
+      setCompanyName("");
+      setCompanyPhone("");
+      setIsCompany(false);
       setTimeout(() => navigate("/login"), 3000);
-      
     } catch (error: any) {
       console.error("Signup failed:", error);
       setStatus("error");
@@ -127,21 +170,19 @@ export default function Signup() {
     }
   };
 
+  // Pending & Success Pages (unchanged)
   if (status === "pending") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Clock className="w-8 h-8 text-yellow-600" />
+      <div className="mono-shell flex items-center justify-center px-4 py-12">
+        <div className="mono-card p-8 max-w-md w-full text-center mono-rise">
+          <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-200">
+            <Clock className="w-7 h-7 text-gray-700" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Pending</h2>
-          <p className="text-gray-600 mb-6">{message}</p>
-          <p className="text-sm text-gray-500 mb-6">
-            An admin will review your request soon.
-          </p>
+          <h2 className="mono-title text-2xl mb-2">Request Pending</h2>
+          <p className="mono-subtitle mb-6">{message}</p>
           <button
             onClick={() => navigate("/login")}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+            className="mono-button w-full"
           >
             Go to Login
           </button>
@@ -152,19 +193,16 @@ export default function Signup() {
 
   if (status === "success") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
+      <div className="mono-shell flex items-center justify-center px-4 py-12">
+        <div className="mono-card p-8 max-w-md w-full text-center mono-rise">
+          <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-200">
+            <CheckCircle className="w-7 h-7 text-gray-700" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Sent!</h2>
-          <p className="text-gray-600 mb-6">{message}</p>
-          <p className="text-sm text-gray-500 mb-6">
-            You'll receive an email when your account is approved.
-          </p>
+          <h2 className="mono-title text-2xl mb-2">Request Sent!</h2>
+          <p className="mono-subtitle mb-6">{message}</p>
           <button
             onClick={() => navigate("/login")}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+            className="mono-button w-full"
           >
             Go to Login
           </button>
@@ -173,107 +211,233 @@ export default function Signup() {
     );
   }
 
+  // MAIN FORM + GLASS EFFECT
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Join Us</h1>
-          <p className="text-gray-600">Create an account request</p>
-          <p>We will send you an email after approval!</p>
-        </div>
+    <div className="mono-shell">
+      <div className="min-h-screen flex items-center justify-center px-4 py-12">
+        <div className="mono-card w-full max-w-5xl overflow-hidden mono-rise">
+          <div className="grid lg:grid-cols-[1.1fr_0.9fr]">
+            {/* LEFT — FORM */}
+            <div className="p-8 lg:p-12 flex-1 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="w-14 h-14 rounded-2xl border border-gray-200 bg-gray-100 p-2">
+                <img
+                  src={Logo}
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <ThemeToggle className="px-2.5 py-2 text-xs" showLabel={false} />
+            </div>
+              <div>
+                <p className="mono-kicker">Get started</p>
+                <h1 className="mono-title text-3xl sm:text-4xl">
+                  Create Account
+                </h1>
+                <p className="mono-subtitle mt-2">
+                  Fill in your details to request access.
+                </p>
+              </div>
 
-        {status === "error" && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center">
-            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-            <span>{message}</span>
-          </div>
-        )}
+              {status === "error" && (
+                <div className="mono-panel px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{message}</span>
+                </div>
+              )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                required
-                disabled={status === "loading"}
-              />
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      required
+                      disabled={status === "loading"}
+                      className="mono-input pl-10 pr-4 text-sm"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Username
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="username"
+                      required
+                      disabled={status === "loading"}
+                      className="mono-input pl-10 pr-4 text-sm"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      minLength={6}
+                      disabled={status === "loading"}
+                      className="mono-input pl-10 pr-12 text-sm"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <input
+                    type="checkbox"
+                    id="company"
+                    checked={isCompany}
+                    onChange={(e) => setIsCompany(e.target.checked)}
+                    className="h-5 w-5 rounded border-gray-300"
+                  />
+                  <label
+                    htmlFor="company"
+                    className="text-sm text-gray-700 cursor-pointer select-none"
+                  >
+                    Register as a Company
+                  </label>
+                </div>
+
+                {isCompany && (
+                  <div className="space-y-4 mt-2 animate-in slide-in-from-top-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Company Name
+                      </label>
+                      <div className="relative">
+                        <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input
+                          type="text"
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          placeholder="Acme Corp"
+                          className="mono-input pl-10 pr-4 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Company Phone
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input
+                          type="tel"
+                          value={companyPhone}
+                          onChange={(e) => setCompanyPhone(e.target.value)}
+                          placeholder="+1 (555) 000-1234"
+                          className="mono-input pl-10 pr-4 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={status === "loading"}
+                  className="mono-button w-full text-sm mt-4"
+                >
+                  {status === "loading" ? (
+                    <>
+                      <svg
+                        className="animate-spin -ml-1 mr-3 h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Account"
+                  )}
+                </button>
+              </form>
+
+              <div className="text-sm">
+                <button
+                  onClick={() => navigate("/login")}
+                  className="text-gray-600 hover:text-gray-900 transition-colors"
+                  disabled={status === "loading"}
+                >
+                  Already have an account? <span className="font-medium">Sign in</span>
+                </button>
+              </div>
+            </div>
+
+            {/* RIGHT — IMAGE */}
+            <div className="hidden lg:block p-6">
+              <div className="mono-panel h-full p-5 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <p className="mono-kicker">Team access</p>
+                  <h2 className="mono-title text-2xl">Request your seat.</h2>
+                  <p className="mono-subtitle text-sm">
+                    We review each signup to keep operations smooth and secure.
+                  </p>
+                </div>
+                <img
+                  src={illustriation}
+                  alt="Lets Travel Together!"
+                  className="w-full rounded-2xl shadow-sm object-cover grayscale"
+                />
+              </div>
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Your username"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                required
-                disabled={status === "loading"}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Choose a password"
-                className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                required
-                minLength={6}
-                disabled={status === "loading"}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                disabled={status === "loading"}
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={status === "loading"}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {status === "loading" ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Creating Request...
-              </span>
-            ) : (
-              "Request Account"
-            )}
-          </button>
-        </form>
-
-        <div className="text-center mt-6">
-          <button
-            onClick={() => navigate("/login")}
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
-            disabled={status === "loading"}
-          >
-            Already have an account? Sign in
-          </button>
         </div>
       </div>
     </div>
