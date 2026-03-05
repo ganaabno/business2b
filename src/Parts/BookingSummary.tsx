@@ -68,7 +68,7 @@ const cleanDateForDB = (dateValue: any): string | null => {
 };
 
 const calculateAge = (
-  dateOfBirth: string | undefined | null
+  dateOfBirth: string | undefined | null,
 ): number | string => {
   const cleanBirthDate = cleanDateForDB(dateOfBirth);
   if (!cleanBirthDate) return "N/A";
@@ -93,7 +93,7 @@ const calculateAge = (
 
 const validatePassenger = (
   passenger: Passenger,
-  departureDate: string
+  departureDate: string,
 ): ValidationError[] => {
   const errors: ValidationError[] = [];
   const { serial_no = "Unknown" } = passenger;
@@ -173,12 +173,12 @@ export default function BookingSummary({
 
   const totalPrice = cleanedPassengers.reduce(
     (sum, p) => sum + (p.price || 0),
-    0
+    0,
   );
 
   const hasValidationErrors = useMemo(() => {
     const passengerErrors = cleanedPassengers.flatMap((p) =>
-      validatePassenger(p, departureDate)
+      validatePassenger(p, departureDate),
     );
     return errors.length > 0 || passengerErrors.length > 0;
   }, [cleanedPassengers, errors, departureDate]);
@@ -214,7 +214,7 @@ export default function BookingSummary({
 
     // Validate passengers
     const passengerErrors = cleanedPassengers.flatMap((p) =>
-      validatePassenger(p, departureDate)
+      validatePassenger(p, departureDate),
     );
     if (passengerErrors.length > 0) {
       setErrors(passengerErrors);
@@ -240,7 +240,7 @@ export default function BookingSummary({
         window.dispatchEvent(
           new CustomEvent("booking-completed-from-lead", {
             detail: { leadId },
-          })
+          }),
         );
         delete (window as any).__currentLeadId;
 

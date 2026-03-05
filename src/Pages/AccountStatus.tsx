@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
 import { supabase } from "../supabaseClient";
+import { featureFlags } from "../config/featureFlags";
 import { 
   Shield, 
   Clock, 
@@ -18,7 +19,7 @@ interface PendingRequest {
   id: string;
   email: string;
   username: string;
-  role_requested: 'user' | 'manager' | 'provider';
+  role_requested: 'user' | 'manager' | 'provider' | 'agent';
   status: 'pending' | 'approved' | 'declined';
   created_at: string;
   approved_at?: string;
@@ -42,9 +43,22 @@ export default function AccountStatus() {
       checkPendingRequest();
     } else {
       // If user is already approved or has different role, redirect to dashboard
-      const homePath = currentUser.role === "admin" || currentUser.role === "superadmin" ? "/admin" :
-        currentUser.role === "provider" ? "/provider" :
-          currentUser.role === "manager" ? "/manager" : "/user";
+      const homePath =
+        currentUser.role === "admin" || currentUser.role === "superadmin"
+          ? "/admin"
+          : currentUser.role === "manager"
+            ? "/manager"
+            : currentUser.role === "provider"
+              ? "/provider"
+              : currentUser.role === "agent"
+                ? featureFlags.b2bSeatRequestFlowEnabled
+                  ? "/agent"
+                  : "/provider"
+                : currentUser.role === "subcontractor"
+                  ? featureFlags.b2bSeatRequestFlowEnabled
+                    ? "/subcontractor"
+                    : "/user"
+                  : "/user";
       navigate(homePath, { replace: true });
     }
   }, [currentUser, navigate]);

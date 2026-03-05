@@ -145,7 +145,7 @@ export default function EditOrderPassengersModal({
     useState<EditablePassenger[]>(initialPassengers);
   const [saving, setSaving] = useState(false);
   const [sharedGroupColor, setSharedGroupColor] = useState<string | null>(
-    initialPassengers[0]?.group_color || null
+    initialPassengers[0]?.group_color || null,
   );
 
   if (!isOpen) return null;
@@ -153,10 +153,10 @@ export default function EditOrderPassengersModal({
   const updatePassenger = (
     id: string,
     field: keyof EditablePassenger,
-    value: any
+    value: any,
   ) => {
     setPassengers((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)),
     );
   };
 
@@ -301,7 +301,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "first_name",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className={`w-full px-4 py-3 rounded-lg border-2 transition-all ${
@@ -323,7 +323,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "last_name",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className={`w-full px-4 py-3 rounded-lg border-2 transition-all ${
@@ -385,7 +385,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "passport_number",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className={`w-full px-4 py-3 rounded-lg border-2 transition-all ${
@@ -406,7 +406,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "passport_expire",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className={`w-full px-4 py-3 rounded-lg border-2 transition-all ${
@@ -429,7 +429,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "date_of_birth",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className={`w-full px-4 py-3 rounded-lg border-2 transition-all ${
@@ -494,7 +494,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "pax_type",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
@@ -536,7 +536,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "roomType",
-                        e.target.value || null
+                        e.target.value || null,
                       )
                     }
                     className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
@@ -555,7 +555,7 @@ export default function EditOrderPassengersModal({
                       updatePassenger(
                         pax.id,
                         "itinerary_status",
-                        e.target.value || "No itinerary"
+                        e.target.value || "No itinerary",
                       )
                     }
                     className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
@@ -608,7 +608,7 @@ export default function EditOrderPassengersModal({
                         updatePassenger(
                           pax.id,
                           "has_baby_bed",
-                          e.target.checked
+                          e.target.checked,
                         )
                       }
                       className="w-6 h-6 text-pink-600 rounded focus:ring-pink-500"

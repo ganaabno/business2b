@@ -12,6 +12,7 @@ import {
   calculateAge,
   calculateServicePrice,
 } from "../utils/passengerUtils";
+import { createSharedBooking } from "../api/sharedBookings";
 
 // 🧹 Convert empty strings → null only for database insert
 const prepareForDatabase = (passenger: Passenger): any => {
@@ -303,49 +304,92 @@ export const usePassengers = (
     setLoading(true);
 
     try {
-      const dbPassengers = initialPassengers.map(prepareForDatabase);
-
-      const { data: savedPassengers, error: pErr } = await supabase
-        .from("passengers")
-        .insert(dbPassengers)
-        .select();
-
-      if (pErr) throw pErr;
+      const departureDate = String(tour.departure_date ?? "").trim();
+      if (!departureDate) {
+        showNotification("error", "Departure date is required for booking");
+        return false;
+      }
 
       const totalPrice = initialPassengers.reduce(
         (sum, p) => sum + (p.price || 0),
-        0
+        0,
       );
 
-      const { data: booking } = await supabase
-        .from("bookings")
-        .insert({
-          tour_id: tour.id,
-          passenger_ids: savedPassengers.map((p: any) => p.id),
-          total_price: totalPrice,
-          status: "pending",
-          departure_date: tour.departure_date || null,
-          created_by: currentUser.id,
-        })
-        .select()
-        .single();
-
-      const orderNumber = `ORD-${Date.now()}`;
-
-      await supabase.from("orders").insert({
-        booking_id: booking.id,
-        order_number: orderNumber,
-        total_amount: totalPrice,
-        payment_status: "pending",
-        created_by: currentUser.id,
+      const bookingResult = await createSharedBooking({
+        userId: String(currentUser.id || currentUser.userId || ""),
+        tourId: tour.id,
+        tourTitle: tour.title || selectedTour,
+        departureDate,
+        paymentMethod: null,
+        orderStatus: "pending",
+        source: "b2b",
+        passengers: initialPassengers.map((p, index) => ({
+          ...p,
+          user_id: p.user_id || currentUser.id || currentUser.userId || null,
+          tour_id: p.tour_id || tour.id,
+          tour_title: p.tour_title || tour.title || selectedTour,
+          departure_date: p.departure_date || departureDate,
+          serial_no: p.serial_no || String(index + 1),
+          passenger_number: p.passenger_number || `PAX-${Date.now()}-${index + 1}`,
+          seat_count: p.seat_count ?? 1,
+        })),
       });
 
-      showNotification("success", `Booking saved! Order: ${orderNumber}`);
+      showNotification(
+        "success",
+        `Booking saved! Order: ORD-${bookingResult.orderId} (Total: ${Math.round(
+          bookingResult.totalPrice || totalPrice,
+        )})`,
+      );
       setPassengers([]);
       return true;
-    } catch (err: any) {
-      showNotification("error", `Save failed: ${err.message}`);
-      return false;
+    } catch (sharedBookingError: any) {
+      console.warn("Shared booking RPC failed, falling back to legacy booking flow", sharedBookingError);
+      try {
+        const dbPassengers = initialPassengers.map(prepareForDatabase);
+
+        const { data: savedPassengers, error: pErr } = await supabase
+          .from("passengers")
+          .insert(dbPassengers)
+          .select();
+
+        if (pErr) throw pErr;
+
+        const totalPrice = initialPassengers.reduce(
+          (sum, p) => sum + (p.price || 0),
+          0,
+        );
+
+        const { data: booking } = await supabase
+          .from("bookings")
+          .insert({
+            tour_id: tour.id,
+            passenger_ids: savedPassengers.map((p: any) => p.id),
+            total_price: totalPrice,
+            status: "pending",
+            departure_date: tour.departure_date || null,
+            created_by: currentUser.id,
+          })
+          .select()
+          .single();
+
+        const orderNumber = `ORD-${Date.now()}`;
+
+        await supabase.from("orders").insert({
+          booking_id: booking.id,
+          order_number: orderNumber,
+          total_amount: totalPrice,
+          payment_status: "pending",
+          created_by: currentUser.id,
+        });
+
+        showNotification("success", `Booking saved! Order: ${orderNumber}`);
+        setPassengers([]);
+        return true;
+      } catch (err: any) {
+        showNotification("error", `Save failed: ${err.message}`);
+        return false;
+      }
     } finally {
       setLoading(false);
     }

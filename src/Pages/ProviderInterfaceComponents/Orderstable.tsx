@@ -69,7 +69,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"all" | "active" | "completed">(
-    "active"
+    "active",
   );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [completingKey, setCompletingKey] = useState<string | null>(null);
@@ -313,40 +313,40 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
 
         {/* Table - Mobile Card View on Small Screens */}
         {isExpanded && (
-            <div className="border-t border-gray-200">
-              {/* Desktop Table View */}
-              <div className="hidden lg:block p-4 lg:p-6 overflow-x-auto">
-                <table className="min-w-full mono-table mono-table--compact mono-table--plain table-fixed">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="sticky left-0 z-20 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] text-center">
-                        #
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Order ID
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Passenger
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Tour
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Departure
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Hotel
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Room Type
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Room
-                      </th>
-                      <th className="px-20 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
-                        Note
-                      </th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+          <div className="border-t border-gray-200">
+            {/* Desktop Table View */}
+            <div className="hidden lg:block p-4 lg:p-6 overflow-x-auto">
+              <table className="min-w-full mono-table mono-table--compact mono-table--plain table-fixed">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="sticky left-0 z-20 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] text-center">
+                      #
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Order ID
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Passenger
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Tour
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Departure
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Hotel
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Room Type
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Room
+                    </th>
+                    <th className="px-20 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                      Note
+                    </th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Status
                     </th>
                   </tr>
@@ -390,7 +390,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                               onChange={(e) =>
                                 updateOrderStatus(
                                   order.id,
-                                  e.target.value as OrderStatus
+                                  e.target.value as OrderStatus,
                                 )
                               }
                               className="border rounded px-2 py-1 text-sm"
@@ -412,8 +412,8 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                       a.main_passenger_id == null
                         ? -1
                         : b.main_passenger_id == null
-                        ? 1
-                        : 0
+                          ? 1
+                          : 0,
                     );
 
                     const mainPax =
@@ -423,7 +423,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                       ? `P${mainPax.serial_no}`
                       : "—";
                     const groupRoom = safe(
-                      mainPax?.room_allocation ?? order.room_number
+                      mainPax?.room_allocation ?? order.room_number,
                     );
                     const roomTypeFromAny = allPax
                       .map((p) => p.roomType)
@@ -447,7 +447,10 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                           const isFirst = idx === 0;
 
                           return (
-                            <tr key={pax.id} className="hover:bg-gray-50 transition-colors">
+                            <tr
+                              key={pax.id}
+                              className="hover:bg-gray-50 transition-colors"
+                            >
                               {isFirst && (
                                 <td
                                   rowSpan={allPax.length}
@@ -533,7 +536,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                                   {(() => {
                                     const mainPassenger =
                                       allPax.find(
-                                        (p) => p.main_passenger_id == null
+                                        (p) => p.main_passenger_id == null,
                                       ) || allPax[0];
                                     if (!mainPassenger?.id)
                                       return (
@@ -564,7 +567,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                                                               ...p,
                                                               notes: newNote,
                                                             }
-                                                          : p
+                                                          : p,
                                                       ),
                                                     passenger_requests:
                                                       o.passenger_requests?.map(
@@ -575,11 +578,11 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                                                                 ...p,
                                                                 notes: newNote,
                                                               }
-                                                            : p
+                                                            : p,
                                                       ),
                                                   }
-                                                : o
-                                            )
+                                                : o,
+                                            ),
                                           );
 
                                           const { error } = await supabase
@@ -610,7 +613,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                                     onChange={(e) =>
                                       updateOrderStatus(
                                         order.id,
-                                        e.target.value as OrderStatus
+                                        e.target.value as OrderStatus,
                                       )
                                     }
                                     className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -650,8 +653,8 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                   a.main_passenger_id == null
                     ? -1
                     : b.main_passenger_id == null
-                    ? 1
-                    : 0
+                      ? 1
+                      : 0,
                 );
 
                 const mainPax =
@@ -673,7 +676,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                   : "—";
 
                 const groupRoom = safe(
-                  mainPax?.room_allocation ?? order.room_number
+                  mainPax?.room_allocation ?? order.room_number,
                 );
 
                 return (
@@ -690,7 +693,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
                         onChange={(e) =>
                           updateOrderStatus(
                             order.id,
-                            e.target.value as OrderStatus
+                            e.target.value as OrderStatus,
                           )
                         }
                         className="border rounded px-2 py-1 text-xs"
@@ -835,7 +838,9 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       <div>
         {visibleGroups.length === 0 ? (
           <div className="mono-card p-6 text-center text-gray-500 text-sm">
-            {activeTab === "active" ? t("noActiveTours") : t("noCompletedTours")}
+            {activeTab === "active"
+              ? t("noActiveTours")
+              : t("noCompletedTours")}
           </div>
         ) : (
           visibleGroups.map(renderGroup)

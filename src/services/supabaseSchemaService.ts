@@ -29,7 +29,7 @@ export function sanitizeIdentifier(name: string) {
 
 export const buildCreateTableSQL = (
   physicalTableName: string,
-  cols: ColumnDefinition[]
+  cols: ColumnDefinition[],
 ) => {
   const colsSql = cols
     .map(
@@ -44,11 +44,11 @@ export const buildCreateTableSQL = (
                   : c.defaultValue
               }`
             : ""
-        }`
+        }`,
     )
     .join(",\n  ");
   return `CREATE TABLE IF NOT EXISTS "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ${colsSql},
@@ -58,12 +58,12 @@ export const buildCreateTableSQL = (
 
 export const buildAddColumnSQL = (
   physicalTableName: string,
-  column: ColumnDefinition
+  column: ColumnDefinition,
 ) => {
   return `ALTER TABLE "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" ADD COLUMN IF NOT EXISTS "${sanitizeIdentifier(
-    column.name
+    column.name,
   )}" ${mapColumnTypeToSql(column.type)}${column.required ? " NOT NULL" : ""}${
     column.defaultValue
       ? ` DEFAULT ${
@@ -78,36 +78,36 @@ export const buildAddColumnSQL = (
 export const buildRenameColumnSQL = (
   physicalTableName: string,
   oldName: string,
-  newName: string
+  newName: string,
 ) => {
   return `ALTER TABLE "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" RENAME COLUMN "${sanitizeIdentifier(oldName)}" TO "${sanitizeIdentifier(
-    newName
+    newName,
   )}"; NOTIFY pgrst, 'reload schema';`;
 };
 
 export const buildChangeTypeSQL = (
   physicalTableName: string,
   colName: string,
-  newType: string
+  newType: string,
 ) => {
   return `ALTER TABLE "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" ALTER COLUMN "${sanitizeIdentifier(colName)}" TYPE ${mapColumnTypeToSql(
-    newType
+    newType,
   )} USING "${sanitizeIdentifier(colName)}" :: ${mapColumnTypeToSql(
-    newType
+    newType,
   )}; NOTIFY pgrst, 'reload schema';`;
 };
 
 export const buildSetRequiredSQL = (
   physicalTableName: string,
   colName: string,
-  required: boolean
+  required: boolean,
 ) => {
   return `ALTER TABLE "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" ALTER COLUMN "${sanitizeIdentifier(colName)}" ${
     required ? "SET" : "DROP"
   } NOT NULL; NOTIFY pgrst, 'reload schema';`;
@@ -117,7 +117,7 @@ export const buildSetDefaultSQL = (
   physicalTableName: string,
   colName: string,
   defaultValue: string | null,
-  colType: string // ✅ pass actual column type
+  colType: string, // ✅ pass actual column type
 ) => {
   let defaultSql = "DROP DEFAULT";
 
@@ -134,14 +134,14 @@ export const buildSetDefaultSQL = (
   }
 
   return `ALTER TABLE "${sanitizeIdentifier(
-    physicalTableName
+    physicalTableName,
   )}" ALTER COLUMN "${sanitizeIdentifier(
-    colName
+    colName,
   )}" ${defaultSql}; NOTIFY pgrst, 'reload schema';`;
 };
 
 export function buildDropColumnSQL(physicalName: string, colName: string) {
   return `ALTER TABLE \"${sanitizeIdentifier(
-    physicalName
+    physicalName,
   )}\" DROP COLUMN IF EXISTS \"${sanitizeIdentifier(colName)}\";`;
 }

@@ -41,7 +41,7 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
               <p className="text-2xl font-bold text-gray-900">
                 {orders.reduce(
                   (sum, order) => sum + (order.passengers?.length || 0),
-                  0
+                  0,
                 )}
               </p>
             </div>
@@ -166,8 +166,8 @@ export default function AdminOverview({ orders }: AdminOverviewProps) {
                           order.status === "confirmed"
                             ? "bg-green-100 text-green-800"
                             : order.status === "pending"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-800"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-gray-100 text-gray-800"
                         }`}
                       >
                         {order.status === "confirmed" && (

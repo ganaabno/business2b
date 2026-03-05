@@ -1,8 +1,15 @@
 // hooks/useTours.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabaseClient";
 import { toast } from "react-toastify";
 import type { Tour } from "../types/type";
+import {
+  fetchToursFromGlobalApi,
+  isGlobalApiEnabled,
+  mergeGlobalToursWithLocal,
+  useGlobalToursFallbackLocal,
+  useGlobalToursPrimary,
+} from "../api/globalTravel";
 
 interface UseToursProps {
   userRole: string;
@@ -25,29 +32,96 @@ export function useTours({
     null
   );
   const [loading, setLoading] = useState(true);
+  const lastFetchAtRef = useRef(0);
+  const isFetchingRef = useRef(false);
 
   const tours = externalTours ?? internalTours;
   const setTours = setExternalTours ?? setInternalTours;
 
-  const fetchTours = useCallback(async () => {
-    setLoading(true);
+  const fetchTours = useCallback(async (opts?: { force?: boolean; silent?: boolean }) => {
+    const force = opts?.force ?? false;
+    const silent = opts?.silent ?? true;
+    const now = Date.now();
+
+    if (!force && now - lastFetchAtRef.current < 10000) {
+      return;
+    }
+    if (isFetchingRef.current) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
-      let query = supabase.from("tours").select(`
+      const baseSelectModern = `
+        id, title, seats, departure_date, status, show_in_provider,
+        description, creator_name, tour_number, name, dates,
+        hotels, services, created_by, created_at, updated_at,
+        base_price, available_seats,
+        show_to_user,
+        image_key
+      `;
+
+      const baseSelectLegacy = `
         id, title, seats, departuredate, status, show_in_provider,
         description, creator_name, tour_number, name, dates,
         hotels, services, created_by, created_at, updated_at,
         base_price, available_seats,
         show_to_user,
         image_key
-      `);
+      `;
 
-      if (userRole !== "admin" && userRole !== "superadmin") {
-        query = query
-          .in("status", ["active", "pending"])
-          .eq("show_in_provider", true);
+      const sourceIdentitySelectModern = `${baseSelectModern}, source_system, source_tour_id`;
+      const sourceIdentitySelectLegacy = `${baseSelectLegacy}, source_system, source_tour_id`;
+
+      const extendedSelectModern = `${sourceIdentitySelectModern},
+        country, hotel, country_temperature, duration_day, duration_night,
+        group_size, is_featured, genre, airlines, cover_photo`;
+
+      const extendedSelectLegacy = `${sourceIdentitySelectLegacy},
+        country, hotel, country_temperature, duration_day, duration_night,
+        group_size, is_featured, genre, airlines, cover_photo`;
+
+      const runToursQuery = (selectColumns: string) => {
+        let query = supabase.from("tours").select(selectColumns);
+
+        if (userRole !== "admin" && userRole !== "superadmin") {
+          query = query
+            .in("status", ["active", "pending"])
+            .eq("show_in_provider", true);
+        }
+
+        return query;
+      };
+
+      const shouldUseExtendedColumns = ["admin", "superadmin"].includes(userRole);
+
+      const selectCandidates = shouldUseExtendedColumns
+        ? [
+            extendedSelectModern,
+            extendedSelectLegacy,
+            sourceIdentitySelectModern,
+            sourceIdentitySelectLegacy,
+            baseSelectModern,
+            baseSelectLegacy,
+          ]
+        : [baseSelectModern, baseSelectLegacy];
+
+      let toursData: any[] | null = null;
+      let toursError: any = null;
+
+      for (const selectColumns of selectCandidates) {
+        const result = await runToursQuery(selectColumns);
+        if (!result.error) {
+          toursData = result.data || [];
+          toursError = null;
+          break;
+        }
+        toursError = result.error;
       }
 
-      const { data: toursData, error: toursError } = await query;
       if (toursError) throw toursError;
 
       const { data: ordersData } = await supabase
@@ -71,11 +145,17 @@ export function useTours({
         const matchingOrder = ordersWithConfirmations.find(
           (o) =>
             o.travel_choice?.toLowerCase() === tour.title?.toLowerCase() &&
-            o.departureDate === tour.departuredate
+            o.departureDate ===
+              (typeof tour.departure_date === "string"
+                ? tour.departure_date
+                : tour.departuredate)
         );
 
         const rawDates = tour.dates;
-        const depDate = tour.departuredate;
+        const depDate =
+          (typeof tour.departure_date === "string" && tour.departure_date) ||
+          (typeof tour.departuredate === "string" && tour.departuredate) ||
+          "";
 
         const validDates: string[] = [];
 
@@ -100,7 +180,44 @@ export function useTours({
 
         const firstDate = validDates.length > 0 ? validDates[0] : undefined;
 
+        const parsedAirlines = Array.isArray(tour.airlines)
+          ? tour.airlines
+              .map((airline: any) => String(airline || "").trim())
+              .filter((airline: string) => airline.length > 0)
+          : typeof tour.airlines === "string"
+            ? tour.airlines
+                .split(/[\n,]/g)
+                .map((airline: string) => airline.trim())
+                .filter((airline: string) => airline.length > 0)
+            : [];
+
         return {
+          source_tag: "local",
+          source_system:
+            typeof tour.source_system === "string" ? tour.source_system : null,
+          source_tour_id:
+            typeof tour.source_tour_id === "string" ? tour.source_tour_id : null,
+          country: typeof tour.country === "string" ? tour.country : null,
+          hotel: typeof tour.hotel === "string" ? tour.hotel : null,
+          country_temperature:
+            typeof tour.country_temperature === "string"
+              ? tour.country_temperature
+              : null,
+          duration_day:
+            typeof tour.duration_day === "string" ? tour.duration_day : null,
+          duration_night:
+            typeof tour.duration_night === "string"
+              ? tour.duration_night
+              : null,
+          group_size:
+            tour.group_size !== null && tour.group_size !== undefined
+              ? String(tour.group_size)
+              : null,
+          is_featured: Boolean(tour.is_featured),
+          genre: typeof tour.genre === "string" ? tour.genre : null,
+          airlines: parsedAirlines,
+          cover_photo:
+            typeof tour.cover_photo === "string" ? tour.cover_photo : null,
           id: String(tour.id),
           title: tour.title?.trim() || "Unnamed Tour",
           name: tour.name?.trim() || tour.title?.trim() || "Unnamed Tour",
@@ -138,17 +255,47 @@ export function useTours({
         };
       });
 
+      const shouldUseGlobalPrimary =
+        isGlobalApiEnabled &&
+        useGlobalToursPrimary &&
+        ["manager", "provider", "user"].includes(userRole);
+
+      if (shouldUseGlobalPrimary) {
+        try {
+          const globalTours = await fetchToursFromGlobalApi();
+          const mergedTours = mergeGlobalToursWithLocal(globalTours, normalizedTours);
+          setTours(mergedTours);
+          return;
+        } catch (globalError) {
+          console.warn("Global tours fetch failed, fallback to local tours", globalError);
+        }
+      }
+
       setTours(normalizedTours);
+      lastFetchAtRef.current = Date.now();
     } catch (error: any) {
       console.error("Fetch error:", error);
-      toast.error("Failed to load tours.");
+      if (!silent) {
+        toast.error("Failed to load tours.");
+      }
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [userRole, setTours]);
 
   useEffect(() => {
-    fetchTours();
+    if (tours.length > 0) {
+      setLoading(false);
+    }
+  }, [tours.length]);
+
+  useEffect(() => {
+    if (tours.length === 0) {
+      fetchTours({ force: true, silent: false });
+    }
 
     const subs = [
       supabase
@@ -156,21 +303,21 @@ export function useTours({
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "tours" },
-          fetchTours
+          () => fetchTours({ silent: true })
         ),
       supabase
         .channel("orders")
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "orders" },
-          fetchTours
+          () => fetchTours({ silent: true })
         ),
       supabase
         .channel("confirmations")
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "booking_confirmations" },
-          fetchTours
+          () => fetchTours({ silent: true })
         ),
     ].map((s) => s.subscribe());
 
@@ -220,14 +367,35 @@ export function useTours({
     setTours(updated);
 
     try {
-      const dbField = field === "departure_date" ? "departuredate" : field;
-      const { error } = await supabase
-        .from("tours")
-        .update({ [dbField]: value, updated_at: new Date().toISOString() })
-        .eq("id", tourId);
+      let updateError: any = null;
+
+      if (field === "departure_date") {
+        const modernResult = await supabase
+          .from("tours")
+          .update({ departure_date: value, updated_at: new Date().toISOString() })
+          .eq("id", tourId);
+
+        updateError = modernResult.error;
+
+        if (updateError) {
+          const legacyResult = await supabase
+            .from("tours")
+            .update({ departuredate: value, updated_at: new Date().toISOString() })
+            .eq("id", tourId);
+          updateError = legacyResult.error;
+        }
+      } else {
+        const { error } = await supabase
+          .from("tours")
+          .update({ [field]: value, updated_at: new Date().toISOString() })
+          .eq("id", tourId);
+        updateError = error;
+      }
+
+      const error = updateError;
       if (error) throw error;
       toast.success("Updated!");
-      fetchTours();
+      fetchTours({ force: true, silent: true });
     } catch (error: any) {
       toast.error(error.message);
       setTours(prev);
@@ -241,7 +409,7 @@ export function useTours({
       const { error } = await supabase.from("tours").delete().eq("id", tourId);
       if (error) throw error;
       toast.success("Deleted!");
-      fetchTours();
+      fetchTours({ force: true, silent: true });
     } catch (error: any) {
       toast.error(error.message);
       setTours(prev);
@@ -261,6 +429,10 @@ export function useTours({
         });
   };
 
+  const refreshTours = useCallback(() => {
+    return fetchTours({ force: true, silent: false });
+  }, [fetchTours]);
+
   return {
     tours,
     filteredTours,
@@ -279,7 +451,7 @@ export function useTours({
     handleTourChange,
     handleDeleteTour,
     formatDisplayDate,
-    refreshTours: fetchTours,
+    refreshTours,
     loading,
   };
 }

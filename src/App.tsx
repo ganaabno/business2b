@@ -1,5 +1,13 @@
 // src/App.tsx
-import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  lazy,
+  Suspense,
+} from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -14,6 +22,13 @@ import { supabase } from "./supabaseClient";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { listUsersAdmin } from "./api/admin";
+import {
+  fetchToursFromGlobalApi,
+  isGlobalApiEnabled,
+  mergeGlobalToursWithLocal,
+  useGlobalToursFallbackLocal,
+  useGlobalToursPrimary,
+} from "./api/globalTravel";
 import Header from "./Parts/Header";
 import type {
   User as UserType,
@@ -21,10 +36,23 @@ import type {
   Order,
   Passenger,
   ValidationError,
+  Role,
 } from "./types/type";
 import { useAuth, toRole } from "./context/AuthProvider";
 import { useTranslation } from "react-i18next";
 import Footer from "./Parts/Footer";
+import { featureFlags } from "./config/featureFlags";
+import {
+  clearAdminTestMode,
+  DEFAULT_ADMIN_TEST_MODE,
+  isAdminTestModeActive,
+  readAdminTestMode,
+  roleLabelForAdminTest,
+  type AdminTestModeState,
+  type AdminTestRole,
+  writeAdminTestMode,
+} from "./utils/adminTestMode";
+import { toLegacyCompatRole } from "./utils/roles";
 
 const Login = lazy(() => import("./Pages/Login"));
 const SignUp = lazy(() => import("./Pages/SignUp"));
@@ -37,43 +65,72 @@ const ForgotPassword = lazy(() => import("./Pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("./Pages/ResetPassword"));
 const AnalyticDashboard = lazy(() => import("./Pages/Overview"));
 const FlightDataTab = lazy(() => import("./components/FlightDataTab"));
+const B2BSeatRequestsPage = lazy(() => import("./Pages/B2BSeatRequestsPage"));
+const B2BMonitoringPage = lazy(() => import("./Pages/B2BMonitoringPage"));
+const GlobalTravelInterface = lazy(() => import("./Pages/GlobalTravelPage"));
 
-const VALID_PATHS_BY_ROLE: Record<string, string[]> = {
-  admin: [
-    "/user",
-    "/provider",
-    "/admin",
-    "/manager",
-    "/change-password",
-    "/analytics",
-    "/reset-password",
-    "/flight-data",
-  ],
-  superadmin: [
-    "/user",
-    "/provider",
-    "/admin",
-    "/manager",
-    "/change-password",
-    "/analytics",
-    "/reset-password",
-    "/flight-data",
-  ],
-  provider: [
-    "/provider",
-    "/change-password",
-    "/reset-password",
-    "/manager",
-    "/flight-data",
-  ],
-  manager: ["/manager", "/change-password", "/reset-password", "/flight-data"],
-  user: ["/user", "/change-password", "/reset-password", "/flight-data"],
-};
+function getValidPathsByRole(role: Role): string[] {
+  const common = ["/change-password", "/reset-password", "/flight-data"];
+
+  switch (role) {
+    case "admin":
+    case "superadmin":
+      return [
+        "/user",
+        "/subcontractor",
+        "/provider",
+        "/agent",
+        "/admin",
+        "/manager",
+        "/b2b-monitoring",
+        "/global-travel",
+        "/analytics",
+        ...common,
+      ];
+    case "manager":
+      return ["/manager", "/b2b-monitoring", ...common];
+    case "provider":
+      return ["/provider", ...common];
+    case "agent":
+      return featureFlags.b2bSeatRequestFlowEnabled
+        ? ["/agent", ...common]
+        : ["/provider", ...common];
+    case "subcontractor":
+      return featureFlags.b2bSeatRequestFlowEnabled
+        ? ["/subcontractor", ...common]
+        : ["/user", ...common];
+    case "user":
+    default:
+      return featureFlags.b2bSeatRequestFlowEnabled
+        ? ["/user", "/subcontractor", ...common]
+        : ["/user", ...common];
+  }
+}
+
+function resolveScenarioPath(role: AdminTestRole) {
+  switch (role) {
+    case "manager":
+      return "/b2b-monitoring";
+    case "provider":
+      return "/provider";
+    case "agent":
+      return featureFlags.b2bSeatRequestFlowEnabled ? "/agent" : "/provider";
+    case "subcontractor":
+      return featureFlags.b2bSeatRequestFlowEnabled
+        ? "/subcontractor"
+        : "/user";
+    case "admin":
+      return "/admin";
+    default:
+      return "/admin";
+  }
+}
 
 function AppContent() {
   const { t } = useTranslation();
   const { currentUser, logout, loading: authLoading } = useAuth();
   const role = useMemo(() => toRole(currentUser?.role), [currentUser]);
+  const legacyCompatRole = useMemo(() => toLegacyCompatRole(role), [role]);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -82,8 +139,26 @@ function AppContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const hasLoadedInitialDataRef = useRef(false);
+  const lastFocusHealthCheckAtRef = useRef(0);
   const [errors] = useState<ValidationError[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [adminTestMode, setAdminTestMode] = useState<AdminTestModeState>(() =>
+    readAdminTestMode(),
+  );
+
+  const isAdminUser = role === "admin" || role === "superadmin";
+  const adminTestModeEnabled =
+    featureFlags.b2bAdminTestModeEnabled && isAdminUser;
+  const adminTestModeActive =
+    adminTestModeEnabled && isAdminTestModeActive(adminTestMode);
+
+  const hideFooter = [
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+  ].includes(location.pathname);
 
   useEffect(() => {
     if (!currentUser) {
@@ -96,19 +171,23 @@ function AppContent() {
     }
 
     let cancelled = false;
-    const needsUsers = role === "admin" || role === "superadmin";
-    const needsTours = ["admin", "superadmin", "manager", "provider"].includes(
-      role
-    );
+    const needsUsers =
+      legacyCompatRole === "admin" || legacyCompatRole === "superadmin";
+    const needsTours =
+      ["admin", "superadmin", "manager"].includes(legacyCompatRole) ||
+      role === "provider" ||
+      (!featureFlags.b2bSeatRequestFlowEnabled && role === "agent");
     const needsOrders = ["admin", "superadmin", "manager", "user"].includes(
-      role
+      legacyCompatRole,
     );
     const needsPassengers = ["admin", "superadmin", "manager", "user"].includes(
-      role
+      legacyCompatRole,
     );
 
     const loadData = async () => {
-      setDataLoading(true);
+      if (!hasLoadedInitialDataRef.current) {
+        setDataLoading(true);
+      }
       try {
         const tasks: Promise<void>[] = [];
 
@@ -119,23 +198,24 @@ function AppContent() {
               try {
                 usersData = await listUsersAdmin<UserType>();
               } catch (edgeError) {
-                const { data: fallbackUsers, error: fallbackError } =
-                  await supabase
-                    .from("users")
-                    .select("*")
-                    .order("created_at", { ascending: false });
+                const { data: fallbackUsersPlain, error: fallbackPlain } =
+                  await supabase.from("users").select("*");
 
-                if (fallbackError) {
-                  throw edgeError;
+                if (!fallbackPlain) {
+                  usersData = fallbackUsersPlain || [];
+                } else {
+                  console.warn("Failed to load users from all sources", {
+                    edgeError,
+                    fallbackPlain,
+                  });
+                  usersData = [];
                 }
-
-                usersData = fallbackUsers || [];
               }
 
               if (!cancelled) {
                 setUsers(usersData);
               }
-            })()
+            })(),
           );
         }
 
@@ -146,10 +226,40 @@ function AppContent() {
                 .from("tours")
                 .select("*")
                 .order("created_at", { ascending: false });
-              if (!cancelled) {
-                setTours(toursData || []);
+
+              const localTours = (toursData || []) as Tour[];
+
+              const shouldUseGlobalPrimary =
+                isGlobalApiEnabled &&
+                useGlobalToursPrimary &&
+                ["manager", "provider", "user"].includes(legacyCompatRole);
+
+              if (shouldUseGlobalPrimary) {
+                try {
+                  const globalTours = await fetchToursFromGlobalApi();
+                  const mergedTours = mergeGlobalToursWithLocal(
+                    globalTours,
+                    localTours,
+                  );
+                  if (!cancelled) {
+                    setTours(mergedTours);
+                  }
+                  return;
+                } catch (globalError) {
+                  if (!useGlobalToursFallbackLocal) {
+                    throw globalError;
+                  }
+                  console.warn(
+                    "Global tours fetch failed, fallback to local tours",
+                    globalError,
+                  );
+                }
               }
-            })()
+
+              if (!cancelled) {
+                setTours(localTours);
+              }
+            })(),
           );
         }
 
@@ -163,7 +273,7 @@ function AppContent() {
               if (!cancelled) {
                 setOrders(ordersData || []);
               }
-            })()
+            })(),
           );
         }
 
@@ -177,7 +287,7 @@ function AppContent() {
               if (!cancelled) {
                 setPassengers(passengersData || []);
               }
-            })()
+            })(),
           );
         }
 
@@ -186,6 +296,7 @@ function AppContent() {
         console.error("Critical error:", err);
       } finally {
         if (!cancelled) {
+          hasLoadedInitialDataRef.current = true;
           setDataLoading(false);
         }
       }
@@ -196,31 +307,36 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser, role]);
+  }, [currentUser, role, legacyCompatRole]);
 
   const homePath = useMemo(() => {
     if (!currentUser) return "/login";
-    switch (currentUser.role) {
+    switch (role) {
       case "admin":
       case "superadmin":
         return "/admin";
+      case "agent":
+        return featureFlags.b2bSeatRequestFlowEnabled ? "/agent" : "/provider";
       case "provider":
         return "/provider";
       case "manager":
         return "/manager";
+      case "subcontractor":
+        return featureFlags.b2bSeatRequestFlowEnabled
+          ? "/subcontractor"
+          : "/user";
+      case "user":
       default:
-        return "/user";
+        return featureFlags.b2bSeatRequestFlowEnabled
+          ? "/subcontractor"
+          : "/user";
     }
-  }, [currentUser]);
+  }, [currentUser, role]);
 
   useEffect(() => {
     if (!currentUser || dataLoading || authLoading) return;
 
-    const validPaths = VALID_PATHS_BY_ROLE[role] || [
-      "/user",
-      "/change-password",
-      "/reset-password",
-    ];
+    const validPaths = getValidPathsByRole(role);
 
     if (location.pathname === "/reset-password") return;
 
@@ -243,6 +359,86 @@ function AppContent() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!featureFlags.b2bAdminTestModeEnabled) {
+      if (adminTestMode.role !== "off" || adminTestMode.organizationId) {
+        setAdminTestMode(DEFAULT_ADMIN_TEST_MODE);
+      }
+      clearAdminTestMode();
+      return;
+    }
+
+    if (!currentUser || !isAdminUser) {
+      if (adminTestMode.role !== "off" || adminTestMode.organizationId) {
+        setAdminTestMode(DEFAULT_ADMIN_TEST_MODE);
+      }
+      clearAdminTestMode();
+      return;
+    }
+
+    writeAdminTestMode(adminTestMode);
+  }, [adminTestMode, currentUser, isAdminUser]);
+
+  const updateAdminTestRole = useCallback((nextRole: AdminTestRole) => {
+    setAdminTestMode((prev) => ({ ...prev, role: nextRole }));
+  }, []);
+
+  const updateAdminTestOrganization = useCallback(
+    (nextOrganizationId: string) => {
+      setAdminTestMode((prev) => ({
+        ...prev,
+        organizationId: nextOrganizationId.trim(),
+      }));
+    },
+    [],
+  );
+
+  const resetAdminTestModeState = useCallback(() => {
+    setAdminTestMode(DEFAULT_ADMIN_TEST_MODE);
+    clearAdminTestMode();
+  }, []);
+
+  const activateAdminScenario = useCallback(
+    (nextRole: AdminTestRole) => {
+      setAdminTestMode((prev) => ({ ...prev, role: nextRole }));
+      navigate(resolveScenarioPath(nextRole), { replace: false });
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastFocusHealthCheckAtRef.current < 30_000) return;
+      lastFocusHealthCheckAtRef.current = now;
+
+      if (!currentUser) return;
+      if (!["/manager", "/provider", "/admin"].includes(location.pathname))
+        return;
+
+      try {
+        const { error } = await supabase
+          .from("tours")
+          .select("id", { head: true, count: "exact" })
+          .limit(1);
+        if (error) {
+          console.warn(
+            "Focus health check failed for booking path",
+            error.message,
+          );
+        }
+      } catch (error) {
+        console.warn("Focus health check failed for booking path", error);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentUser, location.pathname]);
 
   if (currentUser && currentUser.status === "pending") {
     return (
@@ -279,7 +475,8 @@ function AppContent() {
             {t("accountSuspended")}
           </h1>
           <p className="mono-subtitle text-sm sm:text-base mb-4 sm:mb-6">
-            {t("suspendedMessage")} <a
+            {t("suspendedMessage")}{" "}
+            <a
               href="mailto:support@yourapp.com"
               className="underline font-medium break-all"
             >
@@ -318,7 +515,7 @@ function AppContent() {
       />
 
       {/* ADMIN VIEW SWITCHER - Desktop */}
-      {currentUser && ["admin", "superadmin"].includes(role) && (
+      {currentUser && isAdminUser && (
         <>
           {/* Desktop View */}
           <div className="hidden lg:block border-b border-gray-200 bg-white">
@@ -347,17 +544,41 @@ function AppContent() {
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <Link
-                    to="/user"
+                    to={
+                      featureFlags.b2bSeatRequestFlowEnabled
+                        ? "/subcontractor"
+                        : "/user"
+                    }
                     className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-full border border-gray-200 hover:text-gray-900 hover:bg-gray-100 transition"
                   >
-                    {t("userLink")}
+                    SubContractor
                   </Link>
 
                   <Link
-                    to="/provider"
+                    to={
+                      featureFlags.b2bSeatRequestFlowEnabled
+                        ? "/agent"
+                        : "/provider"
+                    }
                     className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-full border border-gray-200 hover:text-gray-900 hover:bg-gray-100 transition"
                   >
-                    {t("providerLink")}
+                    Agent
+                  </Link>
+
+                  {featureFlags.b2bMonitoringEnabled && (
+                    <Link
+                      to="/b2b-monitoring"
+                      className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-full border border-gray-200 hover:text-gray-900 hover:bg-gray-100 transition"
+                    >
+                      B2B Monitoring
+                    </Link>
+                  )}
+
+                  <Link
+                    to="/global-travel"
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-full border border-gray-200 hover:text-gray-900 hover:bg-gray-100 transition"
+                  >
+                    Global Travel
                   </Link>
 
                   <Link
@@ -388,6 +609,81 @@ function AppContent() {
                     Flight Data
                   </Link>
                 </div>
+
+                {featureFlags.b2bAdminTestModeEnabled && (
+                  <div className="w-full mt-3 border-t border-gray-100 pt-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                        Admin Test Mode
+                      </span>
+                      <select
+                        className="mono-input !h-9 !py-0 !px-2 !text-sm max-w-[12rem]"
+                        value={adminTestMode.role}
+                        onChange={(e) =>
+                          updateAdminTestRole(e.target.value as AdminTestRole)
+                        }
+                      >
+                        <option value="off">Off</option>
+                        <option value="manager">Manager</option>
+                        <option value="provider">Provider</option>
+                        <option value="subcontractor">SubContractor</option>
+                        <option value="agent">Agent</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <input
+                        className="mono-input !h-9 !py-0 !px-2 !text-sm w-[16rem]"
+                        placeholder="Organization UUID (optional)"
+                        value={adminTestMode.organizationId}
+                        onChange={(e) =>
+                          updateAdminTestOrganization(e.target.value)
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+                        onClick={resetAdminTestModeState}
+                      >
+                        Reset
+                      </button>
+                      {adminTestModeActive && (
+                        <span className="text-xs text-amber-700 font-medium">
+                          Active as {roleLabelForAdminTest(adminTestMode.role)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-xs font-medium rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition"
+                        onClick={() => activateAdminScenario("subcontractor")}
+                      >
+                        Test as SubContractor
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-xs font-medium rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition"
+                        onClick={() => activateAdminScenario("manager")}
+                      >
+                        Test as Manager
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-xs font-medium rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition"
+                        onClick={() => activateAdminScenario("provider")}
+                      >
+                        Test as Provider
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-xs font-medium rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition"
+                        onClick={() => activateAdminScenario("agent")}
+                      >
+                        Test as Agent
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -434,17 +730,41 @@ function AppContent() {
               <div className="absolute top-full left-0 right-0 bg-white shadow-md border-b border-gray-200 z-50">
                 <div className="flex flex-col py-2">
                   <Link
-                    to="/user"
+                    to={
+                      featureFlags.b2bSeatRequestFlowEnabled
+                        ? "/subcontractor"
+                        : "/user"
+                    }
                     className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border-l-2 border-transparent hover:border-gray-300"
                   >
-                    {t("userLink")}
+                    SubContractor
                   </Link>
 
                   <Link
-                    to="/provider"
+                    to={
+                      featureFlags.b2bSeatRequestFlowEnabled
+                        ? "/agent"
+                        : "/provider"
+                    }
                     className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border-l-2 border-transparent hover:border-gray-300"
                   >
-                    {t("providerLink")}
+                    Agent
+                  </Link>
+
+                  {featureFlags.b2bMonitoringEnabled && (
+                    <Link
+                      to="/b2b-monitoring"
+                      className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border-l-2 border-transparent hover:border-gray-300"
+                    >
+                      B2B Monitoring
+                    </Link>
+                  )}
+
+                  <Link
+                    to="/global-travel"
+                    className="px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border-l-2 border-transparent hover:border-gray-300"
+                  >
+                    Global Travel
                   </Link>
 
                   <Link
@@ -474,6 +794,73 @@ function AppContent() {
                   >
                     Flight Data
                   </Link>
+
+                  {featureFlags.b2bAdminTestModeEnabled && (
+                    <div className="px-4 py-3 border-t border-gray-100 space-y-2">
+                      <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                        Admin Test Mode
+                      </p>
+                      <select
+                        className="mono-input !text-sm"
+                        value={adminTestMode.role}
+                        onChange={(e) =>
+                          updateAdminTestRole(e.target.value as AdminTestRole)
+                        }
+                      >
+                        <option value="off">Off</option>
+                        <option value="manager">Manager</option>
+                        <option value="provider">Provider</option>
+                        <option value="subcontractor">SubContractor</option>
+                        <option value="agent">Agent</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <input
+                        className="mono-input !text-sm"
+                        placeholder="Organization UUID (optional)"
+                        value={adminTestMode.organizationId}
+                        onChange={(e) =>
+                          updateAdminTestOrganization(e.target.value)
+                        }
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          className="px-2 py-2 text-xs font-medium rounded border border-gray-200 text-gray-700"
+                          onClick={() => activateAdminScenario("subcontractor")}
+                        >
+                          SubContractor
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-2 text-xs font-medium rounded border border-gray-200 text-gray-700"
+                          onClick={() => activateAdminScenario("manager")}
+                        >
+                          Manager
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-2 text-xs font-medium rounded border border-gray-200 text-gray-700"
+                          onClick={() => activateAdminScenario("provider")}
+                        >
+                          Provider
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-2 text-xs font-medium rounded border border-gray-200 text-gray-700"
+                          onClick={() => activateAdminScenario("agent")}
+                        >
+                          Agent
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="w-full px-2 py-2 text-xs font-semibold rounded border border-gray-300 text-gray-700"
+                        onClick={resetAdminTestModeState}
+                      >
+                        Reset Test Mode
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -481,12 +868,32 @@ function AppContent() {
         </>
       )}
 
+      {currentUser && isAdminUser && adminTestModeActive && (
+        <div className="border-b border-amber-200 bg-amber-50">
+          <div className="mono-container px-4 sm:px-6 lg:px-8 py-2 text-xs sm:text-sm text-amber-900">
+            <span className="font-semibold">Admin Test Mode:</span> Acting as{" "}
+            <span className="font-semibold">
+              {roleLabelForAdminTest(adminTestMode.role)}
+            </span>
+            {adminTestMode.organizationId && (
+              <>
+                {" "}
+                | Org:{" "}
+                <span className="font-mono">
+                  {adminTestMode.organizationId}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       {currentUser && (
         <Header
           currentUser={currentUser}
           onLogout={logout}
-          isUserRole={role === "user"}
+          isUserRole={role === "user" || role === "subcontractor"}
         />
       )}
 
@@ -530,7 +937,10 @@ function AppContent() {
             path="/user"
             element={
               currentUser &&
-              (role === "user" || ["admin", "superadmin"].includes(role)) ? (
+              (role === "user" ||
+                (!featureFlags.b2bSeatRequestFlowEnabled &&
+                  role === "subcontractor") ||
+                ["admin", "superadmin"].includes(role)) ? (
                 <UserInterface
                   orders={orders}
                   setOrders={setOrders}
@@ -547,11 +957,33 @@ function AppContent() {
             }
           />
 
+          {featureFlags.b2bSeatRequestFlowEnabled && (
+            <Route
+              path="/subcontractor"
+              element={
+                currentUser &&
+                ["subcontractor", "user", "admin", "superadmin"].includes(
+                  role,
+                ) ? (
+                  <B2BSeatRequestsPage
+                    currentUser={currentUser}
+                    workspaceRole="subcontractor"
+                    adminTestModeActive={adminTestModeActive}
+                  />
+                ) : (
+                  <Navigate to={homePath} replace />
+                )
+              }
+            />
+          )}
+
           <Route
             path="/provider"
             element={
               currentUser &&
-              (role === "provider" || ["admin", "superadmin"].includes(role)) ? (
+              (role === "provider" ||
+                (!featureFlags.b2bSeatRequestFlowEnabled && role === "agent") ||
+                ["admin", "superadmin"].includes(role)) ? (
                 <ProviderInterface
                   tours={tours}
                   setTours={setTours}
@@ -562,6 +994,24 @@ function AppContent() {
               )
             }
           />
+
+          {featureFlags.b2bSeatRequestFlowEnabled && (
+            <Route
+              path="/agent"
+              element={
+                currentUser &&
+                ["agent", "admin", "superadmin"].includes(role) ? (
+                  <B2BSeatRequestsPage
+                    currentUser={currentUser}
+                    workspaceRole="agent"
+                    adminTestModeActive={adminTestModeActive}
+                  />
+                ) : (
+                  <Navigate to={homePath} replace />
+                )
+              }
+            />
+          )}
 
           <Route
             path="/admin"
@@ -619,6 +1069,31 @@ function AppContent() {
             }
           />
 
+          {featureFlags.b2bMonitoringEnabled && (
+            <Route
+              path="/b2b-monitoring"
+              element={
+                currentUser &&
+                ["manager", "admin", "superadmin"].includes(role) ? (
+                  <B2BMonitoringPage />
+                ) : (
+                  <Navigate to={homePath} replace />
+                )
+              }
+            />
+          )}
+
+          <Route
+            path="/global-travel"
+            element={
+              currentUser && isAdminUser ? (
+                <GlobalTravelInterface />
+              ) : (
+                <Navigate to={homePath} replace />
+              )
+            }
+          />
+
           {/* FLIGHT DATA — ALL ROLES */}
           <Route
             path="/flight-data"
@@ -655,7 +1130,7 @@ function AppContent() {
         </Routes>
       </Suspense>
 
-      <Footer />
+      {!hideFooter && <Footer />}
     </>
   );
 }

@@ -48,7 +48,7 @@ const calculateLeadExpiryHours = (departureDate: string): number => {
   const departure = new Date(departureDate);
   const now = new Date();
   const diffDays = Math.ceil(
-    (departure.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+    (departure.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
   );
   if (diffDays <= 0) return 0;
   return Math.min(2 * Math.ceil(diffDays / 7), 24);
@@ -77,9 +77,11 @@ export default function LeadPassengerForm({
   const [leadId, setLeadId] = useState<string | null>(null);
 
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
-    currentUser.role || ""
+    currentUser.role || "",
   );
-  const maxSeats = isPowerUser ? 100 : selectedTourData?.available_seats ?? 10;
+  const maxSeats = isPowerUser
+    ? 100
+    : (selectedTourData?.available_seats ?? 10);
 
   const validateForm = useCallback(() => {
     const newErrors: Record<string, string> = {};
@@ -145,7 +147,7 @@ export default function LeadPassengerForm({
 
   const handleInputChange = (
     field: keyof typeof leadPassenger,
-    value: string | number
+    value: string | number,
   ) => {
     setLeadPassenger((prev) => ({ ...prev, [field]: value }));
   };
@@ -157,7 +159,7 @@ export default function LeadPassengerForm({
         const now = new Date().getTime();
         const timeRemaining = Math.max(
           0,
-          Math.floor((expiryDate - now) / 1000)
+          Math.floor((expiryDate - now) / 1000),
         );
         setTimeLeft(timeRemaining);
 
@@ -181,7 +183,7 @@ export default function LeadPassengerForm({
       const timer = setInterval(updateTimer, 1000);
       return () => clearInterval(timer);
     },
-    [setLeadPassengerData, setNotification]
+    [setLeadPassengerData, setNotification],
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -279,7 +281,7 @@ export default function LeadPassengerForm({
       if (error) throw new Error(`Failed to confirm lead: ${error.message}`);
 
       setLeadPassengerData((prev) =>
-        prev ? { ...prev, status: "confirmed" } : null
+        prev ? { ...prev, status: "confirmed" } : null,
       );
       setNotification({
         type: "success",
@@ -346,7 +348,7 @@ export default function LeadPassengerForm({
     if (leadId && departureDate) {
       const expiryHours = calculateLeadExpiryHours(departureDate);
       const expiresAt = new Date(
-        Date.now() + expiryHours * 3600 * 1000
+        Date.now() + expiryHours * 3600 * 1000,
       ).toISOString();
       const cleanup = startTimer(expiresAt);
       return cleanup;
@@ -383,9 +385,7 @@ export default function LeadPassengerForm({
               </svg>
             </div>
             <div>
-              <h3 className="mono-title text-lg">
-                Lead Passenger Information
-              </h3>
+              <h3 className="mono-title text-lg">Lead Passenger Information</h3>
               <p className="text-sm text-gray-600">
                 Tour: {selectedTourData?.title || "Not selected"} |{" "}
                 {calculateLeadExpiryHours(departureDate)} hour

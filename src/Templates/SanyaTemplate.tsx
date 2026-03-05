@@ -4,19 +4,27 @@ interface SanyaTemplateProps {
   onSelect: (data: Partial<TourFormData>) => void;
 }
 
+const SANYA_TEMPLATE: Partial<TourFormData> = {
+  title: "Sanya Tour",
+  description: "7-day Sanya package with beach and city highlights.",
+  country: "China",
+  genre: "Beach",
+  hotel: "Sanya Conifer Resort",
+  country_temperature: "24",
+  duration_day: "7",
+  duration_night: "6",
+  group_size: "+20",
+  seats: "20",
+  is_featured: true,
+  airlines: "MIAT",
+  hotels: "Phoenix Island Hotel, Sanya Conifer Resort, Golden Palm Hotel",
+  services: "Airport transfer, City tour",
+};
+
 export default function SanyaTemplate({ onSelect }: SanyaTemplateProps) {
   return (
     <button
-      onClick={() =>
-        onSelect({
-          title: "Sanya",
-          hotels: "Phoenix, Grand",
-          services: "",
-          description: "Sanya Yvah 7 honogiin aylal",
-          base_price: "",
-          seats: "",
-        })
-      }
+      onClick={() => onSelect(SANYA_TEMPLATE)}
       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
     >
       <svg

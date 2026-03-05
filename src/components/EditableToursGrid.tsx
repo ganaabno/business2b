@@ -72,7 +72,7 @@ export default function EditableToursGrid({
       {tours.map((tour) => {
         const isEditing = editingId === tour.id;
         const imageUrl = getImageUrl(
-          editData.image_key ?? tour.image_key ?? null
+          editData.image_key ?? tour.image_key ?? null,
         );
 
         return (
@@ -292,8 +292,8 @@ export default function EditableToursGrid({
                         tour.status === "active"
                           ? "bg-green-100 text-green-800"
                           : tour.status === "full"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-yellow-100 text-yellow-800"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
                       {t(tour.status || "inactive")}
@@ -338,7 +338,7 @@ export default function EditableToursGrid({
                                 tour.available_seats ||
                                 0)) /
                               (editData.seats || tour.seats || 0)) *
-                              100
+                              100,
                           )
                         : 0,
                   })}

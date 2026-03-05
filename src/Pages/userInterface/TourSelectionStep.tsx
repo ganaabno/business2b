@@ -28,8 +28,12 @@ export default function TourSelectionStep({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Start Your Booking</h3>
-        <p className="text-sm text-gray-600">Select your tour, date, and add passengers to get started</p>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Start Your Booking
+        </h3>
+        <p className="text-sm text-gray-600">
+          Select your tour, date, and add passengers to get started
+        </p>
       </div>
       <TourSelectionUser
         tours={tours}

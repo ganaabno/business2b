@@ -65,7 +65,7 @@ export const generatePassengerId = (): string =>
 export const createNewPassenger = (
   currentUser: UserType,
   existingPassengers: Passenger[],
-  selectedTourData?: Tour
+  selectedTourData?: Tour,
 ): Passenger => {
   const serialNo = (existingPassengers.length + 1).toString();
   const lastPassenger = existingPassengers[existingPassengers.length - 1];
@@ -152,7 +152,7 @@ export const calculateAge = (dateOfBirth: string): number => {
 
 export const calculateServicePrice = (
   services: string[],
-  tourData: Tour
+  tourData: Tour,
 ): number => {
   return services.reduce((sum, serviceName) => {
     const service = tourData.services.find((s) => s.name === serviceName);
@@ -162,7 +162,7 @@ export const calculateServicePrice = (
 
 export const validatePassenger = (
   passenger: Passenger,
-  departureDate: string
+  departureDate: string,
 ): ValidationError[] => {
   const errors: ValidationError[] = [];
   if (!passenger.first_name.trim())
@@ -275,14 +275,14 @@ export const usePassengerSubscriptions = ({
                     title
                   )
                 )
-              `
+              `,
             )
             .eq("user_id", currentUser.userId);
           if (error) {
             console.error("Error fetching updated passengers:", error);
             wrappedShowNotification(
               "error",
-              `Failed to refresh passengers: ${error.message}`
+              `Failed to refresh passengers: ${error.message}`,
             );
             return;
           }
@@ -337,7 +337,7 @@ export const usePassengerSubscriptions = ({
                     note: "",
                     is_request: undefined,
                     pax_type: "Adult",
-                  })
+                  }),
                 )
                 .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
             ];
@@ -345,7 +345,7 @@ export const usePassengerSubscriptions = ({
           if (selectedTourData?.id && departureDate) {
             const { isValid, message } = await checkSeatLimit(
               selectedTourData.id,
-              departureDate
+              departureDate,
             );
             wrappedShowNotification(isValid ? "success" : "error", message);
           }
@@ -353,7 +353,7 @@ export const usePassengerSubscriptions = ({
           console.error("Error in passenger real-time handler:", error);
           wrappedShowNotification("error", "Failed to refresh passengers");
         }
-      }
+      },
     );
 
     const orderSubscription = supabase.channel("orders_channel").on(
@@ -375,14 +375,14 @@ export const usePassengerSubscriptions = ({
                   id,
                   title
                 )
-              `
+              `,
             )
             .eq("user_id", currentUser.userId);
           if (error) {
             console.error("Error fetching updated orders:", error);
             wrappedShowNotification(
               "error",
-              `Failed to refresh orders: ${error.message}`
+              `Failed to refresh orders: ${error.message}`,
             );
             return;
           }
@@ -429,15 +429,15 @@ export const usePassengerSubscriptions = ({
                 booking_confirmation: o.booking_confirmation || null,
                 room_allocation: "",
                 passenger_requests: [],
-                travel_group: null
-              })
-            )
+                travel_group: null,
+              }),
+            ),
           );
 
           if (selectedTourData?.id && departureDate) {
             const { isValid, message } = await checkSeatLimit(
               selectedTourData.id,
-              departureDate
+              departureDate,
             );
             wrappedShowNotification(isValid ? "success" : "error", message);
           }
@@ -445,7 +445,7 @@ export const usePassengerSubscriptions = ({
           console.error("Error in order real-time handler:", error);
           wrappedShowNotification("error", "Failed to refresh orders");
         }
-      }
+      },
     );
 
     const tourSubscription = supabase.channel("tours_channel").on(
@@ -472,7 +472,7 @@ export const usePassengerSubscriptions = ({
             console.error("Error fetching updated tours:", error);
             wrappedShowNotification(
               "error",
-              `Failed to refresh tours: ${error.message}`
+              `Failed to refresh tours: ${error.message}`,
             );
             return;
           }
@@ -488,7 +488,7 @@ export const usePassengerSubscriptions = ({
           if (selectedTourData?.id && departureDate) {
             const { isValid, message } = await checkSeatLimit(
               selectedTourData.id,
-              departureDate
+              departureDate,
             );
             wrappedShowNotification(isValid ? "success" : "error", message);
           }
@@ -496,7 +496,7 @@ export const usePassengerSubscriptions = ({
           console.error("Error in tour real-time handler:", error);
           wrappedShowNotification("error", "Failed to refresh tours");
         }
-      }
+      },
     );
 
     return () => {
@@ -536,7 +536,7 @@ export const addPassenger = async ({
   if (bookingPassengers.length >= MAX_PASSENGERS) {
     wrappedShowNotification(
       "error",
-      `Maximum ${MAX_PASSENGERS} passengers allowed per booking`
+      `Maximum ${MAX_PASSENGERS} passengers allowed per booking`,
     );
     return;
   }
@@ -548,12 +548,12 @@ export const addPassenger = async ({
     const newPassenger = createNewPassenger(
       currentUser,
       bookingPassengers,
-      selectedTourData
+      selectedTourData,
     );
     setPassengers((prev) => [
       ...prev.filter(
         (p) =>
-          p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)
+          p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id),
       ),
       {
         ...newPassenger,
@@ -567,7 +567,7 @@ export const addPassenger = async ({
     if (selectedTourData.id && departureDate) {
       const { isValid, message } = await checkSeatLimit(
         selectedTourData.id,
-        departureDate
+        departureDate,
       );
       wrappedShowNotification(isValid ? "success" : "error", message);
     }
@@ -600,7 +600,7 @@ export const addMultiplePassengers = async ({
   if (bookingPassengers.length + count > MAX_PASSENGERS) {
     wrappedShowNotification(
       "error",
-      `Cannot add ${count} passengers. Maximum ${MAX_PASSENGERS} allowed.`
+      `Cannot add ${count} passengers. Maximum ${MAX_PASSENGERS} allowed.`,
     );
     return;
   }
@@ -611,14 +611,14 @@ export const addMultiplePassengers = async ({
   ) {
     wrappedShowNotification(
       "error",
-      "Cannot add passengers. Tour is fully booked or invalid."
+      "Cannot add passengers. Tour is fully booked or invalid.",
     );
     return;
   }
 
   try {
     const newPassengers = Array.from({ length: count }, () =>
-      createNewPassenger(currentUser, bookingPassengers, selectedTourData)
+      createNewPassenger(currentUser, bookingPassengers, selectedTourData),
     ).map((p, idx) => ({
       ...p,
       serial_no: (bookingPassengers.length + idx + 1).toString(),
@@ -628,7 +628,7 @@ export const addMultiplePassengers = async ({
     setPassengers((prev) => [
       ...prev.filter(
         (p) =>
-          p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)
+          p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id),
       ),
       ...newPassengers,
     ]);
@@ -638,7 +638,7 @@ export const addMultiplePassengers = async ({
     if (selectedTourData.id && departureDate) {
       const { isValid, message } = await checkSeatLimit(
         selectedTourData.id,
-        departureDate
+        departureDate,
       );
       wrappedShowNotification(isValid ? "success" : "error", message);
     }
@@ -673,12 +673,12 @@ export const updatePassenger = async ({
 }) => {
   const updatedPassengers = [...passengers];
   const passengerIndex = passengers.findIndex(
-    (p) => p.id === id && p.user_id === currentUser.userId
+    (p) => p.id === id && p.user_id === currentUser.userId,
   );
   if (passengerIndex === -1) {
     wrappedShowNotification(
       "error",
-      "Passenger not found or not owned by user"
+      "Passenger not found or not owned by user",
     );
     return;
   }
@@ -697,7 +697,7 @@ export const updatePassenger = async ({
     if (tour) {
       updatedPassengers[passengerIndex].price = calculateServicePrice(
         value as string[],
-        tour
+        tour,
       );
     }
   }
@@ -721,7 +721,7 @@ export const updatePassenger = async ({
       if (error) {
         wrappedShowNotification(
           "error",
-          `Passport upload failed: ${error.message}`
+          `Passport upload failed: ${error.message}`,
         );
         return;
       }
@@ -758,12 +758,12 @@ export const removePassenger = ({
   wrappedShowNotification: (type: "success" | "error", message: string) => void;
 }) => {
   const passengerIndex = passengers.findIndex(
-    (p) => p.id === id && p.user_id === currentUser.userId
+    (p) => p.id === id && p.user_id === currentUser.userId,
   );
   if (passengerIndex === -1) {
     wrappedShowNotification(
       "error",
-      "Passenger not found or not owned by user"
+      "Passenger not found or not owned by user",
     );
     return;
   }
@@ -774,7 +774,7 @@ export const removePassenger = ({
   ) {
     wrappedShowNotification(
       "error",
-      "At least one passenger is required for a new booking"
+      "At least one passenger is required for a new booking",
     );
     return;
   }
@@ -872,7 +872,7 @@ export const handleConfirmAction = ({
       return;
     }
     const updatedPassengers = passengers.filter(
-      (p) => p.user_id !== currentUser.userId || p.order_id !== ""
+      (p) => p.user_id !== currentUser.userId || p.order_id !== "",
     );
     setPassengers(updatedPassengers);
     setExpandedPassengerId(null);
@@ -882,12 +882,12 @@ export const handleConfirmAction = ({
       checkSeatLimit(selectedTourData.id, departureDate).then(
         ({ isValid, message }) => {
           wrappedShowNotification(isValid ? "success" : "error", message);
-        }
+        },
       );
     }
   } else if (action === "resetForm") {
     const updatedPassengers = passengers.filter(
-      (p) => p.user_id !== currentUser.userId || p.order_id !== ""
+      (p) => p.user_id !== currentUser.userId || p.order_id !== "",
     );
     setPassengers(updatedPassengers);
     setSelectedTour("");
@@ -987,7 +987,7 @@ export const saveOrder = async ({
   ) {
     wrappedShowNotification(
       "error",
-      "Please fix the validation errors before proceeding"
+      "Please fix the validation errors before proceeding",
     );
     return;
   }
@@ -1004,7 +1004,7 @@ export const saveOrder = async ({
   ) {
     wrappedShowNotification(
       "error",
-      "Cannot save booking. The tour is fully booked."
+      "Cannot save booking. The tour is fully booked.",
     );
     return;
   }
@@ -1042,7 +1042,7 @@ export const saveOrder = async ({
       // ✅ fix: ensure null prices are treated as 0
       total_price: bookingPassengers.reduce(
         (sum, p) => sum + (p.price ?? 0),
-        0
+        0,
       ),
       total_amount: bookingPassengers.length,
       paid_amount: 0,
@@ -1086,7 +1086,7 @@ export const saveOrder = async ({
     ]);
 
     setPassengers((prev) =>
-      prev.filter((p) => !bookingPassengers.some((bp) => bp.id === p.id))
+      prev.filter((p) => !bookingPassengers.some((bp) => bp.id === p.id)),
     );
     setSelectedTour("");
     setDepartureDate("");
@@ -1095,7 +1095,7 @@ export const saveOrder = async ({
     setValidationErrors([]);
     wrappedShowNotification(
       "success",
-      "Booking request submitted. Awaiting manager approval."
+      "Booking request submitted. Awaiting manager approval.",
     );
   } catch (error) {
     console.error("Error saving booking:", error);
@@ -1103,7 +1103,7 @@ export const saveOrder = async ({
       "error",
       `Error saving booking: ${
         error instanceof Error ? error.message : "Unknown error"
-      }`
+      }`,
     );
   } finally {
     setLoading(false);
@@ -1152,7 +1152,7 @@ export const handleUploadCSV = ({
       if (lines.length < 2) {
         wrappedShowNotification(
           "error",
-          "CSV file must contain at least a header and one data row"
+          "CSV file must contain at least a header and one data row",
         );
         return;
       }
@@ -1183,7 +1183,7 @@ export const handleUploadCSV = ({
       if (!requiredHeaders.every((h) => headers.includes(h))) {
         wrappedShowNotification(
           "error",
-          "CSV file is missing required headers"
+          "CSV file is missing required headers",
         );
         return;
       }
@@ -1202,7 +1202,7 @@ export const handleUploadCSV = ({
       ) {
         wrappedShowNotification(
           "error",
-          "Cannot import passengers. The tour is fully booked."
+          "Cannot import passengers. The tour is fully booked.",
         );
         return;
       }
@@ -1260,7 +1260,7 @@ export const handleUploadCSV = ({
         if (tourData && passenger.additional_services.length > 0) {
           passenger.price = calculateServicePrice(
             passenger.additional_services,
-            tourData
+            tourData,
           );
         }
         return passenger;
@@ -1269,28 +1269,29 @@ export const handleUploadCSV = ({
       setPassengers((prev) => [
         ...prev.filter(
           (p) =>
-            p.order_id !== "" || !bookingPassengers.some((bp) => bp.id === p.id)
+            p.order_id !== "" ||
+            !bookingPassengers.some((bp) => bp.id === p.id),
         ),
         ...newPassengers,
       ]);
       setExpandedPassengerId(newPassengers[newPassengers.length - 1].id);
       wrappedShowNotification(
         "success",
-        `${newPassengers.length} passengers imported from CSV`
+        `${newPassengers.length} passengers imported from CSV`,
       );
 
       if (tourData.id && departureDate) {
         checkSeatLimit(tourData.id, departureDate).then(
           ({ isValid, message }) => {
             wrappedShowNotification(isValid ? "success" : "error", message);
-          }
+          },
         );
       }
     } catch (error) {
       console.error("Error parsing CSV:", error);
       wrappedShowNotification(
         "error",
-        "Failed to parse CSV file. Please check the format."
+        "Failed to parse CSV file. Please check the format.",
       );
     }
   };
@@ -1355,7 +1356,7 @@ export const handleDownloadCSV = ({
       p.emergency_phone || "",
     ]
       .map((v) => `"${v}"`)
-      .join(",")
+      .join(","),
   );
 
   const csv = [headers.join(","), ...rows].join("\n");

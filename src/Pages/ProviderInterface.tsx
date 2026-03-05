@@ -27,6 +27,7 @@ interface ProviderInterfaceProps {
   tours: Tour[];
   setTours: React.Dispatch<React.SetStateAction<Tour[]>>;
   currentUser: UserType;
+  readOnlyPreview?: boolean;
 }
 
 interface RawOrder {
@@ -79,6 +80,7 @@ function ProviderInterface({
   tours,
   setTours,
   currentUser,
+  readOnlyPreview = false,
 }: ProviderInterfaceProps) {
   const { t, i18n } = useTranslation();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -100,6 +102,11 @@ function ProviderInterface({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const hasFetchedRef = useRef(false);
   const subscriptionRef = useRef<any>(null);
+  const canManageTours =
+    !readOnlyPreview &&
+    ["admin", "superadmin", "manager"].includes(
+      String(currentUser.role || "").toLowerCase(),
+    );
 
   // Language toggle
   const toggleLanguage = () => {
@@ -114,6 +121,12 @@ function ProviderInterface({
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedDate, searchTerm]);
+
+  useEffect(() => {
+    if (!canManageTours && activeTab === "addTour") {
+      setActiveTab("orders");
+    }
+  }, [canManageTours, activeTab]);
 
   // Fetch with retry logic
   const fetchWithRetry = async (
@@ -1154,7 +1167,11 @@ function ProviderInterface({
     toast[type](message);
   };
 
-  const tabs = [
+  const tabs: Array<{
+    id: "orders" | "booking" | "addTour" | "passengers";
+    label: string;
+    icon: any;
+  }> = [
     { id: "orders" as const, label: t("orders"), icon: Users },
     {
       id: "booking" as const,
@@ -1162,16 +1179,19 @@ function ProviderInterface({
       icon: CheckCircle,
     },
     {
-      id: "addTour" as const,
-      label: t("tourManagement"),
-      icon: Settings,
-    },
-    {
       id: "passengers" as const,
       label: t("passengers"),
       icon: Edit,
     },
   ];
+
+  if (canManageTours) {
+    tabs.splice(2, 0, {
+      id: "addTour",
+      label: t("tourManagement"),
+      icon: Settings,
+    });
+  }
 
   const allPassengers = confirmedOrders.flatMap((order) => {
     const orderId = String(order.id); // ← THIS WAS MISSING!
@@ -1308,7 +1328,7 @@ function ProviderInterface({
               />
             )}
 
-            {activeTab === "addTour" && (
+            {activeTab === "addTour" && canManageTours && (
               <AddTourTab
                 tours={tours}
                 setTours={setTours}

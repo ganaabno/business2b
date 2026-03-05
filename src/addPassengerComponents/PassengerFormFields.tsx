@@ -14,7 +14,7 @@ interface PassengerFormFieldsProps {
   updatePassenger: (
     index: number,
     field: keyof Passenger | "subPassengerCount" | "hasSubPassengers",
-    value: any
+    value: any,
   ) => void;
   expanded: boolean;
   fieldLoading: Record<string, boolean>;
@@ -40,7 +40,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     setNotification,
   }) => {
     const [localRoomType, setLocalRoomType] = useState(
-      passenger.roomType || "Select a room"
+      passenger.roomType || "Select a room",
     );
     const [uploadLoading, setUploadLoading] = useState(false);
 
@@ -48,7 +48,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     const debouncedUpdate = useDebouncedCallback(
       (
         field: keyof Passenger | "subPassengerCount" | "hasSubPassengers",
-        value: any
+        value: any,
       ) => {
         updatePassenger(index, field, value);
       },
@@ -57,7 +57,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     // Immediate updates for checkboxes/selects (low frequency)
     const immediateUpdate = (
       field: keyof Passenger | "subPassengerCount" | "hasSubPassengers",
-      value: any
+      value: any,
     ) => {
       updatePassenger(index, field, value);
     };
@@ -65,22 +65,25 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     // Memoized formatted dates
     const formattedDob = useMemo(
       () => formatDate(passenger.date_of_birth),
-      [passenger.date_of_birth]
+      [passenger.date_of_birth],
     );
     const formattedExpiry = useMemo(
       () => formatDate(passenger.passport_expire),
-      [passenger.passport_expire]
+      [passenger.passport_expire],
     );
 
     // Precompute errors for this passenger only
     const passengerErrors = useMemo(() => {
       const prefix = `passenger_${passenger.serial_no}_`;
-      return errors.reduce((acc, err) => {
-        if (err.field?.startsWith(prefix)) {
-          acc[err.field.replace(prefix, "")] = err;
-        }
-        return acc;
-      }, {} as Record<string, any>);
+      return errors.reduce(
+        (acc, err) => {
+          if (err.field?.startsWith(prefix)) {
+            acc[err.field.replace(prefix, "")] = err;
+          }
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
     }, [errors, passenger.serial_no]);
 
     const getError = (field: string) => passengerErrors[field];
@@ -122,7 +125,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     }
 
     const handlePassportUpload = async (
-      e: React.ChangeEvent<HTMLInputElement>
+      e: React.ChangeEvent<HTMLInputElement>,
     ) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -207,7 +210,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
                     onChange={(e) =>
                       immediateUpdate(
                         "subPassengerCount",
-                        parseInt(e.target.value) || 0
+                        parseInt(e.target.value) || 0,
                       )
                     }
                     className="w-60 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
@@ -637,7 +640,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
                     <input
                       type="checkbox"
                       checked={(passenger.additional_services || []).includes(
-                        s.name
+                        s.name,
                       )}
                       onChange={(e) =>
                         handleServiceChange(s.name, e.target.checked)
@@ -695,7 +698,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
       prev.roomTypes === next.roomTypes &&
       prev.hotels === next.hotels
     );
-  }
+  },
 );
 
 PassengerFormFields.displayName = "PassengerFormFields";

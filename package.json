@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
+    "api:dev": "tsx watch backend/src/server.ts",
+    "api:start": "node backend/dist/server.js",
+    "api:build": "tsc -p backend/tsconfig.json",
+    "api:test": "tsx --test backend/src/**/*.test.ts",
     "create-users": "ts-node --esm --project tsconfig.node.json src/createTestUsers.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -41,6 +45,7 @@
     "i18next": "^25.6.0",
     "lodash": "^4.17.21",
     "lucide-react": "^0.539.0",
+    "mammoth": "^1.11.0",
     "papaparse": "^5.5.3",
     "pg": "^8.16.3",
     "react": "^19.1.1",
@@ -62,6 +67,7 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/express": "^5.0.6",
     "@types/file-saver": "^2.0.7",
     "@types/html2canvas": "^1.0.0",
     "@types/lodash": "^4.17.20",

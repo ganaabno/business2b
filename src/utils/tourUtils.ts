@@ -8,7 +8,7 @@ export const createNewPassenger = (
   existingPassengers: Passenger[],
   isGroup: boolean,
   groupName: string,
-  selectedTourData?: Tour
+  selectedTourData?: Tour,
 ): Passenger => {
   const serialNo = (existingPassengers.length + 1).toString();
   const lastPassenger = existingPassengers[existingPassengers.length - 1];
@@ -107,7 +107,7 @@ export const calculateAge = (dateOfBirth: string): number => {
 
 export const calculateServicePrice = (
   services: string[],
-  tourData: Tour
+  tourData: Tour,
 ): number => {
   return services.reduce((sum, serviceName) => {
     const service = tourData.services.find((s) => s.name === serviceName);

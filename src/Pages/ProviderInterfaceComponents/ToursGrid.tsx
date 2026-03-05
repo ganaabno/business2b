@@ -24,7 +24,7 @@ export default function ToursGrid({ tours, formatDate }: ToursGridProps) {
         <div className="text-center py-12">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <MapPin className="w-8 h-8 text-gray-400" />
-          </div> 
+          </div>
           <p className="text-gray-500 text-lg font-medium mb-2">
             {t("noToursAvailable")}
           </p>
@@ -47,8 +47,8 @@ export default function ToursGrid({ tours, formatDate }: ToursGridProps) {
                       tour.status === "active"
                         ? "bg-green-100 text-green-800"
                         : tour.status === "full"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-yellow-100 text-yellow-800"
+                          ? "bg-red-100 text-red-800"
+                          : "bg-yellow-100 text-yellow-800"
                     }`}
                   >
                     {t(tour.status || "inactive")}
@@ -145,7 +145,7 @@ export default function ToursGrid({ tours, formatDate }: ToursGridProps) {
                           ? Math.round(
                               ((tour.seats - (tour.available_seats || 0)) /
                                 tour.seats) *
-                                100
+                                100,
                             )
                           : 0,
                     })}

@@ -22,7 +22,7 @@ const COLOR_PALETTE = [
 
 interface PassengerListProps {
   passengers: Passenger[];
-  setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>; // ADD THIS PROP!
+  setPassengers: React.Dispatch<React.SetStateAction<Passenger[]>>;
   selectedTourData?: Tour;
   errors: ValidationError[];
   updatePassenger: (
@@ -32,7 +32,7 @@ interface PassengerListProps {
       | "subPassengerCount"
       | "hasSubPassengers"
       | "is_related_to_next",
-    value: any
+    value: any,
   ) => void;
   removePassenger: (index: number) => void;
   expandedPassengerId: string | null;
@@ -48,9 +48,8 @@ interface PassengerListProps {
 
 const assignGroupColors = (
   passengers: Passenger[],
-  usedColorsSet: Set<string>
+  usedColorsSet: Set<string>,
 ): Passenger[] => {
-  // No more async fetch—use provided usedColorsSet
   const takenColors = new Set<string>(usedColorsSet); // Start with DB-used colors
   let carryOverColor: string | null = null;
   let colorIndex = 0;
@@ -165,8 +164,8 @@ export const PassengerList: React.FC<PassengerListProps> = ({
       if (isMounted) {
         setUsedColorsSet(
           new Set(
-            (data || []).map((p) => p.group_color).filter(Boolean) as string[]
-          )
+            (data || []).map((p) => p.group_color).filter(Boolean) as string[],
+          ),
         );
       }
     };
@@ -215,7 +214,7 @@ export const PassengerList: React.FC<PassengerListProps> = ({
         (p) =>
           `${p.id || "temp"}-${p.is_related_to_next ?? false}-${
             p.group_color || ""
-          }-${p.main_passenger_id || ""}`
+          }-${p.main_passenger_id || ""}`,
       )
       .join("|"),
     // departureDate as direct dependency (now declared in scope)
@@ -312,11 +311,11 @@ export const PassengerList: React.FC<PassengerListProps> = ({
                         passenger.roomType?.includes("King")
                           ? "bg-green-100 text-green-800"
                           : passenger.roomType?.includes("Double") ||
-                            passenger.roomType?.includes("Twin")
-                          ? "bg-blue-100 text-blue-800"
-                          : passenger.roomType?.includes("Family")
-                          ? "bg-purple-100 text-purple-800"
-                          : "bg-gray-100 text-gray-600"
+                              passenger.roomType?.includes("Twin")
+                            ? "bg-blue-100 text-blue-800"
+                            : passenger.roomType?.includes("Family")
+                              ? "bg-purple-100 text-purple-800"
+                              : "bg-gray-100 text-gray-600"
                       }`}
                     >
                       {passenger.roomType || "No room"}
@@ -332,7 +331,7 @@ export const PassengerList: React.FC<PassengerListProps> = ({
                             updatePassenger(
                               index,
                               "is_related_to_next",
-                              e.target.checked
+                              e.target.checked,
                             )
                           }
                           className="w-5 h-5 text-purple-600 rounded border-gray-300 focus:ring-purple-500 focus:ring-2"
@@ -350,7 +349,7 @@ export const PassengerList: React.FC<PassengerListProps> = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         setExpandedPassengerId(
-                          isExpanded ? null : passenger.id
+                          isExpanded ? null : passenger.id,
                         );
                       }}
                       className="p-2 rounded-lg transition-all"

@@ -51,7 +51,10 @@ export default function FlightDataTab() {
 
   return (
     <div className="space-y-6">
-      <FileUploader onUploadComplete={handleUploadComplete} currentUser={{ id: "temp" }} />
+      <FileUploader
+        onUploadComplete={handleUploadComplete}
+        currentUser={{ id: "temp" }}
+      />
       {flightData && <DataTable data={flightData} />}
     </div>
   );

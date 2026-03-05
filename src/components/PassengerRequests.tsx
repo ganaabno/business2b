@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabaseClient";
+import { getDepartureSeatStats } from "../api/sharedBookings";
 import type {
   Passenger,
   ValidationError,
@@ -51,11 +52,11 @@ export default function PassengerRequests({
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedPassenger, setExpandedPassenger] = useState<string | null>(
-    null
+    null,
   );
   const itemsPerPage = 10;
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(
-    null
+    null,
   );
 
   const formatDisplayDate = (s: string | undefined): string => {
@@ -86,6 +87,40 @@ export default function PassengerRequests({
     return "text-green-600 bg-green-50 px-2 py-1 rounded";
   };
 
+  const getRequestedSeatCount = (passenger: PassengerWithUser) => {
+    const rawSeatCount = Number(passenger.seat_count ?? 1);
+    if (!Number.isFinite(rawSeatCount) || rawSeatCount <= 0) {
+      return 1;
+    }
+    return Math.floor(rawSeatCount);
+  };
+
+  const syncTourAvailabilityFromCanonical = async (
+    tourId?: string | null,
+    departureDate?: string | null,
+  ) => {
+    if (!tourId || !departureDate) {
+      return;
+    }
+
+    try {
+      const seatStats = await getDepartureSeatStats(tourId, departureDate);
+      await supabase
+        .from("tours")
+        .update({
+          available_seats: seatStats.remaining,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", tourId);
+    } catch (error) {
+      console.warn("syncTourAvailabilityFromCanonical: failed", {
+        tourId,
+        departureDate,
+        error,
+      });
+    }
+  };
+
   const fetchPassengerRequests = useCallback(async () => {
     setLoading(true);
     try {
@@ -110,7 +145,7 @@ export default function PassengerRequests({
             "fetchPassengerRequests: Failed to fetch custom user role",
             {
               customUserError,
-            }
+            },
           );
         } else if (customUser?.role) {
           userRole = customUser.role;
@@ -123,7 +158,7 @@ export default function PassengerRequests({
         });
         showNotification(
           "error",
-          "You are not authorized to view passenger requests"
+          "You are not authorized to view passenger requests",
         );
         setErrors([{ message: "Unauthorized access to passenger requests" }]);
         return;
@@ -141,7 +176,7 @@ export default function PassengerRequests({
         });
         showNotification(
           "error",
-          `Failed to fetch passenger requests: ${rawError.message}`
+          `Failed to fetch passenger requests: ${rawError.message}`,
         );
         setErrors([
           {
@@ -190,7 +225,7 @@ export default function PassengerRequests({
             email,
             username
           )
-        `
+        `,
         )
         .in("status", ["pending", "rejected"])
         .order("created_at", { ascending: false });
@@ -201,7 +236,7 @@ export default function PassengerRequests({
         });
         showNotification(
           "error",
-          `Failed to fetch passenger requests with joins: ${error.message}`
+          `Failed to fetch passenger requests with joins: ${error.message}`,
         );
         setErrors([
           { message: `Failed to fetch passenger requests: ${error.message}` },
@@ -292,7 +327,7 @@ export default function PassengerRequests({
         },
         async (payload) => {
           await fetchPassengerRequests();
-        }
+        },
       )
       .subscribe((status, error) => {
         if (error) {
@@ -330,43 +365,65 @@ export default function PassengerRequests({
       return;
     }
 
-    const { data: passengers, error: passengerError } = await supabase
-      .from("passenger_requests")
-      .select("status")
-      .eq("order_id", orderId);
-    if (passengerError) {
+    const [
+      { data: requestRows, error: requestError },
+      { data: approvedRows, error: approvedError },
+    ] = await Promise.all([
+      supabase
+        .from("passenger_requests")
+        .select("status")
+        .eq("order_id", orderId),
+      supabase.from("passengers").select("status").eq("order_id", orderId),
+    ]);
+
+    if (requestError || approvedError) {
       showNotification(
         "error",
-        `Failed to fetch passengers: ${passengerError.message}`
+        `Failed to fetch passengers: ${(requestError || approvedError)?.message}`,
       );
       return;
     }
 
-    if (!passengers.length) {
-      console.warn(
-        "updateOrderStatus: No passengers found, setting status to pending",
-        { orderId }
-      );
-      showNotification("error", "No passengers found for this order");
-      return;
+    const requestStatuses = (requestRows || []).map((row) =>
+      String(row.status || "").toLowerCase(),
+    );
+
+    const approvedPassengerCount = (approvedRows || []).filter((row) => {
+      const status = String(row.status || "").toLowerCase();
+      return !["rejected", "cancelled", "inactive"].includes(status);
+    }).length;
+
+    const approvedRequestCount = requestStatuses.filter(
+      (status) => status === "active" || status === "approved",
+    ).length;
+    const pendingRequestCount = requestStatuses.filter(
+      (status) => status === "pending",
+    ).length;
+    const rejectedRequestCount = requestStatuses.filter(
+      (status) => status === "rejected",
+    ).length;
+
+    const approvedCount = approvedPassengerCount + approvedRequestCount;
+
+    let newStatus: OrderStatus = "pending";
+    if (
+      approvedCount > 0 &&
+      pendingRequestCount === 0 &&
+      rejectedRequestCount === 0
+    ) {
+      newStatus = "approved";
+    } else if (approvedCount > 0) {
+      newStatus = "partially_approved";
+    } else if (pendingRequestCount === 0 && rejectedRequestCount > 0) {
+      newStatus = "rejected";
     }
-
-    const statuses = passengers.map((p) => p.status);
-
-    const newStatus: OrderStatus = statuses.every((s) => s === "active")
-      ? "approved"
-      : statuses.some((s) => s === "active")
-      ? "partially_approved"
-      : statuses.every((s) => s === "rejected")
-      ? "rejected"
-      : "pending";
 
     if (!VALID_ORDER_STATUSES.includes(newStatus)) {
       showNotification(
         "error",
         `Invalid order status: ${newStatus}. Allowed statuses: ${VALID_ORDER_STATUSES.join(
-          ", "
-        )}`
+          ", ",
+        )}`,
       );
       return;
     }
@@ -394,13 +451,13 @@ export default function PassengerRequests({
         showNotification(
           "error",
           `Invalid status "${newStatus}". Allowed statuses: ${VALID_ORDER_STATUSES.join(
-            ", "
-          )}`
+            ", ",
+          )}`,
         );
       } else {
         showNotification(
           "error",
-          `Failed to update order status: ${updateError.message}`
+          `Failed to update order status: ${updateError.message}`,
         );
       }
       return;
@@ -428,31 +485,17 @@ export default function PassengerRequests({
         return;
       }
 
-      if (passenger.status === "rejected") {
-        const tourId = passenger.orders?.tour_id || passenger.tour_id;
-        if (tourId) {
-          const { data: tourData, error: tourError } = await supabase
-            .from("tours")
-            .select("available_seats")
-            .eq("id", tourId)
-            .single();
-          if (tourError) {
-            showNotification(
-              "error",
-              `Failed to fetch tour: ${tourError.message}`
-            );
-            return;
-          }
-          if (
-            tourData.available_seats !== undefined &&
-            tourData.available_seats <= 0
-          ) {
-            showNotification(
-              "error",
-              "Cannot approve passenger: No seats available"
-            );
-            return;
-          }
+      const tourId = passenger.orders?.tour_id || passenger.tour_id;
+      const departureDate =
+        passenger.orders?.departureDate || passenger.departure_date || null;
+      if (tourId && departureDate) {
+        const seatStats = await getDepartureSeatStats(tourId, departureDate);
+        if (seatStats.remaining < getRequestedSeatCount(passenger)) {
+          showNotification(
+            "error",
+            "Cannot approve passenger: No seats available",
+          );
+          return;
         }
       }
 
@@ -489,7 +532,7 @@ export default function PassengerRequests({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         notes: passenger.notes,
-        seat_count: passenger.seat_count,
+        seat_count: getRequestedSeatCount(passenger),
         ...(passenger.createdBy ? { createdBy: passenger.createdBy } : {}),
         main_passenger_id: passenger.main_passenger_id,
         sub_passenger_count: passenger.sub_passenger_count,
@@ -508,7 +551,7 @@ export default function PassengerRequests({
       if (insertError) {
         showNotification(
           "error",
-          `Failed to approve passenger: ${insertError.message}`
+          `Failed to approve passenger: ${insertError.message}`,
         );
         return;
       }
@@ -520,55 +563,19 @@ export default function PassengerRequests({
       if (deleteError) {
         showNotification(
           "error",
-          `Failed to remove passenger from requests: ${deleteError.message}`
+          `Failed to remove passenger from requests: ${deleteError.message}`,
         );
         return;
       }
 
-      if (passenger.status !== "active") {
-        const tourId = passenger.orders?.tour_id || passenger.tour_id;
-        if (tourId) {
-          const { data: tourData, error: tourError } = await supabase
-            .from("tours")
-            .select("available_seats")
-            .eq("id", tourId)
-            .single();
-          if (tourError) {
-            showNotification(
-              "error",
-              `Failed to fetch tour: ${tourError.message}`
-            );
-            return;
-          }
-          if (
-            tourData.available_seats !== undefined &&
-            tourData.available_seats > 0
-          ) {
-            const { error: updateError } = await supabase
-              .from("tours")
-              .update({
-                available_seats: tourData.available_seats - 1,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", tourId);
-            if (updateError) {
-              showNotification(
-                "error",
-                `Failed to update seats: ${updateError.message}`
-              );
-              return;
-            }
-          }
-        }
-      }
-
       await updateOrderStatus(
         String(passenger.orders?.id || passenger.order_id || ""),
-        currentUserId
+        currentUserId,
       );
+      await syncTourAvailabilityFromCanonical(tourId, departureDate);
       showNotification(
         "success",
-        "Passenger approved and moved to passengers table"
+        "Passenger approved and moved to passengers table",
       );
       await fetchPassengerRequests();
     } catch (error) {
@@ -596,39 +603,9 @@ export default function PassengerRequests({
         return;
       }
 
-      if (passenger.status === "active") {
-        const tourId = passenger.orders?.tour_id || passenger.tour_id;
-        if (tourId) {
-          const { data: tourData, error: tourError } = await supabase
-            .from("tours")
-            .select("available_seats")
-            .eq("id", tourId)
-            .single();
-          if (tourError) {
-            showNotification(
-              "error",
-              `Failed to fetch tour: ${tourError.message}`
-            );
-            return;
-          }
-          if (tourData.available_seats !== undefined) {
-            const { error: updateError } = await supabase
-              .from("tours")
-              .update({
-                available_seats: tourData.available_seats + 1,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", tourId);
-            if (updateError) {
-              showNotification(
-                "error",
-                `Failed to update seats: ${updateError.message}`
-              );
-              return;
-            }
-          }
-        }
-      }
+      const tourId = passenger.orders?.tour_id || passenger.tour_id;
+      const departureDate =
+        passenger.orders?.departureDate || passenger.departure_date || null;
 
       const { error } = await supabase
         .from("passenger_requests")
@@ -637,15 +614,16 @@ export default function PassengerRequests({
       if (error) {
         showNotification(
           "error",
-          `Failed to reject passenger: ${error.message}`
+          `Failed to reject passenger: ${error.message}`,
         );
         return;
       }
 
       await updateOrderStatus(
         String(passenger.orders?.id || passenger.order_id || ""),
-        currentUserId
+        currentUserId,
       );
+      await syncTourAvailabilityFromCanonical(tourId, departureDate);
       showNotification("success", "Passenger rejected successfully");
       await fetchPassengerRequests();
     } catch (error) {
@@ -668,7 +646,7 @@ export default function PassengerRequests({
 
   const togglePassengerDetails = (passengerId: string) => {
     setExpandedPassenger(
-      expandedPassenger === passengerId ? null : passengerId
+      expandedPassenger === passengerId ? null : passengerId,
     );
   };
 
@@ -733,7 +711,7 @@ export default function PassengerRequests({
             {passengers
               .slice(
                 (currentPage - 1) * itemsPerPage,
-                currentPage * itemsPerPage
+                currentPage * itemsPerPage,
               )
               .map((passenger) => (
                 <div
@@ -776,8 +754,8 @@ export default function PassengerRequests({
                             passenger.status === "active"
                               ? "bg-green-100 text-green-700"
                               : passenger.status === "rejected"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-amber-100 text-amber-700"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-700"
                           }`}
                         >
                           {passenger.status}
@@ -917,7 +895,7 @@ export default function PassengerRequests({
                             </p>
                             <p className="text-sm text-gray-600">
                               {formatDisplayDate(
-                                passenger.date_of_birth ?? undefined
+                                passenger.date_of_birth ?? undefined,
                               )}
                             </p>
                           </div>
@@ -970,11 +948,11 @@ export default function PassengerRequests({
                             </p>
                             <p
                               className={`text-sm ${getPassportExpiryColor(
-                                passenger.passport_expire
+                                passenger.passport_expire,
                               )}`}
                             >
                               {formatDisplayDate(
-                                passenger.passport_expire ?? undefined
+                                passenger.passport_expire ?? undefined,
                               )}
                             </p>
                           </div>

@@ -1,7 +1,6 @@
 // components/MobileFooter.tsx
 import React from "react";
 import type { Passenger } from "../types/type";
-import { useState } from "react";
 
 interface MobileFooterProps {
   activeStep: number;
@@ -15,9 +14,12 @@ interface MobileFooterProps {
   handleNextStep: () => void;
   newPassengerRef: React.RefObject<HTMLDivElement | null>;
   selectedTour?: string;
-  departureDate?: string;}
+  departureDate?: string;
+}
 
 export const MobileFooter: React.FC<MobileFooterProps> = ({
+  activeStep,
+  setActiveStep,
   selectedTour,
   departureDate,
   bookingPassengers,
@@ -28,8 +30,9 @@ export const MobileFooter: React.FC<MobileFooterProps> = ({
   clearAllPassengers,
   handleNextStep,
   newPassengerRef,
-} : MobileFooterProps) => {
-  const [activeStep, setActiveStep] = useState(1);
+}: MobileFooterProps) => {
+  const hasPassengerLimit = maxPassengers > 0;
+
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:hidden z-40">
       <div className="flex justify-between items-center mb-2">
@@ -46,7 +49,10 @@ export const MobileFooter: React.FC<MobileFooterProps> = ({
         <div className="flex gap-2 mb-2">
           <button
             onClick={addPassenger}
-            disabled={!canAdd || bookingPassengers.length >= maxPassengers}
+            disabled={
+              !canAdd ||
+              (hasPassengerLimit && bookingPassengers.length >= maxPassengers)
+            }
             className="flex-1 inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +97,11 @@ export const MobileFooter: React.FC<MobileFooterProps> = ({
         {activeStep < 3 && (
           <button
             onClick={handleNextStep}
-            disabled={(activeStep === 1 && (!selectedTour?.trim() || !departureDate?.trim())) || (activeStep === 2 && bookingPassengers.length === 0)}
+            disabled={
+              (activeStep === 1 &&
+                (!selectedTour?.trim() || !departureDate?.trim())) ||
+              (activeStep === 2 && bookingPassengers.length === 0)
+            }
             className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
           >
             {activeStep === 1 ? "Continue to Passengers" : "Review Booking"}

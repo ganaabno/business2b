@@ -15,7 +15,7 @@ export default function ForgotPassword() {
 
   const timeout = (ms: number) =>
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timed out")), ms)
+      setTimeout(() => reject(new Error("Request timed out")), ms),
     );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,7 +61,7 @@ export default function ForgotPassword() {
       setFormState((prev) => ({ ...prev, success: true, loading: false }));
       toast.success(
         "Password reset email sent! Check your inbox and spam/junk folder.",
-        { toastId: "forgot-password-toast" }
+        { toastId: "forgot-password-toast" },
       );
     } catch (err: any) {
       setFormState((prev) => ({

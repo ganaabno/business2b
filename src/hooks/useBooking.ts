@@ -17,6 +17,8 @@ import {
   createNewPassenger,
   createNewPassengerLocal,
 } from "../utils/bookingUtils";
+import { createSharedBooking } from "../api/sharedBookings";
+import { isTourBookableInB2B } from "../utils/tourSource";
 
 interface UseBookingProps {
   tours: Tour[];
@@ -52,13 +54,13 @@ export const useBooking = ({
   const [loading, setLoading] = useState(false);
   const [showInProvider, setShowInProvider] = useState(false);
   const [expandedPassengerId, setExpandedPassengerId] = useState<string | null>(
-    null
+    null,
   );
   const [fieldLoading, setFieldLoading] = useState<Record<string, boolean>>({});
   const [canAdd, setCanAdd] = useState(true);
   const [availableHotels, setAvailableHotels] = useState<string[]>([]);
   const [notification, setNotification] = useState<NotificationType | null>(
-    null
+    null,
   );
   const [leadPassengerData, setLeadPassengerData] =
     useState<LeadPassenger | null>(null);
@@ -75,13 +77,24 @@ export const useBooking = ({
 
   // CHANGE 1: Allow user to add, but only admin/manager save to passengers
   const canAddPassengers = ["admin", "manager", "superadmin", "user"].includes(
-    currentUser.role || "user"
+    currentUser.role || "user",
   );
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
-    currentUser.role || "user"
+    currentUser.role || "user",
   );
 
-  const selectedTourData = tours.find((t) => t.title === selectedTour);
+  const selectedTourData = useMemo(() => {
+    const normalized = selectedTour.trim().toLowerCase();
+    if (!normalized) return undefined;
+
+    const matchedTours = tours.filter(
+      (tour) => tour.title.trim().toLowerCase() === normalized,
+    );
+
+    return (
+      matchedTours.find((tour) => isTourBookableInB2B(tour)) ?? matchedTours[0]
+    );
+  }, [tours, selectedTour]);
   const effectiveDepartureDate = departureDate;
 
   // === FETCH EXISTING PASSENGERS ===
@@ -121,9 +134,9 @@ export const useBooking = ({
         room_allocation: await assignRoomAllocation(
           allPassengers,
           p,
-          effectiveDepartureDate
+          effectiveDepartureDate,
         ).catch(() => "M1"),
-      }))
+      })),
     );
 
     const oldRooms = bookingPassengersRef.current.map((p) => p.room_allocation);
@@ -163,7 +176,7 @@ export const useBooking = ({
     async (
       index: number,
       field: keyof Passenger | "subPassengerCount" | "hasSubPassengers",
-      value: any
+      value: any,
     ) => {
       if (index < 0 || index >= bookingPassengers.length) return;
 
@@ -177,7 +190,7 @@ export const useBooking = ({
         if (!value) {
           updatedPassengers[index].sub_passenger_count = 0;
           updatedPassengers = updatedPassengers.filter(
-            (p) => p.main_passenger_id !== passenger.id
+            (p) => p.main_passenger_id !== passenger.id,
           );
         }
         shouldReassign = true;
@@ -188,7 +201,7 @@ export const useBooking = ({
         // ONLY create subs when checkbox is ON
         const count = Math.max(0, parseInt(value, 10) || 0);
         updatedPassengers = updatedPassengers.filter(
-          (p) => p.main_passenger_id !== passenger.id
+          (p) => p.main_passenger_id !== passenger.id,
         );
         updatedPassengers[index].sub_passenger_count = count;
 
@@ -205,15 +218,15 @@ export const useBooking = ({
                   roomType: passenger.roomType || "Single",
                   serial_no: passenger.serial_no,
                   departureDate: effectiveDepartureDate,
-                }
+                },
               );
               sub.room_allocation = await assignRoomAllocation(
                 [...existingPassengers, ...updatedPassengers, sub],
                 sub,
-                effectiveDepartureDate
+                effectiveDepartureDate,
               ).catch(() => "M1");
               return sub;
-            })
+            }),
           );
           updatedPassengers.splice(index + 1, 0, ...newSubs);
         }
@@ -241,9 +254,9 @@ export const useBooking = ({
         const rooms = await Promise.all(
           updatedPassengers.map((p) =>
             assignRoomAllocation(all, p, effectiveDepartureDate).catch(
-              () => "M1"
-            )
-          )
+              () => "M1",
+            ),
+          ),
         );
         updatedPassengers = updatedPassengers.map((p, i) => ({
           ...p,
@@ -260,7 +273,7 @@ export const useBooking = ({
       availableHotels,
       effectiveDepartureDate,
       existingPassengers,
-    ]
+    ],
   );
 
   // === ADD MULTIPLE PASSENGERS ===
@@ -277,12 +290,12 @@ export const useBooking = ({
           selectedTourData,
           availableHotels,
           {},
-          effectiveDepartureDate
+          effectiveDepartureDate,
         );
         passenger.room_allocation = await assignRoomAllocation(
           [...existingPassengers, ...bookingPassengers, ...newPassengers],
           passenger,
-          effectiveDepartureDate
+          effectiveDepartureDate,
         ).catch(() => "M1");
         newPassengers.push(passenger);
       }
@@ -298,7 +311,7 @@ export const useBooking = ({
       availableHotels,
       effectiveDepartureDate,
       existingPassengers,
-    ]
+    ],
   );
 
   const remainingSeats = useMemo(() => {
@@ -306,7 +319,7 @@ export const useBooking = ({
     return Math.max(
       0,
       selectedTourData.available_seats -
-        (bookingPassengers.length + (leadPassengerData?.seat_count || 0))
+        (bookingPassengers.length + (leadPassengerData?.seat_count || 0)),
     );
   }, [
     isPowerUser,
@@ -345,14 +358,14 @@ export const useBooking = ({
         ...rawHotels
           .filter((h): h is string => typeof h === "string")
           .map((h) => h.trim())
-          .filter((h) => h.length > 0)
+          .filter((h) => h.length > 0),
       );
     } else if (typeof rawHotels === "string") {
       hotels.push(
         ...rawHotels
           .split(",")
           .map((h) => h.trim())
-          .filter((h) => h.length > 0)
+          .filter((h) => h.length > 0),
       );
     }
 
@@ -364,7 +377,7 @@ export const useBooking = ({
       setNotification({ type, message });
       setTimeout(() => setNotification(null), 5000);
     },
-    []
+    [],
   );
 
   const calculateAge = useCallback(
@@ -376,7 +389,7 @@ export const useBooking = ({
       if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
       return Math.max(0, age);
     },
-    []
+    [],
   );
 
   const calculateServicePrice = useCallback(
@@ -386,7 +399,7 @@ export const useBooking = ({
         return sum + (s?.price || 0);
       }, 0);
     },
-    []
+    [],
   );
 
   const canAddPassenger = useCallback(async () => {
@@ -396,7 +409,7 @@ export const useBooking = ({
     const { isValid } = await checkSeatLimit(
       selectedTourData.id,
       departureDate,
-      currentUser.role
+      currentUser.role,
     );
     return isValid;
   }, [
@@ -427,9 +440,9 @@ export const useBooking = ({
           room_allocation: await assignRoomAllocation(
             allPassengers,
             p,
-            effectiveDepartureDate
+            effectiveDepartureDate,
           ).catch(() => "M1"),
-        }))
+        })),
       );
 
       setBookingPassengers(updated);
@@ -443,7 +456,7 @@ export const useBooking = ({
       showNotification,
       effectiveDepartureDate,
       existingPassengers,
-    ]
+    ],
   );
 
   const clearAllPassengers = useCallback(() => {
@@ -528,7 +541,7 @@ export const useBooking = ({
       if (passenger.passport_expire) {
         const exp = cleanValueForDB(
           "passport_expire",
-          passenger.passport_expire
+          passenger.passport_expire,
         );
         const dep = cleanValueForDB("departure_date", depDate);
         if (exp && dep) {
@@ -544,7 +557,7 @@ export const useBooking = ({
       }
       return errors;
     },
-    []
+    [],
   );
 
   const validateBooking = useCallback(
@@ -562,7 +575,7 @@ export const useBooking = ({
       if (step === 4 && paymentMethod.length === 0)
         allErrors.push({ field: "payment", message: "Select payment method" });
       bookingPassengers.forEach((p) =>
-        allErrors.push(...validatePassenger(p, effectiveDepartureDate))
+        allErrors.push(...validatePassenger(p, effectiveDepartureDate)),
       );
       setErrors(allErrors);
       return allErrors.length === 0;
@@ -576,7 +589,7 @@ export const useBooking = ({
       validatePassenger,
       setErrors,
       effectiveDepartureDate,
-    ]
+    ],
   );
 
   // === SAVE ORDER ===
@@ -585,8 +598,16 @@ export const useBooking = ({
       showNotification("error", "Fix validation errors");
       return;
     }
-    const tourData = tours.find((t) => t.title === selectedTour);
+    const tourData = selectedTourData;
     if (!tourData) return;
+
+    if (!isTourBookableInB2B(tourData)) {
+      showNotification(
+        "error",
+        "This Global-only tour is not synced to B2B yet. Please sync tours first.",
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -625,92 +646,96 @@ export const useBooking = ({
 
       for (const group of groups) {
         const groupPrice = group.reduce((s, p) => s + (p.price || 0), 0);
+        let realOrderId: string | number;
 
-        const { data: orderResult, error: orderError } = await supabase
-          .from("orders")
-          .insert({
-            user_id: currentUser.id,
-            tour_id: tourData.id,
+        if (isPowerUser) {
+          const sharedResult = await createSharedBooking({
+            userId: currentUser.id,
+            tourId: tourData.id,
+            tourTitle: selectedTour,
             departureDate: effectiveDepartureDate,
-            total_price: groupPrice,
-            status: isPowerUser ? "confirmed" : "pending",
-            payment_method: paymentMethod[0] || null,
-            travel_choice: "Regular",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
-
-        if (orderError || !orderResult)
-          throw orderError || new Error("Order failed");
-
-        const realOrderId = orderResult.id;
-
-        for (const p of group) {
-          const cleaned = {
-            order_id: realOrderId,
-            user_id: currentUser.id,
-            tour_id: tourData.id,
-            tour_title: selectedTour,
-            departure_date: effectiveDepartureDate
-              ? cleanValueForDB("departure_date", effectiveDepartureDate)
-              : null,
-            name: `${p.first_name} ${p.last_name}`.trim(),
-            room_allocation: p.room_allocation || "",
-            serial_no: p.serial_no || "",
-            passenger_number: p.passenger_number || `PAX-${Date.now()}`,
-            last_name: p.last_name || "",
-            first_name: p.first_name || "",
-            date_of_birth: cleanValueForDB("date_of_birth", p.date_of_birth),
-            age: p.age || null,
-            gender: p.gender || null,
-            passport_number: p.passport_number || "",
-            passport_expire: cleanValueForDB(
-              "passport_expire",
-              p.passport_expire
-            ),
-            nationality: p.nationality || "Mongolia",
-            roomType: p.roomType || "",
-            hotel: p.hotel || "",
-            additional_services: p.additional_services || [],
-            price: p.price || 0,
-            email: p.email || "",
-            phone: p.phone || "",
-            passport_upload: p.passport_upload || null,
-            allergy: p.allergy || "",
-            emergency_phone: p.emergency_phone || "",
-            status: isPowerUser ? "active" : "pending",
-            is_blacklisted: false,
-            notes: p.notes || "",
-            seat_count: p.seat_count || 1,
-            main_passenger_id: p.main_passenger_id || null,
-            sub_passenger_count: p.sub_passenger_count || 0,
-            has_sub_passengers: p.has_sub_passengers || false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            itinerary_status: p.itinerary_status || "No itinerary",
-            pax_type: p.pax_type || "Adult",
-            group_color: p.group_color || null,
-          };
-
-          await supabase.from(target).insert(cleaned);
-        }
-
-        if (isPowerUser && tourData.available_seats !== undefined) {
-          await supabase
-            .from("tours")
-            .update({
-              available_seats: Math.max(
-                0,
-                tourData.available_seats - group.length
-              ),
+            paymentMethod: paymentMethod[0] || null,
+            orderStatus: "confirmed",
+            source: "b2b",
+            passengers: group,
+          });
+          realOrderId = sharedResult.orderId;
+        } else {
+          const { data: orderResult, error: orderError } = await supabase
+            .from("orders")
+            .insert({
+              user_id: currentUser.id,
+              tour_id: tourData.id,
+              departureDate: effectiveDepartureDate,
+              total_price: groupPrice,
+              status: "pending",
+              payment_method: paymentMethod[0] || null,
+              travel_choice: "Regular",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             })
-            .eq("id", tourData.id);
+            .select()
+            .single();
+
+          if (orderError || !orderResult) {
+            throw orderError || new Error("Order failed");
+          }
+
+          realOrderId = orderResult.id;
+
+          for (const p of group) {
+            const cleaned = {
+              order_id: realOrderId,
+              user_id: currentUser.id,
+              tour_id: tourData.id,
+              tour_title: selectedTour,
+              departure_date: effectiveDepartureDate
+                ? cleanValueForDB("departure_date", effectiveDepartureDate)
+                : null,
+              name: `${p.first_name} ${p.last_name}`.trim(),
+              room_allocation: p.room_allocation || "",
+              serial_no: p.serial_no || "",
+              passenger_number: p.passenger_number || `PAX-${Date.now()}`,
+              last_name: p.last_name || "",
+              first_name: p.first_name || "",
+              date_of_birth: cleanValueForDB("date_of_birth", p.date_of_birth),
+              age: p.age || null,
+              gender: p.gender || null,
+              passport_number: p.passport_number || "",
+              passport_expire: cleanValueForDB(
+                "passport_expire",
+                p.passport_expire,
+              ),
+              nationality: p.nationality || "Mongolia",
+              roomType: p.roomType || "",
+              hotel: p.hotel || "",
+              additional_services: p.additional_services || [],
+              price: p.price || 0,
+              email: p.email || "",
+              phone: p.phone || "",
+              passport_upload: p.passport_upload || null,
+              allergy: p.allergy || "",
+              emergency_phone: p.emergency_phone || "",
+              status: "pending",
+              is_blacklisted: false,
+              notes: p.notes || "",
+              seat_count: p.seat_count || 1,
+              main_passenger_id: p.main_passenger_id || null,
+              sub_passenger_count: p.sub_passenger_count || 0,
+              has_sub_passengers: p.has_sub_passengers || false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              itinerary_status: p.itinerary_status || "No itinerary",
+              pax_type: p.pax_type || "Adult",
+              group_color: p.group_color || null,
+            };
+
+            await supabase.from(target).insert(cleaned);
+          }
         }
 
         savedOrders.push({
-          id: orderResult.id,
+          id: String(realOrderId),
           tour_title: selectedTour,
           departureDate: effectiveDepartureDate,
           total_price: groupPrice,
@@ -723,7 +748,7 @@ export const useBooking = ({
       setOrders((prev) => [...prev, ...savedOrders]);
       showNotification(
         "success",
-        `${groups.length} booking${groups.length > 1 ? "s" : ""} created!`
+        `${groups.length} booking${groups.length > 1 ? "s" : ""} created!`,
       );
       resetBookingForm();
     } catch (error: any) {

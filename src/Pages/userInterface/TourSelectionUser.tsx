@@ -3,6 +3,7 @@ import { MapPin, Calendar, Hotel, Package } from "lucide-react";
 import { toast } from "react-toastify";
 import { checkSeatLimit } from "../../utils/seatLimitChecks";
 import type { Tour, ValidationError } from "../../types/type";
+import { isTourBookableInB2B } from "../../utils/tourSource";
 
 interface TourSelectionUserProps {
   tours: Tour[];
@@ -43,9 +44,17 @@ export default function TourSelectionUser({
     undefined
   );
 
+  const hiddenGlobalToursCount = useMemo(
+    () => tours.filter((tour) => !isTourBookableInB2B(tour)).length,
+    [tours],
+  );
+
   const mergedTours = useMemo(() => {
     const map = new Map<string, Tour & { dates: string[] }>();
     for (const tour of tours) {
+      if (!isTourBookableInB2B(tour)) {
+        continue;
+      }
       if (!tour.title) {
         console.warn("Tour missing title:", JSON.stringify(tour, null, 2));
         continue;
@@ -159,9 +168,19 @@ export default function TourSelectionUser({
       </h3>
 
       {mergedTours.length === 0 ? (
-        <p className="text-red-500 text-sm mb-4">
-          No tours available. Please contact support or try refreshing the page.
-        </p>
+        <div className="space-y-2 mb-4">
+          <p className="text-red-500 text-sm">
+            No tours available. Please contact support or try refreshing the
+            page.
+          </p>
+          {hiddenGlobalToursCount > 0 && (
+            <p className="text-amber-600 text-sm">
+              {hiddenGlobalToursCount} Global-only tour
+              {hiddenGlobalToursCount > 1 ? "s are" : " is"} waiting B2B sync,
+              so booking is locked for now.
+            </p>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
@@ -196,6 +215,13 @@ export default function TourSelectionUser({
             {hasTourError && (
               <p id="tour-error" className="text-red-500 text-xs mt-1">
                 Please select a tour
+              </p>
+            )}
+            {hiddenGlobalToursCount > 0 && (
+              <p className="text-amber-600 text-xs mt-2">
+                {hiddenGlobalToursCount} Global-only tour
+                {hiddenGlobalToursCount > 1 ? "s are" : " is"} hidden until
+                synced into B2B.
               </p>
             )}
           </div>

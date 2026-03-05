@@ -13,6 +13,15 @@ import { supabase } from "../supabaseClient";
 import Navbar from "./Navbar";
 import RoleChanger from "../components/RoleChanger";
 import AuthRequest from "../components/AuthRequest";
+import {
+  fetchOrdersFromGlobalApi,
+  fetchGlobalApiSnapshot,
+  isGlobalApiEnabled,
+  type GlobalApiSnapshot,
+} from "../api/globalTravel";
+import { syncGlobalTours, type B2BGlobalTourSyncResult } from "../api/b2b";
+import { listPendingUsersAdmin } from "../api/admin";
+import { toast } from "react-toastify";
 
 interface AdminInterfaceProps {
   users: UserType[];
@@ -51,18 +60,99 @@ function AdminInterface({
     services: "",
   });
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
+  const [adminTourSourceFilter, setAdminTourSourceFilter] = useState<
+    "all" | "global" | "global+local" | "local"
+  >("all");
+  const [globalSnapshot, setGlobalSnapshot] =
+    useState<GlobalApiSnapshot | null>(null);
+  const [globalSnapshotLoading, setGlobalSnapshotLoading] = useState(false);
+  const [globalSyncLoading, setGlobalSyncLoading] = useState(false);
+  const [lastGlobalSyncResult, setLastGlobalSyncResult] =
+    useState<B2BGlobalTourSyncResult | null>(null);
+  const [globalPreviewOrders, setGlobalPreviewOrders] = useState<Order[]>([]);
+  const [globalPreviewError, setGlobalPreviewError] = useState<string | null>(
+    null,
+  );
+
+  const refreshGlobalSnapshot = useCallback(async () => {
+    if (!isGlobalApiEnabled) return;
+    setGlobalSnapshotLoading(true);
+    setGlobalPreviewError(null);
+    try {
+      const snapshot = await fetchGlobalApiSnapshot();
+      let latestOrders: Order[] = [];
+
+      try {
+        const orders = await fetchOrdersFromGlobalApi();
+        latestOrders = [...orders]
+          .sort((a, b) => {
+            const aTime = new Date(a.created_at || 0).getTime();
+            const bTime = new Date(b.created_at || 0).getTime();
+            return bTime - aTime;
+          })
+          .slice(0, 5);
+      } catch (ordersError: any) {
+        const message =
+          ordersError?.message || "Global orders endpoint is unavailable";
+        setGlobalPreviewError(message);
+      }
+
+      setGlobalSnapshot(snapshot);
+      setGlobalPreviewOrders(latestOrders);
+      if (!snapshot.online) {
+        setGlobalPreviewError(snapshot.message);
+      }
+    } catch (error: any) {
+      setGlobalPreviewOrders([]);
+      setGlobalPreviewError(
+        error?.message || "Failed to load Global API orders",
+      );
+    } finally {
+      setGlobalSnapshotLoading(false);
+    }
+  }, []);
+
+  const handleGlobalTourSync = useCallback(
+    async (dryRun = false) => {
+      setGlobalSyncLoading(true);
+      try {
+        const { data } = await syncGlobalTours({ dryRun });
+        setLastGlobalSyncResult(data);
+
+        const modeLabel = dryRun ? "Dry run" : "Sync";
+        toast.success(
+          `${modeLabel} done: ${data.inserted} inserted, ${data.updated} updated, ${data.linked} linked, ${data.skipped} skipped`,
+        );
+
+        if (!dryRun) {
+          const { data: toursData } = await supabase
+            .from("tours")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (Array.isArray(toursData)) {
+            setTours(toursData as Tour[]);
+          }
+        }
+
+        void refreshGlobalSnapshot();
+      } catch (error: any) {
+        toast.error(error?.message || "Failed to sync Global tours");
+      } finally {
+        setGlobalSyncLoading(false);
+      }
+    },
+    [refreshGlobalSnapshot, setTours],
+  );
 
   // 🔥 ENHANCED: Refresh users when new auth requests are approved
   const handleAuthRequestRefresh = useCallback(async () => {
     try {
-      const [{ data: users }, { count }] = await Promise.all([
+      const [{ data: users }, pendingRows] = await Promise.all([
         supabase.from("users").select("*"),
-        supabase
-          .from("pending_users")
-          .select("*", { count: "exact", head: true }),
+        listPendingUsersAdmin<{ id: string }>(),
       ]);
       if (users) setUsers(users);
-      setPendingUsersCount(count || 0);
+      setPendingUsersCount(pendingRows.length || 0);
       setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error(err);
@@ -76,9 +166,16 @@ function AdminInterface({
     return () => clearInterval(interval);
   }, [handleAuthRequestRefresh]);
 
+  useEffect(() => {
+    if (!isGlobalApiEnabled) {
+      setGlobalSnapshot(null);
+      return;
+    }
+  }, []);
+
   const handleAddTourTab = async () => {
     if (!newTour.departure_date) {
-      alert("Departure date is required");
+      toast.error("Departure date is required");
       return;
     }
 
@@ -112,7 +209,7 @@ function AdminInterface({
 
     if (error) {
       console.error("Supabase error:", error);
-      alert("Error adding tour: " + error.message);
+      toast.error("Error adding tour: " + error.message);
       return;
     }
 
@@ -125,17 +222,17 @@ function AdminInterface({
       hotels: "",
       services: "",
     });
-    alert("Tour added successfully!");
+    toast.success("Tour added successfully!");
   };
 
   const handleDeleteTour = async (tourId: string) => {
     const { error } = await supabase.from("tours").delete().eq("id", tourId);
     if (error) {
-      alert("Error deleting tour: " + error.message);
+      toast.error("Error deleting tour: " + error.message);
       return;
     }
     setTours(tours.filter((tour) => tour.id !== tourId));
-    alert("Tour deleted successfully!");
+    toast.success("Tour deleted successfully!");
   };
 
   const handleUpdateUser = async (user: UserType) => {
@@ -148,12 +245,12 @@ function AdminInterface({
       .eq("id", user.id);
 
     if (error) {
-      alert("Error updating user: " + error.message);
+      toast.error("Error updating user: " + error.message);
       return;
     }
     setUsers(users.map((u) => (u.id === user.id ? user : u)));
     setEditingUser(null);
-    alert("User updated successfully!");
+    toast.success("User updated successfully!");
   };
 
   // FIXED: Safe ID display function
@@ -166,9 +263,30 @@ function AdminInterface({
     return idStr;
   };
 
+  const getTourSourceLabel = (sourceTag?: Tour["source_tag"]) => {
+    if (sourceTag === "global") return "Global";
+    if (sourceTag === "global+local") return "Global + Local";
+    return "Local";
+  };
+
+  const getTourSourceClassName = (sourceTag?: Tour["source_tag"]) => {
+    if (sourceTag === "global") {
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    }
+    if (sourceTag === "global+local") {
+      return "bg-blue-100 text-blue-700 border-blue-200";
+    }
+    return "bg-gray-100 text-gray-700 border-gray-200";
+  };
+
   // DEBUG: Check if user can see admin tabs
   const canSeeAdminTabs =
     currentUser.role === "superadmin" || currentUser.role === "admin";
+
+  const filteredAdminTours = tours.filter((tour) => {
+    if (adminTourSourceFilter === "all") return true;
+    return (tour.source_tag ?? "local") === adminTourSourceFilter;
+  });
 
   return (
     <div className="mono-shell">
@@ -208,9 +326,149 @@ function AdminInterface({
       </div>
 
       <div className="mono-container px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mono-card p-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                Global Travel API
+              </p>
+              <p className="text-sm text-gray-700 mt-1">
+                {isGlobalApiEnabled
+                  ? globalSnapshot?.message || "Checking connection..."
+                  : "Feature flag is OFF (VITE_GLOBAL_API_ENABLED=false)"}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Last checked:{" "}
+                {globalSnapshot?.checkedAt
+                  ? new Date(globalSnapshot.checkedAt).toLocaleString()
+                  : "-"}
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <span
+                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  isGlobalApiEnabled && globalSnapshot?.online
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+              >
+                {isGlobalApiEnabled
+                  ? globalSnapshot?.online
+                    ? "Online"
+                    : "Offline"
+                  : "Disabled"}
+              </span>
+              <span className="text-sm text-gray-600">
+                Tours: {globalSnapshot?.toursCount ?? "—"}
+              </span>
+              <span className="text-sm text-gray-600">
+                Orders: {globalSnapshot?.ordersCount ?? "—"}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleGlobalTourSync(true)}
+                disabled={globalSyncLoading}
+                className="px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 rounded-md border border-amber-200 hover:bg-amber-100 disabled:opacity-60"
+              >
+                {globalSyncLoading ? "Working..." : "Dry Run Sync"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleGlobalTourSync(false)}
+                disabled={globalSyncLoading}
+                className="px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200 hover:bg-emerald-100 disabled:opacity-60"
+              >
+                {globalSyncLoading ? "Working..." : "Sync Tours"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void refreshGlobalSnapshot()}
+                disabled={globalSnapshotLoading || !isGlobalApiEnabled}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-md border border-gray-200 hover:bg-gray-200 disabled:opacity-60"
+              >
+                {globalSnapshotLoading ? "Checking..." : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {lastGlobalSyncResult && (
+            <p className="mt-3 text-xs text-gray-600">
+              Last sync ({lastGlobalSyncResult.dryRun ? "dry run" : "applied"})
+              at {new Date(lastGlobalSyncResult.processedAt).toLocaleString()}:
+              inserted {lastGlobalSyncResult.inserted}, updated{" "}
+              {lastGlobalSyncResult.updated}, linked{" "}
+              {lastGlobalSyncResult.linked}, skipped{" "}
+              {lastGlobalSyncResult.skipped}.
+            </p>
+          )}
+
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <p className="text-xs uppercase tracking-[0.15em] text-gray-500 mb-2">
+              Recent Global Orders (Latest 5)
+            </p>
+
+            {!isGlobalApiEnabled ? (
+              <p className="text-sm text-amber-700">
+                Turn on `VITE_GLOBAL_API_ENABLED=true` and restart dev server to
+                load live global orders.
+              </p>
+            ) : globalPreviewError ? (
+              <p className="text-sm text-red-600">{globalPreviewError}</p>
+            ) : globalSnapshotLoading ? (
+              <p className="text-sm text-gray-500">Loading latest orders...</p>
+            ) : globalPreviewOrders.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No orders returned from Global API.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b border-gray-100">
+                      <th className="py-2 pr-4">Order</th>
+                      <th className="py-2 pr-4">Tour</th>
+                      <th className="py-2 pr-4">Departure</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {globalPreviewOrders.map((order) => (
+                      <tr key={order.id} className="border-b border-gray-50">
+                        <td className="py-2 pr-4 font-medium text-gray-800">
+                          {displayOrderId(order.order_id || order.id)}
+                        </td>
+                        <td className="py-2 pr-4 text-gray-700">
+                          {order.tour || order.tour_title || "-"}
+                        </td>
+                        <td className="py-2 pr-4 text-gray-700">
+                          {order.departureDate || "-"}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                            {order.status || "pending"}
+                          </span>
+                        </td>
+                        <td className="py-2 text-gray-600">
+                          {order.created_at
+                            ? new Date(order.created_at).toLocaleString()
+                            : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* ENHANCED Navigation Tabs */}
         <div>
-          <nav className="flex flex-wrap gap-6 border-b border-gray-200" aria-label="Tabs">
+          <nav
+            className="flex flex-wrap gap-6 border-b border-gray-200"
+            aria-label="Tabs"
+          >
             <button
               onClick={() => setSelectedTab("orders")}
               className={`group flex items-center pb-3 px-1 text-sm font-medium transition-colors ${
@@ -227,9 +485,7 @@ function AdminInterface({
                 }`}
               />
               Orders
-              <span className="ml-2 mono-badge">
-                {orders.length}
-              </span>
+              <span className="ml-2 mono-badge">{orders.length}</span>
             </button>
 
             {/* Show tabs for both admin and superadmin */}
@@ -251,9 +507,7 @@ function AdminInterface({
                     }`}
                   />
                   Users
-                  <span className="ml-2 mono-badge">
-                    {users.length}
-                  </span>
+                  <span className="ml-2 mono-badge">{users.length}</span>
                 </button>
 
                 {/* ENHANCED: Auth Requests Tab with Dynamic Badge */}
@@ -305,17 +559,6 @@ function AdminInterface({
             )}
           </nav>
         </div>
-
-        {/* Debug Info - Remove after testing */}
-        {process.env.NODE_ENV === "development" && (
-          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-800">
-              🔍 <strong>Debug:</strong> Role: {currentUser.role} | Can see
-              admin tabs: {canSeeAdminTabs ? "YES" : "NO"} | Pending:{" "}
-              {pendingUsersCount} | Users: {users.length}
-            </p>
-          </div>
-        )}
 
         {/* Orders Tab */}
         {selectedTab === "orders" && (
@@ -392,7 +635,7 @@ function AdminInterface({
                               </div>
                               <div className="text-sm text-gray-500">
                                 {new Date(
-                                  order.created_at
+                                  order.created_at,
                                 ).toLocaleDateString()}
                               </div>
                             </div>
@@ -409,7 +652,7 @@ function AdminInterface({
                             <MapPin className="w-4 h-4 mr-1 text-gray-400" />
                             {order.departureDate
                               ? new Date(
-                                  order.departureDate
+                                  order.departureDate,
                                 ).toLocaleDateString()
                               : "TBD"}
                           </div>
@@ -500,12 +743,12 @@ function AdminInterface({
                                 user.role === "user"
                                   ? "bg-blue-100 text-blue-800"
                                   : user.role === "admin"
-                                  ? "bg-purple-100 text-purple-800"
-                                  : user.role === "superadmin"
-                                  ? "bg-indigo-100 text-indigo-800"
-                                  : user.role === "provider"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-yellow-100 text-yellow-800"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : user.role === "superadmin"
+                                      ? "bg-indigo-100 text-indigo-800"
+                                      : user.role === "provider"
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-yellow-100 text-yellow-800"
                               }`}
                             >
                               {user.role}
@@ -517,10 +760,10 @@ function AdminInterface({
                                 user.status === "approved"
                                   ? "bg-green-100 text-green-800"
                                   : user.status === "pending"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : user.access === "suspended"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-gray-100 text-gray-800"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : user.access === "suspended"
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-gray-100 text-gray-800"
                               }`}
                             >
                               {user.status || user.access}
@@ -568,9 +811,11 @@ function AdminInterface({
                               })
                             }
                           >
-                            <option value="user">User</option>
+                            <option value="user">SubContractor (legacy)</option>
+                            <option value="subcontractor">SubContractor</option>
                             <option value="admin">Admin</option>
-                            <option value="provider">Provider</option>
+                            <option value="provider">Agent (legacy)</option>
+                            <option value="agent">Agent</option>
                             <option value="manager">Manager</option>
                             {currentUser.role === "superadmin" && (
                               <option value="superadmin">Superadmin</option>
@@ -747,6 +992,98 @@ function AdminInterface({
                   <MapPin className="w-4 h-4 mr-2" />
                   Add Tour
                 </button>
+              </div>
+
+              <div className="mt-8 border-t border-gray-200 pt-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h4 className="text-base font-semibold text-gray-900">
+                    Current Tours
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600">
+                      {filteredAdminTours.length} of {tours.length}
+                    </span>
+                    <select
+                      value={adminTourSourceFilter}
+                      onChange={(e) =>
+                        setAdminTourSourceFilter(
+                          e.target.value as
+                            | "all"
+                            | "global"
+                            | "global+local"
+                            | "local",
+                        )
+                      }
+                      className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-md"
+                    >
+                      <option value="all">All Sources</option>
+                      <option value="global">Global</option>
+                      <option value="global+local">Global + Local</option>
+                      <option value="local">Local</option>
+                    </select>
+                  </div>
+                </div>
+
+                {filteredAdminTours.length === 0 ? (
+                  <p className="text-sm text-gray-500">No tours found.</p>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">
+                            Title
+                          </th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">
+                            Source
+                          </th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">
+                            Departure
+                          </th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">
+                            Seats
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAdminTours.slice(0, 20).map((tour) => (
+                          <tr
+                            key={tour.id}
+                            className="border-b last:border-b-0 border-gray-100"
+                          >
+                            <td className="px-4 py-2 text-gray-900">
+                              {tour.title || "Untitled Tour"}
+                            </td>
+                            <td className="px-4 py-2">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-xs font-medium ${getTourSourceClassName(
+                                  tour.source_tag,
+                                )}`}
+                              >
+                                {getTourSourceLabel(tour.source_tag)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-gray-700">
+                              {tour.departure_date
+                                ? new Date(
+                                    tour.departure_date,
+                                  ).toLocaleDateString()
+                                : "-"}
+                            </td>
+                            <td className="px-4 py-2 text-gray-700">
+                              {tour.seats || 0}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filteredAdminTours.length > 20 && (
+                      <div className="px-4 py-2 text-xs text-gray-500 bg-gray-50 border-t border-gray-200">
+                        Showing first 20 tours
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

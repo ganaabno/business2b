@@ -41,11 +41,11 @@ export default function BookingsList({
 
   const ordersById = useMemo(
     () => new Map(orders.map((order) => [String(order.id), order])),
-    [orders]
+    [orders],
   );
   const toursById = useMemo(
     () => new Map(tours.map((tour) => [String(tour.id), tour])),
-    [tours]
+    [tours],
   );
 
   const fetchPendingRequests = useCallback(async () => {
@@ -76,7 +76,7 @@ export default function BookingsList({
           table: "passenger_requests",
           filter: `user_id=eq.${currentUser.id}`,
         },
-        () => fetchPendingRequests()
+        () => fetchPendingRequests(),
       )
       .subscribe();
 
@@ -105,22 +105,22 @@ export default function BookingsList({
 
     return userPassengers
       .filter(
-        (p): p is { created_at: string } & typeof p => p.created_at !== null
+        (p): p is { created_at: string } & typeof p => p.created_at !== null,
       )
       .sort(
         (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
   }, [passengers, ordersById, toursById, currentUser.id]);
 
   const sortedPendingRequests = useMemo(() => {
     return pendingRequests
       .filter(
-        (p): p is { created_at: string } & typeof p => p.created_at !== null
+        (p): p is { created_at: string } & typeof p => p.created_at !== null,
       )
       .sort(
         (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
   }, [pendingRequests]);
 
@@ -143,7 +143,7 @@ export default function BookingsList({
     return {
       items: combined.slice(
         (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
+        currentPage * itemsPerPage,
       ),
       totalPages,
     };
@@ -198,8 +198,8 @@ export default function BookingsList({
                       item.status === "active"
                         ? "mono-badge--success"
                         : item.status === "pending"
-                        ? "mono-badge--warning"
-                        : ""
+                          ? "mono-badge--warning"
+                          : ""
                     }`}
                   >
                     {item.status.charAt(0).toUpperCase() + item.status.slice(1)}

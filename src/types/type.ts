@@ -1,4 +1,11 @@
-export type Role = "user" | "provider" | "admin" | "superadmin" | "manager";
+export type Role =
+  | "user"
+  | "provider"
+  | "admin"
+  | "superadmin"
+  | "manager"
+  | "subcontractor"
+  | "agent";
 
 export interface User {
   userId: string;
@@ -104,8 +111,21 @@ export interface Service {
 }
 
 export interface Tour {
+  source_tag?: "global" | "local" | "global+local";
+  source_system?: string | null;
+  source_tour_id?: string | null;
   show_to_user: any;
   image_key?: string | null;
+  cover_photo?: string | null;
+  country?: string | null;
+  hotel?: string | null;
+  country_temperature?: string | null;
+  duration_day?: string | null;
+  duration_night?: string | null;
+  group_size?: string | number | null;
+  is_featured?: boolean | null;
+  genre?: string | null;
+  airlines?: string[] | null;
   id: string;
   title: string;
   description: string | null;
@@ -147,9 +167,24 @@ export interface PendingUser {
   email: string;
   username: string;
   password: string;
-  role_requested: "user" | "manager" | "provider";
+  role_requested: "user" | "manager" | "provider" | "agent";
   status: "pending" | "approved" | "declined";
   created_at: string;
+  contract_version_id?: string | null;
+  contract_accepted_at?: string | null;
+  contract_signed_name?: string | null;
+  contract_signer_full_name?: string | null;
+  contract_signer_signature?: string | null;
+  contract_agent_name?: string | null;
+  contract_counterparty_full_name?: string | null;
+  contract_counterparty_signature?: string | null;
+  contract_denied_at?: string | null;
+  agent_contract_versions?: {
+    id: string;
+    version_no: number;
+    title: string;
+    file_url?: string | null;
+  } | null;
   approved_by?: string;
   approved_at?: string;
   notes?: string;
@@ -157,6 +192,7 @@ export interface PendingUser {
 }
 
 export interface Order {
+  source?: "global" | "local";
   note?: string | null;
   passenger_requests?: Passenger[];
   id: string;
@@ -415,6 +451,15 @@ export type TourFormData = {
   base_price?: string;
   hotels?: string; // comma-separated
   services?: string; // comma-separated
+  country?: string;
+  hotel?: string;
+  country_temperature?: string;
+  duration_day?: string;
+  duration_night?: string;
+  group_size?: string;
+  genre?: string;
+  airlines?: string;
+  is_featured?: boolean;
   image_key?: string;
   show_to_user?: boolean;
   show_in_provider?: boolean;

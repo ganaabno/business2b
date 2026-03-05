@@ -19,8 +19,8 @@ import Notification from "../Parts/Notification";
 import ErrorSummary from "../Parts/ErrorSummary";
 import { PassengerList } from "./PassengerList";
 import { MobileFooter } from "./MobileFooter";
-import { useTours } from "../hooks/useTours";
 import { toast } from "react-hot-toast";
+import { isTourBookableInB2B } from "../utils/tourSource";
 
 const sanitizeDate = (date: string | null | undefined): string => {
   if (!date) return "";
@@ -29,6 +29,7 @@ const sanitizeDate = (date: string | null | undefined): string => {
 };
 
 interface AddPassengerTabProps {
+  tours: Tour[];
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   selectedTour: string;
@@ -47,6 +48,7 @@ interface AddPassengerTabProps {
     tourId: string;
     departureDate: string | null;
   } | null;
+  onPrefilledLeadConsumed?: () => void;
 }
 
 const NATIONALITIES = [
@@ -77,11 +79,9 @@ const ROOM_TYPES = [
 ];
 
 export default function AddPassengerTab(props: AddPassengerTabProps) {
-  const { currentUser, prefilledLead } = props;
+  const { currentUser, prefilledLead, onPrefilledLeadConsumed } = props;
   const userRole = currentUser.role || "user";
-  const [hasAppliedLead, setHasAppliedLead] = useState(false);
-
-  const { tours, loading: toursLoading, refreshTours } = useTours({ userRole });
+  const tours = props.tours;
 
   const {
     bookingPassengers,
@@ -118,18 +118,36 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
     setPaymentMethod,
   } = useBooking({ ...props, tours });
 
-  const hasAppliedLeadRef = useRef(false);
+  const appliedLeadKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!prefilledLead || hasAppliedLeadRef.current) return;
+    if (!prefilledLead) {
+      appliedLeadKeyRef.current = null;
+    }
+  }, [prefilledLead]);
+
+  useEffect(() => {
+    if (!prefilledLead) return;
+
+    const leadKey = [
+      prefilledLead.leadId || "",
+      prefilledLead.name || "",
+      prefilledLead.phone || "",
+      prefilledLead.passengerCount || 0,
+      prefilledLead.tourId || "",
+      prefilledLead.departureDate || "",
+    ].join("|");
+
+    if (appliedLeadKeyRef.current === leadKey) return;
 
     (window as any).__currentLeadId = prefilledLead.leadId;
 
     // Wait for tours to be loaded AND not empty
-    if (toursLoading || tours.length === 0) {
+    if (tours.length === 0) {
       return; // Will re-run when tours finish loading
     }
-    hasAppliedLeadRef.current = true;
+    appliedLeadKeyRef.current = leadKey;
+    onPrefilledLeadConsumed?.();
     setLeadPassengerData(null);
     setActiveStep(3);
 
@@ -159,6 +177,13 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
         return;
       }
 
+      if (!isTourBookableInB2B(matchedTour)) {
+        toast.error(
+          "This Global-only tour is not synced into B2B yet. Run tour sync first.",
+        );
+        return;
+      }
+
       props.setSelectedTour(matchedTour.title);
       if (departureDate) props.setDepartureDate(departureDate.trim());
 
@@ -180,18 +205,18 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
         updatePassenger(
           idx,
           "notes",
-          `From Lead → Group of ${passengerCount} passengers`
+          `From Lead → Group of ${passengerCount} passengers`,
         );
       }
 
       toast.success(
         `${name} (${passengerCount} pax) loaded — hotels & age ready!`,
-        { duration: 8000 }
+        { duration: 8000 },
       );
     };
 
     applyLead();
-  }, [prefilledLead, tours, toursLoading]); // This combo will re-run when tours load
+  }, [prefilledLead, tours, onPrefilledLeadConsumed]); // This combo will re-run when tours load
 
   // AUTO-FETCH TOUR DATA WHEN TOUR IS SET FROM LEAD
   useEffect(() => {
@@ -202,7 +227,7 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
       (t) =>
         t.title === props.selectedTour ||
         t.name === props.selectedTour ||
-        t.tour_number === props.selectedTour
+        t.tour_number === props.selectedTour,
     );
 
     if (foundTour) {
@@ -213,21 +238,6 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
       setTimeout(() => {}, 100);
     }
   }, [props.selectedTour, tours, selectedTourData]);
-
-  useEffect(() => {
-    refreshTours();
-  }, [refreshTours]);
-
-  if (toursLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
-          <p className="mt-4 text-gray-600">Loading tours...</p>
-        </div>
-      </div>
-    );
-  }
 
   const hasStartedBooking =
     bookingPassengers.length > 0 || props.selectedTour || props.departureDate;
@@ -292,7 +302,7 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                 onCancelEdit={() => {}}
                 showDeleteConfirm={null}
                 setShowDeleteConfirm={() => {}}
-                onRefresh={refreshTours}
+                onRefresh={async () => {}}
                 onSaveEdit={async () => {}}
                 onDelete={async () => {}}
                 onStatusChange={async () => {}}
@@ -301,7 +311,7 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
           </>
         )}
 
-        {activeStep === 2 && !prefilledLead && (
+        {activeStep === 2 && (
           <LeadPassengerForm
             selectedTour={props.selectedTour}
             departureDate={props.departureDate}
@@ -360,8 +370,8 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
                                 remainingSeats > 5
                                   ? "text-green-600"
                                   : remainingSeats > 0
-                                  ? "text-amber-600"
-                                  : "text-red-600"
+                                    ? "text-amber-600"
+                                    : "text-red-600"
                               }`}
                             >
                               {remainingSeats} seat{remainingSeats !== 1 && "s"}{" "}
@@ -417,7 +427,7 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
 
             <div className="flex gap-4 mt-10">
               <button
-                onClick={() => setActiveStep(2)}
+                onClick={() => setActiveStep(prefilledLead ? 1 : 2)}
                 className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
               >
                 ← Back
@@ -458,6 +468,8 @@ export default function AddPassengerTab(props: AddPassengerTabProps) {
         activeStep={activeStep}
         bookingPassengers={bookingPassengers}
         setActiveStep={setActiveStep}
+        selectedTour={props.selectedTour}
+        departureDate={props.departureDate}
         totalPrice={totalPrice}
         canAdd={canAdd}
         addPassenger={() => addMultiplePassengers(1)}

@@ -965,13 +965,13 @@ const PassengerTable = ({
                             <th className="sticky left-0 z-30 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-center border border-gray-50 bg-clip-padding">
                               #
                             </th>
-                            <th className="sticky left-12 z-20 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
+                            <th className="sticky left-10 z-20 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
                               Order ID
                             </th>
-                            <th className="sticky left-16 z-10 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
+                            <th className="sticky left-28 z-10 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
                               {t("lastName")}
                             </th>
-                            <th className="sticky left-46 z-10 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
+                            <th className="sticky left-60 z-10 bg-white px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
                               {t("firstName")}
                             </th>
                             <th className="px-3 py-2 text-xs font-medium text-gray-500 uppercase text-left border border-gray-50 bg-clip-padding">
@@ -1070,7 +1070,7 @@ const PassengerTable = ({
                                     {isFirstInOrder && (
                                       <td
                                         rowSpan={orderGroup.passengers.length}
-                                        className="sticky left-12 z-20 px-4 py-3 font-bold text-gray-800 align-top shadow-sm border border-gray-50 bg-clip-padding"
+                                        className="sticky left-10 z-20 px-4 py-3 font-bold text-gray-800 align-top shadow-sm border border-gray-50 bg-clip-padding"
                                         style={rowCellStyle}
                                       >
                                         <div className="flex items-center gap-3">
@@ -1080,13 +1080,13 @@ const PassengerTable = ({
                                     )}
 
                                     <td
-                                      className="sticky left-16 z-10 px-3 py-3 font-medium border border-gray-50 bg-clip-padding"
+                                      className="sticky left-28 z-10 px-3 py-3 font-medium border border-gray-50 bg-clip-padding"
                                       style={rowCellStyle}
                                     >
                                       {p.last_name || "—"}
                                     </td>
                                     <td
-                                      className="sticky left-46 z-10 px-3 py-3 font-medium text-blue-900 border border-gray-50 bg-clip-padding"
+                                      className="sticky left-60 z-10 px-3 py-3 font-medium text-blue-900 border border-gray-50 bg-clip-padding"
                                       style={rowCellStyle}
                                     >
                                       {p.first_name || "—"}

@@ -27,9 +27,24 @@ interface PendingUser {
   username: string;
   password?: string;
   password_hash?: string;
-  role_requested: "user" | "manager" | "provider";
+  role_requested: "user" | "manager" | "provider" | "agent";
   status: "pending" | "approved" | "declined";
   created_at: string;
+  contract_version_id?: string | null;
+  contract_accepted_at?: string | null;
+  contract_signed_name?: string | null;
+  contract_signer_full_name?: string | null;
+  contract_signer_signature?: string | null;
+  contract_agent_name?: string | null;
+  contract_counterparty_full_name?: string | null;
+  contract_counterparty_signature?: string | null;
+  contract_denied_at?: string | null;
+  agent_contract_versions?: {
+    id: string;
+    version_no: number;
+    title: string;
+    file_url?: string | null;
+  } | null;
   approved_by?: string;
   approved_at?: string;
   notes?: string;
@@ -49,16 +64,16 @@ export default function AuthRequest({
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [autoSlide, setAutoSlide] = useState(true);
   const [view, setView] = useState<"feed" | "list">("feed");
   const slideIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 🔥 Debounce ref
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 🔥 STABLE: Memoized fetch function (prevents useEffect loops)
   const fetchAllRequests = useCallback(async () => {
     // Clear previous timeout
     if (fetchTimeoutRef.current) {
@@ -71,10 +86,16 @@ export default function AuthRequest({
         setLoading(true);
 
         const allData = await listPendingUsersAdmin<PendingUser>();
+        setLoadError("");
 
         setAllUsers(allData);
 
-        const pendingData = allData.filter((user) => user.status === "pending");
+        const pendingData = allData.filter(
+          (user) =>
+            String(user.status || "pending")
+              .trim()
+              .toLowerCase() === "pending",
+        );
         setPendingUsers(pendingData);
 
         onPendingCountChange?.(pendingData.length);
@@ -83,6 +104,11 @@ export default function AuthRequest({
           setCurrentIndex(0);
         }
       } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Failed to load auth requests";
+        setLoadError(message);
         setAllUsers([]);
         setPendingUsers([]);
         onPendingCountChange?.(0);
@@ -128,7 +154,7 @@ export default function AuthRequest({
     async (userId: string): Promise<PendingUser | null> => {
       return getPendingUserAdmin<PendingUser>(userId);
     },
-    []
+    [],
   );
 
   // 🔥 BULLETPROOF: Approve
@@ -139,23 +165,45 @@ export default function AuthRequest({
 
       try {
         pendingUser = await fetchSinglePendingUser(userId);
+        const localUser =
+          pendingUsers.find((user) => user.id === userId) ||
+          allUsers.find((user) => user.id === userId) ||
+          null;
+        const reviewUser = pendingUser || localUser;
+
         if (!pendingUser) {
-          throw new Error("Could not fetch pending user");
+          if (!reviewUser) {
+            throw new Error("Could not fetch pending user");
+          }
+          pendingUser = reviewUser;
         }
 
-        if (pendingUser.status !== "pending") {
-          throw new Error(`User not pending (status: ${pendingUser.status})`);
+        if (reviewUser && reviewUser.status !== "pending") {
+          throw new Error(`User not pending (status: ${reviewUser.status})`);
         }
+
+        if (
+          reviewUser &&
+          reviewUser.role_requested === "agent" &&
+          (!reviewUser.contract_accepted_at ||
+            !reviewUser.contract_signer_full_name ||
+            !reviewUser.contract_signer_signature ||
+            !reviewUser.contract_agent_name ||
+            !reviewUser.contract_counterparty_full_name ||
+            !reviewUser.contract_counterparty_signature)
+        ) {
+          throw new Error("Agent request is missing contract signature fields");
+        }
+
         await approvePendingUserAdmin(userId);
         await fetchAllRequests();
         onRefresh?.();
 
         showNotification(
-          `✅ ${pendingUser.username} approved! They can now log in.`,
-          "success"
+          `✅ ${(reviewUser || pendingUser).username} approved! They can now log in.`,
+          "success",
         );
       } catch (error: any) {
-
         let message = "Failed to approve user";
         if (error.message) {
           message = error.message;
@@ -167,7 +215,7 @@ export default function AuthRequest({
         await fetchAllRequests(); // refresh anyway so UI doesn't lie
       }
     },
-    [currentUserId, fetchSinglePendingUser, onRefresh]
+    [allUsers, currentUserId, fetchSinglePendingUser, onRefresh, pendingUsers],
   );
 
   // 🔥 Decline (works already)
@@ -188,7 +236,7 @@ export default function AuthRequest({
 
         showNotification(
           `❌ ${pendingUser.username}'s request declined`,
-          "error"
+          "error",
         );
       } catch (error: any) {
         showNotification(`❌ Failed to decline: ${error.message}`, "error");
@@ -196,14 +244,14 @@ export default function AuthRequest({
         setActionLoading((prev) => ({ ...prev, [userId]: false }));
       }
     },
-    [currentUserId, fetchSinglePendingUser, onRefresh]
+    [currentUserId, fetchSinglePendingUser, onRefresh],
   );
 
   // UI functions
   const sendApprovalEmail = async (
     email: string,
     username: string,
-    role: string
+    role: string,
   ) => {};
 
   const showNotification = (message: string, type: "success" | "error") => {
@@ -212,8 +260,8 @@ export default function AuthRequest({
       type === "success"
         ? "bg-green-500 text-white"
         : type === "error"
-        ? "bg-red-500 text-white"
-        : "bg-blue-500 text-white"
+          ? "bg-red-500 text-white"
+          : "bg-blue-500 text-white"
     }`;
     notification.innerHTML = `<div class="font-medium">${message}</div>`;
 
@@ -238,20 +286,20 @@ export default function AuthRequest({
       role === "user"
         ? "from-blue-500"
         : role === "manager"
-        ? "from-yellow-500"
-        : "from-green-500",
+          ? "from-yellow-500"
+          : "from-green-500",
     to:
       role === "user"
         ? "to-blue-600"
         : role === "manager"
-        ? "to-yellow-600"
-        : "to-green-600",
+          ? "to-yellow-600"
+          : "to-green-600",
     text:
       role === "user"
         ? "text-blue-100"
         : role === "manager"
-        ? "text-yellow-100"
-        : "text-green-100",
+          ? "text-yellow-100"
+          : "text-green-100",
   });
 
   const getStatusColor = (status: string) => {
@@ -300,6 +348,12 @@ export default function AuthRequest({
   return (
     <div className="bg-white rounded-xl shadow-sm border">
       {renderDebugButtons()}
+
+      {loadError && (
+        <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load auth requests: {loadError}
+        </div>
+      )}
 
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
@@ -408,9 +462,59 @@ export default function AuthRequest({
                               <div className="flex items-center">
                                 <Calendar className="w-3 h-3 mr-1" />
                                 {new Date(
-                                  request.created_at
+                                  request.created_at,
                                 ).toLocaleDateString()}
                               </div>
+                              {request.role_requested === "agent" && (
+                                <>
+                                  <div className="text-[11px] text-gray-600">
+                                    Contract:{" "}
+                                    {request.contract_accepted_at
+                                      ? "Accepted"
+                                      : "Missing"}
+                                  </div>
+                                  {request.contract_signed_name && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Signer:{" "}
+                                      {request.contract_signer_full_name ||
+                                        request.contract_signed_name}
+                                    </div>
+                                  )}
+                                  {request.contract_signer_signature && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Signer Signature:{" "}
+                                      {request.contract_signer_signature}
+                                    </div>
+                                  )}
+                                  {request.contract_agent_name && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Agent: {request.contract_agent_name}
+                                    </div>
+                                  )}
+                                  {request.contract_counterparty_full_name && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Counterparty:{" "}
+                                      {request.contract_counterparty_full_name}
+                                    </div>
+                                  )}
+                                  {request.contract_counterparty_signature && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Counterparty Signature:{" "}
+                                      {request.contract_counterparty_signature}
+                                    </div>
+                                  )}
+                                  {request.agent_contract_versions
+                                    ?.version_no && (
+                                    <div className="text-[11px] text-gray-600">
+                                      Version: v
+                                      {
+                                        request.agent_contract_versions
+                                          .version_no
+                                      }
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -487,7 +591,7 @@ export default function AuthRequest({
                         setCurrentIndex(
                           (prev) =>
                             (prev - 1 + pendingUsers.length) %
-                            pendingUsers.length
+                            pendingUsers.length,
                         )
                       }
                       className="pointer-events-auto bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:shadow-xl transition-shadow border"
@@ -497,7 +601,7 @@ export default function AuthRequest({
                     <button
                       onClick={() =>
                         setCurrentIndex(
-                          (prev) => (prev + 1) % pendingUsers.length
+                          (prev) => (prev + 1) % pendingUsers.length,
                         )
                       }
                       className="pointer-events-auto bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:shadow-xl transition-shadow border"
@@ -545,7 +649,7 @@ export default function AuthRequest({
                         </h4>
                         <span
                           className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                            request.status
+                            request.status,
                           )}`}
                         >
                           {request.status.toUpperCase()}
@@ -565,6 +669,64 @@ export default function AuthRequest({
                           {new Date(request.created_at).toLocaleDateString()}
                         </span>
                       </div>
+
+                      {request.role_requested === "agent" && (
+                        <div className="mb-2 rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900 space-y-1">
+                          <p>
+                            Contract:{" "}
+                            {request.contract_accepted_at
+                              ? "Accepted"
+                              : "Missing"}
+                          </p>
+                          {request.contract_signed_name && (
+                            <p>
+                              Signer:{" "}
+                              {request.contract_signer_full_name ||
+                                request.contract_signed_name}
+                            </p>
+                          )}
+                          {request.contract_signer_signature && (
+                            <p>
+                              Signer Signature:{" "}
+                              {request.contract_signer_signature}
+                            </p>
+                          )}
+                          {request.contract_agent_name && (
+                            <p>Agent: {request.contract_agent_name}</p>
+                          )}
+                          {request.contract_counterparty_full_name && (
+                            <p>
+                              Counterparty:{" "}
+                              {request.contract_counterparty_full_name}
+                            </p>
+                          )}
+                          {request.contract_counterparty_signature && (
+                            <p>
+                              Counterparty Signature:{" "}
+                              {request.contract_counterparty_signature}
+                            </p>
+                          )}
+                          {request.agent_contract_versions?.version_no && (
+                            <p>
+                              Version: v
+                              {request.agent_contract_versions.version_no}
+                              {request.agent_contract_versions.title
+                                ? ` - ${request.agent_contract_versions.title}`
+                                : ""}
+                            </p>
+                          )}
+                          {request.agent_contract_versions?.file_url && (
+                            <a
+                              href={request.agent_contract_versions.file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline"
+                            >
+                              Open contract file
+                            </a>
+                          )}
+                        </div>
+                      )}
 
                       {request.notes && (
                         <p className="text-xs text-gray-400 italic bg-gray-50 p-2 rounded">

@@ -7,6 +7,7 @@ import {
 } from "react";
 import { supabase } from "../supabaseClient";
 import type { User, Role } from "../types/type";
+import { normalizeRole } from "../utils/roles";
 
 interface AuthContextType {
   currentUser: User | null;
@@ -29,10 +30,7 @@ export function useAuth() {
 }
 
 export function toRole(value: any): Role {
-  const v = String(value ?? "user") as Role;
-  return ["user", "provider", "admin", "superadmin", "manager"].includes(v)
-    ? v
-    : "user";
+  return normalizeRole(value);
 }
 
 async function fetchUser(uid: string): Promise<User | null> {
@@ -64,7 +62,7 @@ async function fetchUser(uid: string): Promise<User | null> {
          createdBy,
          createdAt,
          updatedAt,
-         auth_user_id`
+         auth_user_id`,
       )
       .eq("id", uid)
       .maybeSingle();
@@ -166,6 +164,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return; // Skip setting currentUser to avoid redirect
       }
 
+      if (event === "TOKEN_REFRESHED") {
+        return; // Avoid unnecessary app-wide reload on tab/app focus
+      }
+
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
         if (!session?.user) {
@@ -190,12 +192,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   /* ---------------------------------- */
   const hasPendingRequest = async (email: string): Promise<boolean> => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("pending_users")
-        .select("id")
+        .select("id, status")
         .eq("email", email)
-        .single();
-      return !!data;
+        .maybeSingle();
+
+      if (error) {
+        return false;
+      }
+
+      return (
+        !!data &&
+        String((data as { status?: string })?.status || "pending")
+          .trim()
+          .toLowerCase() === "pending"
+      );
     } catch {
       return false;
     }

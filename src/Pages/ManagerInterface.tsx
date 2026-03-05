@@ -39,6 +39,8 @@ import PassengerRequests from "../components/PassengerRequests";
 import BlackListTab from "../components/BlackList";
 import PassengersInLead from "../components/PassengersInLead";
 import InterestedLeadsTab from "../components/InterestedLeadsTab";
+import AgentContractsTab from "../components/AgentContractsTab";
+import AuthRequest from "../components/AuthRequest";
 import DataTable from "../Parts/DataTable.";
 import { useNotifications } from "../hooks/useNotifications";
 import { supabase } from "../supabaseClient";
@@ -47,6 +49,9 @@ import { useFlightDataStore } from "../Parts/flightDataStore";
 import type { Tour, ValidationError } from "../types/type";
 import ToursTable from "../components/ToursTable";
 import ProviderInterface from "./ProviderInterface";
+import B2BMonitoringPage from "./B2BMonitoringPage";
+import { featureFlags } from "../config/featureFlags";
+import { listPendingUsersAdmin } from "../api/admin";
 
 const supabaseClient = supabase;
 
@@ -62,6 +67,9 @@ type TabType =
   | "blacklist"
   | "flightData"
   | "tours"
+  | "contracts"
+  | "authRequests"
+  | "b2bWorkflows"
   | "ProviderInterface";
 
 type TabConfig = {
@@ -76,6 +84,7 @@ type TabConfig = {
     | "pendingLeads"
     | "blacklist"
     | "flightData"
+    | "authRequests"
     | "ProviderInterface";
 };
 
@@ -94,6 +103,22 @@ const TAB_CONFIG: TabConfig[] = [
     key: "tours",
     labelKey: "toursTable",
     icon: FileSpreadsheet,
+  },
+  {
+    key: "contracts",
+    labelKey: "contracts",
+    icon: FileText,
+  },
+  {
+    key: "authRequests",
+    labelKey: "authRequests",
+    icon: Clock,
+    countKey: "authRequests",
+  },
+  {
+    key: "b2bWorkflows",
+    labelKey: "b2bWorkflows",
+    icon: CheckCircle,
   },
   {
     key: "interestedLeads",
@@ -155,6 +180,9 @@ export default function ManagerInterface({
     const params = new URLSearchParams(window.location.search);
     if (params.get("fromLead") === "true") {
       setPrefilledLead({
+        leadId:
+          params.get("leadId") ||
+          `${params.get("tourId") || ""}-${params.get("date") || ""}-${params.get("name") || ""}`,
         tourId: params.get("tourId"),
         departureDate: params.get("date"),
         name: params.get("name") || "",
@@ -175,6 +203,7 @@ export default function ManagerInterface({
     pendingLeads: 0,
     blacklist: initialPassengers.filter((p: any) => p.is_blacklisted).length,
     flightData: 0,
+    authRequests: 0,
   });
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -206,11 +235,25 @@ export default function ManagerInterface({
           .select("*", { count: "exact", head: true }),
       ]);
 
+      let pendingAuthCount = 0;
+      try {
+        const pendingRows = await listPendingUsersAdmin<{ id: string }>();
+        pendingAuthCount = pendingRows.length;
+      } catch (pendingError) {
+        const { count } = await supabaseClient
+          .from("pending_users")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "pending");
+        pendingAuthCount = count || 0;
+        console.warn("Falling back to direct pending_users count", pendingError);
+      }
+
       setCounts((prev) => ({
         ...prev,
         requests: reqCount || 0,
         interested: interestedCount || 0,
         pendingLeads: leadCount || 0,
+        authRequests: pendingAuthCount || 0,
       }));
     } catch (err) {
       console.error("Failed to fetch counts", err);
@@ -234,6 +277,7 @@ export default function ManagerInterface({
       // Small delay to let React update
       setTimeout(() => {
         setPrefilledLead({
+          leadId: `${tourId || ""}-${departureDate || ""}-${name || ""}`,
           name,
           phone,
           passengerCount,
@@ -258,6 +302,7 @@ export default function ManagerInterface({
 
       // Set prefill
       setPrefilledLead({
+        leadId: `${tourId || ""}-${departureDate || ""}-${name || ""}`,
         name,
         phone,
         passengerCount,
@@ -283,6 +328,7 @@ export default function ManagerInterface({
       .map((tab) => {
         const tableMap: any = {
           requests: "passenger_requests",
+          authRequests: "pending_users",
           interested: "interested_leads",
           pendingLeads: "passengers_in_lead",
         };
@@ -337,6 +383,11 @@ export default function ManagerInterface({
     i18n.changeLanguage(i18n.language === "mn" ? "en" : "mn");
   };
 
+  const showB2BWorkflowTab =
+    featureFlags.b2bSeatRequestFlowEnabled ||
+    featureFlags.b2bRoleV2Enabled ||
+    featureFlags.b2bMonitoringEnabled;
+
   return (
     <>
       <Toaster position="top-right" />
@@ -358,7 +409,8 @@ export default function ManagerInterface({
           </div>
 
           <nav className="flex-1 overflow-y-auto py-4">
-            {TAB_CONFIG.map(({ key, labelKey, icon: Icon, countKey }) => {
+            {TAB_CONFIG.filter(({ key }) => key !== "b2bWorkflows" || showB2BWorkflowTab).map(
+              ({ key, labelKey, icon: Icon, countKey }) => {
               const count = countKey
                 ? counts[countKey as keyof typeof counts]
                 : undefined;
@@ -393,6 +445,7 @@ export default function ManagerInterface({
             className={`w-full py-8 ${
               activeTab === "orders" ||
               activeTab === "passengers" ||
+              activeTab === "b2bWorkflows" ||
               activeTab === "ProviderInterface"
                 ? "px-0"
                 : "px-4 sm:px-6 lg:px-8"
@@ -401,11 +454,13 @@ export default function ManagerInterface({
             {activeTab === "dashboard" && (
               <div className="text-center py-32">
                 <h1 className="text-6xl font-bold text-gray-800 mb-4">
-                   {t("welcomeManager", { name: currentUser?.name || "Manager" })}
-                 </h1>
-                 <p className="text-xl text-gray-600">
-                   {t("selectTabFromSidebar")}
-                 </p>
+                  {t("welcomeManager", {
+                    name: currentUser?.name || "Manager",
+                  })}
+                </h1>
+                <p className="text-xl text-gray-600">
+                  {t("selectTabFromSidebar")}
+                </p>
               </div>
             )}
 
@@ -525,8 +580,16 @@ export default function ManagerInterface({
               />
             )}
 
-            {activeTab === "addPassenger" && (
+            {activeTab === "contracts" && (
+              <AgentContractsTab
+                currentUser={currentUser}
+                showNotification={showNotification}
+              />
+            )}
+
+            <div className={activeTab === "addPassenger" ? "block" : "hidden"}>
               <AddPassengerTab
+                tours={tours}
                 orders={orders}
                 setOrders={setOrders}
                 selectedTour={selectedTour}
@@ -538,12 +601,53 @@ export default function ManagerInterface({
                 showNotification={showNotification}
                 currentUser={currentUser}
                 prefilledLead={prefilledLead}
+                onPrefilledLeadConsumed={() => setPrefilledLead(null)}
               />
-            )}
+            </div>
 
             {activeTab === "passengerRequests" && (
               <PassengerRequests showNotification={showNotification} />
             )}
+
+            {activeTab === "authRequests" && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl">
+                        <Clock className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          Account Approval Requests
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          Review and approve new user registrations -{" "}
+                          {counts.authRequests} pending
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={refreshCounts}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center transition-colors shadow-sm text-sm"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh
+                    </button>
+                  </div>
+
+                  <AuthRequest
+                    currentUserId={currentUser.id}
+                    onRefresh={refreshCounts}
+                    onPendingCountChange={(count) =>
+                      setCounts((prev) => ({ ...prev, authRequests: count }))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "b2bWorkflows" && <B2BMonitoringPage />}
 
             {activeTab === "interestedLeads" && (
               <InterestedLeadsTab
@@ -596,6 +700,7 @@ export default function ManagerInterface({
                 tours={tours}
                 setTours={setTours}
                 currentUser={currentUser}
+                readOnlyPreview
               />
             )}
           </div>

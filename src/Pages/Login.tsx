@@ -5,9 +5,10 @@ import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import Logo from "../assets/last logo.png";
 import illustriation from "../assets/illustriation.jpg";
 import ThemeToggle from "../components/ThemeToggle";
+import { featureFlags } from "../config/featureFlags";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, hasPendingRequest } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,20 +24,43 @@ export default function Login() {
     try {
       const user = await login(email, password);
       if (!user) {
-        setError("Invalid email or password");
+        const pending = await hasPendingRequest(email);
+        setError(
+          pending
+            ? "Your account request is pending admin approval."
+            : "Invalid email or password",
+        );
         return;
       }
       const homePath =
         user.role === "admin" || user.role === "superadmin"
           ? "/admin"
-          : user.role === "provider"
-          ? "/provider"
           : user.role === "manager"
           ? "/manager"
+          : user.role === "provider"
+          ? "/provider"
+          : user.role === "agent"
+          ? featureFlags.b2bSeatRequestFlowEnabled
+            ? "/agent"
+            : "/provider"
+          : user.role === "subcontractor"
+          ? featureFlags.b2bSeatRequestFlowEnabled
+            ? "/subcontractor"
+            : "/user"
           : "/user";
       navigate(homePath, { replace: true });
     } catch (err: any) {
-      setError(err.message || "An error occurred during login");
+      const rawMessage = String(err?.message || "").toLowerCase();
+      if (rawMessage.includes("invalid login credentials")) {
+        const pending = await hasPendingRequest(email);
+        setError(
+          pending
+            ? "Your account request is pending admin approval."
+            : "Invalid email or password",
+        );
+      } else {
+        setError(err.message || "An error occurred during login");
+      }
       console.error("Login error:", err);
     } finally {
       setIsLoading(false);

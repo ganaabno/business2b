@@ -9,8 +9,13 @@ import { RotateCcw, ArrowUp } from "lucide-react";
 import { Edit } from "lucide-react";
 import EditOrderPassengersModal from "./EditOrderPassengersModal";
 import { useTranslation } from "react-i18next";
+import {
+  fetchOrdersFromGlobalApi,
+  isGlobalApiEnabled,
+} from "../api/globalTravel";
 
 const schemaCache = { orders: null as boolean | null };
+const ordersFetchCache = { lastFetchAt: 0 };
 
 interface OrdersTabProps {
   orders: Order[];
@@ -21,10 +26,36 @@ interface OrdersTabProps {
 const safe = (val: any) =>
   val == null || val === "" ? "—" : String(val).trim();
 
+const normalizeOrderStatus = (value: unknown): OrderStatus => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "pending";
+
+  const exact = VALID_ORDER_STATUSES.find((status) => status === normalized);
+  if (exact) return exact;
+
+  const lower = normalized.toLowerCase();
+  const ci = VALID_ORDER_STATUSES.find(
+    (status) => status.toLowerCase() === lower,
+  );
+  if (ci) return ci;
+
+  if (lower === "paid" || lower === "success") return "confirmed";
+  if (lower === "failed" || lower === "declined") return "rejected";
+  return "pending";
+};
+
 const shortOrderId = (id: string) => {
   const value = String(id || "");
   return value.length > 10 ? value.slice(0, 10) : value;
 };
+
+const sourceBadgeClass = (source?: Order["source"]) =>
+  source === "global"
+    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+    : "bg-gray-100 text-gray-700 border-gray-200";
+
+const sourceLabel = (source?: Order["source"]) =>
+  source === "global" ? "Global" : "Local";
 
 interface TourGroup {
   tourTitle: string;
@@ -50,6 +81,9 @@ export default function OrdersTab({
   const [customerNameFilter, setCustomerNameFilter] = useState("");
   const [tourTitleFilter, setTourTitleFilter] = useState("");
   const [departureDateFilter, setDepartureDateFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "global" | "local">(
+    isGlobalApiEnabled ? "global" : "all",
+  );
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [hasShowInProvider, setHasShowInProvider] = useState<boolean | null>(
     null,
@@ -59,10 +93,20 @@ export default function OrdersTab({
   );
   const [undoingDateKey, setUndoingDateKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"active" | "all" | "completed">(
-    "active",
+    "all",
   );
   const [showBackToTop, setShowBackToTop] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastFetchAtRef = useRef<number>(ordersFetchCache.lastFetchAt);
+
+  const shouldSkipFetch = (force = false) => {
+    if (force) return false;
+    const now = Date.now();
+    if (now - lastFetchAtRef.current < 15000) {
+      return true;
+    }
+    return false;
+  };
 
   const checkOrdersSchema = async () => {
     if (schemaCache.orders !== null) {
@@ -101,12 +145,74 @@ export default function OrdersTab({
     return main?.id || allPax[0]?.id || null;
   };
 
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("orders")
-        .select(
-          `
+  const hasOrderPassengers = (order: Order) => {
+    const paxCount =
+      (order.passengers?.length || 0) + (order.passenger_requests?.length || 0);
+    return paxCount > 0;
+  };
+
+  const mapLocalOrders = (rows: any[]): Order[] => {
+    return (rows || []).map((o: any): Order => {
+      const creator = o.created_by?.[0];
+      return {
+        source: "local",
+        id: String(o.id),
+        user_id: String(o.user_id),
+        tour_id: String(o.tour_id),
+        phone: o.phone ?? null,
+        last_name: o.last_name ?? null,
+        first_name: o.first_name ?? null,
+        email: o.email ?? null,
+        age: o.age ?? null,
+        gender: o.gender ?? null,
+        tour: o.tours?.title ?? o.tour ?? o.travel_choice ?? null,
+        passport_number: o.passport_number ?? null,
+        passport_expire: o.passport_expire ?? null,
+        created_by: o.created_by ? String(o.created_by) : null,
+        createdBy: creator
+          ? `${creator.first_name ?? ""} ${creator.last_name ?? ""} (@${
+              creator.username ?? creator.email ?? ""
+            })`.trim()
+          : null,
+        status: normalizeOrderStatus(o.status),
+        hotel: o.hotel ?? null,
+        payment_method: o.payment_method ?? null,
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+        passenger_count: [
+          ...(o.passengers || []),
+          ...(o.passenger_requests || []),
+        ].length,
+        departureDate: o.departureDate ?? o.departure_date ?? undefined,
+        total_price: Number(o.total_price) || Number(o.amount) || 0,
+        show_in_provider: !!o.show_in_provider,
+        order_id: String(o.order_id ?? o.id),
+        passengers: o.passengers || [],
+        passenger_requests: o.passenger_requests || [],
+        tour_title: o.tours?.title ?? o.travel_choice ?? undefined,
+        note: o.note ?? null,
+        passport_copy: null,
+        passport_copy_url: null,
+        commission: null,
+        edited_by: null,
+        edited_at: null,
+        travel_choice: o.travel_choice || "",
+        room_number: null,
+        total_amount: 0,
+        paid_amount: 0,
+        balance: 0,
+        booking_confirmation: null,
+        room_allocation: "",
+        travel_group: null,
+      };
+    });
+  };
+
+  const fetchLocalOrders = async (): Promise<Order[]> => {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
       *,
         created_by:users!created_by(id, email, username, first_name, last_name),
         passengers!order_id(
@@ -119,19 +225,19 @@ export default function OrdersTab({
           age,
           gender,
           passport_number,
-          passport_expire,           
-          date_of_birth,             
-          nationality,               
+          passport_expire,
+          date_of_birth,
+          nationality,
           room_allocation,
-          hotel,                 
+          hotel,
           main_passenger_id,
           serial_no,
           roomType,
           notes,
           group_color,
           is_related_to_next,
-          pax_type,                  
-          itinerary_status,          
+          pax_type,
+          itinerary_status,
           has_baby_bed,
           allergy,
           emergency_phone,
@@ -152,83 +258,106 @@ export default function OrdersTab({
           roomType,
           notes,
           passport_number,
-          passport_expire,           
+          passport_expire,
           date_of_birth,
           nationality,
           gender
         ),
         tours!tour_id(id, title)
       `,
-        )
-        .in("status", VALID_ORDER_STATUSES);
+      )
+      .order("created_at", { ascending: false });
 
-      if (error) throw error;
+    if (error) throw error;
+    return mapLocalOrders(data || []).filter(hasOrderPassengers);
+  };
 
-      const mapped: Order[] = (data || []).map((o: any): Order => {
-        const creator = o.created_by?.[0];
-        return {
-          id: String(o.id),
-          user_id: String(o.user_id),
-          tour_id: String(o.tour_id),
-          phone: o.phone ?? null,
-          last_name: o.last_name ?? null,
-          first_name: o.first_name ?? null,
-          email: o.email ?? null,
-          age: o.age ?? null,
-          gender: o.gender ?? null,
-          tour: o.tours?.title ?? o.tour ?? null,
-          passport_number: o.passport_number ?? null,
-          passport_expire: o.passport_expire ?? null,
-          created_by: o.created_by ? String(o.created_by) : null,
-          createdBy: creator
-            ? `${creator.first_name ?? ""} ${creator.last_name ?? ""} (@${
-                creator.username ?? creator.email ?? ""
-              })`.trim()
-            : null,
-          status: o.status as OrderStatus,
-          hotel: o.hotel ?? null,
-          payment_method: o.payment_method ?? null,
-          created_at: o.created_at,
-          updated_at: o.updated_at,
-          passenger_count: [
-            ...(o.passengers || []),
-            ...(o.passenger_requests || []),
-          ].length,
-          departureDate: o.departureDate ?? undefined,
-          total_price: Number(o.total_price) || 0,
-          show_in_provider: !!o.show_in_provider,
-          order_id: String(o.id),
-          passengers: o.passengers || [],
-          passenger_requests: o.passenger_requests || [],
-          tour_title: o.tours?.title ?? undefined,
-          note: o.note ?? null,
+  const fetchOrders = async (opts?: { force?: boolean; silent?: boolean }) => {
+    const force = opts?.force ?? false;
+    const silent = opts?.silent ?? true;
+    if (shouldSkipFetch(force)) return;
 
-          passport_copy: null,
-          passport_copy_url: null,
-          commission: null,
-          edited_by: null,
-          edited_at: null,
-          travel_choice: "",
-          room_number: null,
-          total_amount: 0,
-          paid_amount: 0,
-          balance: 0,
-          booking_confirmation: null,
-          room_allocation: "",
-          travel_group: null,
-        };
-      });
+    try {
+      if (isGlobalApiEnabled) {
+        const [globalResult, localResult] = await Promise.allSettled([
+          fetchOrdersFromGlobalApi(),
+          fetchLocalOrders(),
+        ]);
 
+        const globalOrders =
+          globalResult.status === "fulfilled" ? globalResult.value : [];
+        const localOrders =
+          localResult.status === "fulfilled" ? localResult.value : [];
+
+        const mergedById = new Map<string, Order>();
+        localOrders.forEach((order) => {
+          mergedById.set(`local:${String(order.id)}`, order);
+        });
+        globalOrders.forEach((order) => {
+          const key = `global:${String(order.id || order.order_id)}`;
+          if (!mergedById.has(key)) {
+            mergedById.set(key, { ...order, source: "global" });
+          }
+        });
+
+        const finalOrders = Array.from(mergedById.values()).filter((order) => {
+          if (order.source === "global") return true;
+          return hasOrderPassengers(order);
+        });
+        setOrders(finalOrders);
+        lastFetchAtRef.current = Date.now();
+        ordersFetchCache.lastFetchAt = lastFetchAtRef.current;
+
+        if (!silent) {
+          showNotification(
+            "success",
+            `Orders loaded (local: ${localOrders.length}, global: ${globalOrders.length})`,
+          );
+        }
+        return;
+      }
+      const mapped = await fetchLocalOrders();
       setOrders(mapped);
-      showNotification("success", `Loaded ${mapped.length} orders!`);
+      lastFetchAtRef.current = Date.now();
+      ordersFetchCache.lastFetchAt = lastFetchAtRef.current;
+      if (!silent) {
+        showNotification("success", `Loaded ${mapped.length} orders!`);
+      }
     } catch (e: any) {
+      if (isGlobalApiEnabled) {
+        if (!silent) {
+          showNotification(
+            "warning",
+            "Shared API unavailable, falling back to local data source.",
+          );
+        }
+        try {
+          const mapped = await fetchLocalOrders();
+          setOrders(mapped);
+          lastFetchAtRef.current = Date.now();
+          ordersFetchCache.lastFetchAt = lastFetchAtRef.current;
+          return;
+        } catch {
+          showNotification("error", `Fetch failed: ${e.message}`);
+          return;
+        }
+      }
+
       showNotification("error", `Fetch failed: ${e.message}`);
     }
   };
 
   useEffect(() => {
     checkOrdersSchema();
-    fetchOrders();
+    setOrders((prev) =>
+      prev.filter(
+        (order) => order.source === "global" || hasOrderPassengers(order),
+      ),
+    );
+    fetchOrders({ force: false, silent: true });
+    if (orders.length === 0) {
+      fetchOrders({ force: true, silent: false });
+    }
   }, []);
   // Fixed realtime subscription
   useEffect(() => {
@@ -238,7 +367,9 @@ export default function OrdersTab({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        fetchOrders,
+        () => {
+          fetchOrders({ silent: true });
+        },
       )
       .subscribe();
     return () => {
@@ -560,6 +691,19 @@ export default function OrdersTab({
       : []),
   ];
 
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      const preferred = tabs[0]?.id as
+        | "active"
+        | "all"
+        | "completed"
+        | undefined;
+      if (preferred) {
+        setActiveTab(preferred);
+      }
+    }
+  }, [tabs, activeTab]);
+
   const visibleDateGroups = useMemo(() => {
     let list: DateGroup[] =
       activeTab === "all"
@@ -569,7 +713,7 @@ export default function OrdersTab({
         : activeTab === "active"
           ? activeDates
           : completedDates;
-    if (customerNameFilter || tourTitleFilter) {
+    if (customerNameFilter || tourTitleFilter || sourceFilter !== "all") {
       const cTerm = customerNameFilter.toLowerCase();
       const tTerm = tourTitleFilter.toLowerCase();
       list = list
@@ -585,9 +729,11 @@ export default function OrdersTab({
                   lead.last_name,
                 )}`.toLowerCase();
                 const tour = safe(o.tour).toLowerCase();
+                const src = (o.source ?? "local") as "local" | "global";
                 return (
                   (!cTerm || name.includes(cTerm)) &&
-                  (!tTerm || tour.includes(tTerm))
+                  (!tTerm || tour.includes(tTerm)) &&
+                  (sourceFilter === "all" || src === sourceFilter)
                 );
               }),
             }))
@@ -604,6 +750,7 @@ export default function OrdersTab({
     completedDates,
     customerNameFilter,
     tourTitleFilter,
+    sourceFilter,
   ]);
   // ADD THIS FUNCTION — SUPER SIMPLE
   const getGroupColor = (orders: Order[], currentOrderIndex: number) => {
@@ -646,7 +793,7 @@ export default function OrdersTab({
               All changes save instantly • Complete/Undo entire date
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input
               placeholder="Customer name..."
               value={customerNameFilter}
@@ -673,6 +820,17 @@ export default function OrdersTab({
                     {formatDate(d!)}
                   </option>
                 ))}
+            </select>
+            <select
+              value={sourceFilter}
+              onChange={(e) =>
+                setSourceFilter(e.target.value as "all" | "global" | "local")
+              }
+              className="mono-input"
+            >
+              <option value="all">All Sources</option>
+              <option value="global">Global Travel</option>
+              <option value="local">Local Gtrip</option>
             </select>
           </div>
         </div>
@@ -876,6 +1034,11 @@ export default function OrdersTab({
                       const rowCellStyle = { backgroundColor: rowBg } as const;
 
                       if (paxInOrder.length === 0) {
+                        const isGlobalOrder = o.source === "global";
+                        const globalSummary = isGlobalOrder
+                          ? `Global order summary • ${safe(o.tour || o.tour_title)} • ${o.passenger_count || 0} pax • ${safe(o.payment_method)} • ${safe(o.status)}`
+                          : t("noPassengers");
+
                         return (
                           <tr
                             key={o.id}
@@ -888,13 +1051,26 @@ export default function OrdersTab({
                               className="sticky left-14 z-20 px-3 py-3 text-xs font-medium bg-white border-r border-gray-200 w-32 min-w-[128px] max-w-[128px] whitespace-nowrap overflow-hidden text-ellipsis"
                               title={String(o.id)}
                             >
-                              #{shortOrderId(o.id)}
+                              <div className="flex flex-col gap-1">
+                                <span>#{shortOrderId(o.id)}</span>
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold w-fit ${sourceBadgeClass(
+                                    o.source,
+                                  )}`}
+                                >
+                                  {sourceLabel(o.source)}
+                                </span>
+                              </div>
                             </td>
                             <td
                               colSpan={hasShowInProvider ? 14 : 13}
-                              className="px-3 py-3 text-xs italic text-gray-400"
+                              className={`px-3 py-3 text-xs italic ${
+                                isGlobalOrder
+                                  ? "text-emerald-700"
+                                  : "text-gray-400"
+                              }`}
                             >
-                              {t("noPassengers")}
+                              {globalSummary}
                             </td>
                           </tr>
                         );
@@ -931,7 +1107,16 @@ export default function OrdersTab({
                                 style={rowCellStyle}
                                 title={String(o.id)}
                               >
-                                #{shortOrderId(o.id)}
+                                <div className="flex flex-col gap-1">
+                                  <span>#{shortOrderId(o.id)}</span>
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold w-fit ${sourceBadgeClass(
+                                      o.source,
+                                    )}`}
+                                  >
+                                    {sourceLabel(o.source)}
+                                  </span>
+                                </div>
                               </td>
                             )}
 
@@ -975,6 +1160,7 @@ export default function OrdersTab({
                                       payment_method: e.target.value || null,
                                     })
                                   }
+                                  disabled={o.source === "global"}
                                   className="w-full min-w-[120px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
                                 >
                                   <option>Cash</option>
@@ -993,6 +1179,7 @@ export default function OrdersTab({
                                       status: e.target.value as OrderStatus,
                                     })
                                   }
+                                  disabled={o.source === "global"}
                                   className="w-full min-w-[170px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
                                 >
                                   {VALID_ORDER_STATUSES.map((s) => (
@@ -1018,7 +1205,9 @@ export default function OrdersTab({
                                 <input
                                   type="text"
                                   defaultValue={displayRoomType}
+                                  disabled={o.source === "global"}
                                   onBlur={(e) => {
+                                    if (o.source === "global") return;
                                     if (
                                       e.target.value.trim() !== displayRoomType
                                     ) {
@@ -1047,7 +1236,9 @@ export default function OrdersTab({
                               >
                                 <textarea
                                   defaultValue={getPassengerNote(o)}
+                                  disabled={o.source === "global"}
                                   onBlur={(e) => {
+                                    if (o.source === "global") return;
                                     if (!mainPassengerId) return;
                                     if (
                                       e.target.value.trim() !==
@@ -1074,6 +1265,7 @@ export default function OrdersTab({
                                 <input
                                   type="checkbox"
                                   checked={o.show_in_provider}
+                                  disabled={o.source === "global"}
                                   onChange={(e) =>
                                     updateOrder(o.id, {
                                       show_in_provider: e.target.checked,
@@ -1091,6 +1283,13 @@ export default function OrdersTab({
                                 <div className="flex items-center justify-center gap-3">
                                   <button
                                     onClick={() => {
+                                      if (o.source === "global") {
+                                        showNotification(
+                                          "warning",
+                                          "Global orders are read-only on Gtrip. Edit from Global Travel admin.",
+                                        );
+                                        return;
+                                      }
                                       if (
                                         (o.passengers ?? []).length === 0 &&
                                         (o.passenger_requests ?? []).length ===
@@ -1110,9 +1309,19 @@ export default function OrdersTab({
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      if (o.source === "global") {
+                                        showNotification(
+                                          "warning",
+                                          "Global orders are read-only on Gtrip.",
+                                        );
+                                        return;
+                                      }
                                       handleDeleteOrder(o.id);
                                     }}
-                                    disabled={deletingOrderId === o.id}
+                                    disabled={
+                                      deletingOrderId === o.id ||
+                                      o.source === "global"
+                                    }
                                     className={`w-9 h-8 rounded-lg text-white text-sm font-medium transition ${
                                       deletingOrderId === o.id
                                         ? "bg-gray-500"

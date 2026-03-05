@@ -45,7 +45,7 @@ export default function ManageLead({
   } | null>(null);
   const itemsPerPage = 10;
   const actionButtonRefs = useRef<Map<string, HTMLButtonElement | null>>(
-    new Map()
+    new Map(),
   );
 
   // Update current time every second for countdown timers
@@ -76,7 +76,7 @@ export default function ManageLead({
               expires_at,
               user_id,
               users!passengers_in_lead_user_id_fkey(username)
-            `
+            `,
           )
           .eq("user_id", currentUser.id)
           .in("status", ["pending", "confirmed", "cancelled"])
@@ -87,7 +87,6 @@ export default function ManageLead({
           setPassengers([]);
           return;
         }
-
 
         const mapped = (data || []).map((row: any) => ({
           ...row,
@@ -100,7 +99,7 @@ export default function ManageLead({
       } catch (error) {
         showNotification(
           "error",
-          "An unexpected error occurred while fetching leads."
+          "An unexpected error occurred while fetching leads.",
         );
         setPassengers([]);
       } finally {
@@ -121,7 +120,6 @@ export default function ManageLead({
           filter: `user_id=eq.${currentUser.id}`,
         },
         async (payload) => {
-
           const newRow = payload.new as
             | (PassengerInLead & { users?: { username: string } })
             | undefined;
@@ -159,19 +157,19 @@ export default function ManageLead({
               created_by: username,
             };
             setPassengers((prev) =>
-              prev.map((p) => (p.id === newRow.id ? mappedRow : p))
+              prev.map((p) => (p.id === newRow.id ? mappedRow : p)),
             );
           } else if (payload.eventType === "DELETE" && oldRow) {
             setPassengers((prev) => prev.filter((p) => p.id !== oldRow.id));
             actionButtonRefs.current.delete(oldRow.id); // Clean up ref on delete
           }
-        }
+        },
       )
       .subscribe((status, error) => {
         if (error) {
           showNotification(
             "error",
-            `Real-time subscription failed: ${error.message}`
+            `Real-time subscription failed: ${error.message}`,
           );
         }
       });
@@ -227,7 +225,7 @@ export default function ManageLead({
       actionButtonRefs.current.delete(passenger.id); // Clean up ref on confirm
       showNotification(
         "success",
-        `Lead confirmed, adding ${passenger.seat_count} passenger forms`
+        `Lead confirmed, adding ${passenger.seat_count} passenger forms`,
       );
     } catch (error) {
       showNotification("error", "Failed to confirm lead");
@@ -248,7 +246,7 @@ export default function ManageLead({
       if (error) {
         showNotification(
           "error",
-          `Failed to delete lead passenger: ${error.message}`
+          `Failed to delete lead passenger: ${error.message}`,
         );
         setPassengers(previousPassengers);
       } else {
@@ -258,7 +256,7 @@ export default function ManageLead({
     } catch (error) {
       showNotification(
         "error",
-        "An unexpected error occurred while deleting the lead passenger."
+        "An unexpected error occurred while deleting the lead passenger.",
       );
       setPassengers(previousPassengers);
     } finally {
@@ -284,7 +282,7 @@ export default function ManageLead({
   // Handle dropdown positioning
   const handleActionButtonClick = (
     passengerId: string,
-    event: React.MouseEvent<HTMLButtonElement>
+    event: React.MouseEvent<HTMLButtonElement>,
   ) => {
     const button = actionButtonRefs.current.get(passengerId);
     if (!button) return;
@@ -326,7 +324,7 @@ export default function ManageLead({
   // Paginate sorted passengers
   const paginatedPassengers = sortedPassengers.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
   );
   const totalPages = Math.ceil(sortedPassengers.length / itemsPerPage);
 
@@ -442,7 +440,7 @@ export default function ManageLead({
                         {passenger.departure_date
                           ? format(
                               new Date(passenger.departure_date),
-                              "yyyy-MM-dd"
+                              "yyyy-MM-dd",
                             )
                           : "N/A"}
                       </td>
@@ -455,8 +453,8 @@ export default function ManageLead({
                             passenger.status === "pending"
                               ? "bg-red-100 text-red-800"
                               : passenger.status === "confirmed"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-100 text-gray-800"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-gray-100 text-gray-800"
                           }`}
                         >
                           {passenger.status === "pending"

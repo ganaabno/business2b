@@ -9,7 +9,7 @@ interface PassengerFormProps {
   updatePassenger: (
     index: number,
     field: keyof Passenger,
-    value: any
+    value: any,
   ) => Promise<void>;
   removePassenger: (index: number) => void;
   downloadTemplate: () => void;
@@ -56,7 +56,7 @@ const calculateAge = (birthDate: string): number => {
 
 // 🧹 DATE CLEANER - FIXES EMPTY STRING ISSUES
 const cleanDateForDB = (
-  dateValue: string | undefined | null
+  dateValue: string | undefined | null,
 ): string | null => {
   if (!dateValue || dateValue.trim() === "") {
     return null; // ✅ Return null instead of empty string
@@ -84,7 +84,7 @@ export default function PassengerForm({
   const handleDateChange = async (
     index: number,
     field: keyof Passenger,
-    value: string
+    value: string,
   ) => {
     // Clean the date value before saving
     const cleanValue = cleanDateForDB(value);
@@ -99,7 +99,7 @@ export default function PassengerForm({
   // 🎨 REQUIRED FIELDS HELPER - FIXED TYPE ISSUE
   const isRequiredFieldEmpty = (
     passenger: Passenger,
-    field: keyof Passenger
+    field: keyof Passenger,
   ): boolean => {
     const value = passenger[field];
 
@@ -129,7 +129,7 @@ export default function PassengerForm({
     index: number,
     field: keyof Passenger,
     passenger: Passenger,
-    customColor?: string
+    customColor?: string,
   ) => {
     const error = getError(index, field);
     const isEmptyRequired = isRequiredFieldEmpty(passenger, field);
@@ -148,7 +148,7 @@ export default function PassengerForm({
   // 🚀 NEXT BUTTON HANDLER
   const handleNextClick = async () => {
     const passengerErrors = errors.filter((e) =>
-      e.field?.startsWith("passenger_")
+      e.field?.startsWith("passenger_"),
     );
 
     if (passengerErrors.length > 0) {
@@ -162,12 +162,12 @@ export default function PassengerForm({
         setExpandedPassengerId(passenger.id);
         showNotification(
           "error",
-          `Please fix validation errors for Passenger ${passenger.serial_no}`
+          `Please fix validation errors for Passenger ${passenger.serial_no}`,
         );
       } else {
         showNotification(
           "error",
-          "Please fix the validation errors before proceeding"
+          "Please fix the validation errors before proceeding",
         );
       }
       return;
@@ -229,10 +229,10 @@ export default function PassengerForm({
         ] as const;
 
         const hasAnyError = errors.some((e) =>
-          e.field?.startsWith(`passenger_${index}_`)
+          e.field?.startsWith(`passenger_${index}_`),
         );
         const hasEmptyRequired = requiredFields.some((field) =>
-          isRequiredFieldEmpty(passenger, field)
+          isRequiredFieldEmpty(passenger, field),
         );
 
         return (
@@ -309,13 +309,13 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "first_name",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "first_name",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="First Name"
                     />
@@ -338,13 +338,13 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "last_name",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "last_name",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="Last Name"
                     />
@@ -369,7 +369,7 @@ export default function PassengerForm({
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "date_of_birth",
-                        passenger
+                        passenger,
                       )}`}
                     />
                     {getError(index, "date_of_birth") && (
@@ -425,7 +425,7 @@ export default function PassengerForm({
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "gender",
-                        passenger
+                        passenger,
                       )}`}
                     >
                       <option value="">Select Gender</option>
@@ -452,13 +452,13 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "passport_number",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "passport_number",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="Passport Number"
                     />
@@ -481,17 +481,17 @@ export default function PassengerForm({
                         handleDateChange(
                           index,
                           "passport_expire",
-                          e.target.value
+                          e.target.value,
                         )
                       } // ✅ CLEANED!
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
                         getError(index, "passport_expire")
                           ? "border-red-500 bg-red-50"
                           : isRequiredFieldEmpty(passenger, "passport_expire")
-                          ? "border-red-500 bg-red-50"
-                          : getPassportExpiryColor(
-                              passenger.passport_expire || ""
-                            )
+                            ? "border-red-500 bg-red-50"
+                            : getPassportExpiryColor(
+                                passenger.passport_expire || "",
+                              )
                       }`}
                     />
                     {getError(index, "passport_expire") && (
@@ -513,13 +513,13 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "nationality",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "nationality",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="Nationality"
                     />
@@ -542,13 +542,13 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "roomType",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "roomType",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="Single, Double, Triple, etc."
                     />
@@ -571,7 +571,7 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "room_allocation",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -593,7 +593,7 @@ export default function PassengerForm({
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "hotel",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="Hotel Name"
                     />
@@ -650,7 +650,7 @@ export default function PassengerForm({
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "email",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="name@example.com"
                     />
@@ -675,7 +675,7 @@ export default function PassengerForm({
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${getInputClasses(
                         index,
                         "phone",
-                        passenger
+                        passenger,
                       )}`}
                       placeholder="+1 (555) 123-4567"
                     />
@@ -698,7 +698,7 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "emergency_phone",
-                          e.target.value.trim()
+                          e.target.value.trim(),
                         )
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -718,7 +718,7 @@ export default function PassengerForm({
                         updatePassenger(
                           index,
                           "passport_upload",
-                          e.target.files?.[0]
+                          e.target.files?.[0],
                         )
                       }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"

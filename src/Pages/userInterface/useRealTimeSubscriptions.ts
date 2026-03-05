@@ -62,21 +62,21 @@ export default function useRealTimeSubscriptions({
                     title
                   )
                 )
-              `
+              `,
               )
               .eq("user_id", currentUser.userId);
             if (error) {
               console.error(
                 "Error fetching updated passengers:",
-                JSON.stringify(error, null, 2)
+                JSON.stringify(error, null, 2),
               );
               wrappedShowNotification(
                 "error",
-                `Failed to refresh passengers: ${error.message}`
+                `Failed to refresh passengers: ${error.message}`,
               );
               return;
             }
-         
+
             setPassengers((prev) => {
               const existingIds = new Set(prev.map((p) => p.id));
               return [
@@ -130,7 +130,7 @@ export default function useRealTimeSubscriptions({
                       note: "",
                       is_request: undefined,
                       pax_type: "Adult",
-                    })
+                    }),
                   )
                   .filter((p) => !existingIds.has(p.id) || p.order_id !== ""),
               ];
@@ -138,24 +138,24 @@ export default function useRealTimeSubscriptions({
             if (selectedTourData?.id && departureDate) {
               const { isValid, message } = await checkSeatLimit(
                 selectedTourData.id,
-                departureDate
+                departureDate,
               );
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
             console.error(
               "Error in passenger real-time handler:",
-              JSON.stringify(error, null, 2)
+              JSON.stringify(error, null, 2),
             );
             wrappedShowNotification("error", "Failed to refresh passengers");
           }
-        }
+        },
       )
       .subscribe((status, error) => {
         if (error) {
           console.error(
             "Passenger subscription error:",
-            JSON.stringify(error, null, 2)
+            JSON.stringify(error, null, 2),
           );
           wrappedShowNotification("error", "Passenger subscription failed");
         }
@@ -183,17 +183,17 @@ export default function useRealTimeSubscriptions({
                   id,
                   title
                 )
-              `
+              `,
               )
               .eq("user_id", currentUser.userId);
             if (error) {
               console.error(
                 "Error fetching updated orders:",
-                JSON.stringify(error, null, 2)
+                JSON.stringify(error, null, 2),
               );
               wrappedShowNotification(
                 "error",
-                `Failed to refresh orders: ${error.message}`
+                `Failed to refresh orders: ${error.message}`,
               );
               return;
             }
@@ -239,31 +239,31 @@ export default function useRealTimeSubscriptions({
                   booking_confirmation: o.booking_confirmation || null,
                   room_allocation: o.room_number || "",
                   passenger_requests: [],
-                  travel_group: null
-                })
-              )
+                  travel_group: null,
+                }),
+              ),
             );
             if (selectedTourData?.id && departureDate) {
               const { isValid, message } = await checkSeatLimit(
                 selectedTourData.id,
-                departureDate
+                departureDate,
               );
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
           } catch (error) {
             console.error(
               "Error in order real-time handler:",
-              JSON.stringify(error, null, 2)
+              JSON.stringify(error, null, 2),
             );
             wrappedShowNotification("error", "Failed to refresh orders");
           }
-        }
+        },
       )
       .subscribe((status, error) => {
         if (error) {
           console.error(
             "Order subscription error:",
-            JSON.stringify(error, null, 2)
+            JSON.stringify(error, null, 2),
           );
           wrappedShowNotification("error", "Order subscription failed");
         }
@@ -281,7 +281,6 @@ export default function useRealTimeSubscriptions({
           table: "tours",
         },
         async (payload: any) => {
-     
           try {
             const { data, error } = await supabase.from("tours").select(`
             id,
@@ -299,7 +298,7 @@ export default function useRealTimeSubscriptions({
               console.error("Error fetching updated tours:", error);
               wrappedShowNotification(
                 "error",
-                `Failed to refresh tours: ${error.message}`
+                `Failed to refresh tours: ${error.message}`,
               );
               return;
             }
@@ -322,23 +321,23 @@ export default function useRealTimeSubscriptions({
                   dates: Array.isArray(t.dates)
                     ? t.dates
                     : t.dates
-                    ? [t.dates]
-                    : [],
+                      ? [t.dates]
+                      : [],
                   hotels: Array.isArray(t.hotels)
                     ? t.hotels
                     : t.hotels
-                    ? [t.hotels]
-                    : [],
+                      ? [t.hotels]
+                      : [],
                   services: Array.isArray(t.services) ? t.services : [],
                   departure_date: t.departure_date ?? undefined,
-                })
+                }),
               );
             setTours(validatedTours);
 
             if (selectedTourData?.id && departureDate) {
               const { isValid, message } = await checkSeatLimit(
                 selectedTourData.id,
-                departureDate
+                departureDate,
               );
               wrappedShowNotification(isValid ? "success" : "error", message);
             }
@@ -346,7 +345,7 @@ export default function useRealTimeSubscriptions({
             console.error("Error in tour real-time handler:", error);
             wrappedShowNotification("error", "Failed to refresh tours");
           }
-        }
+        },
       )
       .subscribe((status, error) => {
         if (error) {

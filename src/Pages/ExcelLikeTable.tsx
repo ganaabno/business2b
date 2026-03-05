@@ -6,7 +6,7 @@ interface Props {
   currentUser: UserType;
   showNotification: (
     type: "success" | "error" | "warning",
-    message: string
+    message: string,
   ) => void;
 }
 
@@ -39,11 +39,11 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
   }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [physicalTableName, setPhysicalTableName] = useState<string | null>(
-    null
+    null,
   );
   const [tableId, setTableId] = useState<string | null>(null);
   const [selectedTableName, setSelectedTableName] = useState<string | null>(
-    null
+    null,
   );
 
   // Fetch and clean up tables on mount
@@ -58,20 +58,20 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         if (error) throw error;
 
         const invalidTables = (tableData || []).filter(
-          (t) => t.physical_table_name == null
+          (t) => t.physical_table_name == null,
         );
         const validTables = (tableData || []).filter(
-          (t) => t.physical_table_name != null
+          (t) => t.physical_table_name != null,
         ) as CustomTable[];
 
         if (invalidTables.length > 0) {
           console.warn(
             "Found tables with null physical_table_name:",
-            invalidTables
+            invalidTables,
           );
           showNotification(
             "warning",
-            `Found ${invalidTables.length} table(s) with missing physical table names. Attempting cleanup.`
+            `Found ${invalidTables.length} table(s) with missing physical table names. Attempting cleanup.`,
           );
 
           // Clean up invalid tables
@@ -84,7 +84,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
             console.error("Error cleaning up invalid tables:", deleteError);
             showNotification(
               "error",
-              `Failed to clean up invalid tables: ${deleteError.message}`
+              `Failed to clean up invalid tables: ${deleteError.message}`,
             );
           }
         }
@@ -112,32 +112,32 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
   const buildCreateTableSQL = (
     physicalTableName: string,
-    cols: ColumnDefinition[]
+    cols: ColumnDefinition[],
   ) => {
     const colsSql = cols
       .map(
-        (c) => `"${sanitizeIdentifier(c.name)}" ${mapColumnTypeToSql(c.type)}`
+        (c) => `"${sanitizeIdentifier(c.name)}" ${mapColumnTypeToSql(c.type)}`,
       )
       .join(",\n  ");
     return `CREATE TABLE IF NOT EXISTS "${sanitizeIdentifier(
-      physicalTableName
+      physicalTableName,
     )}" (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  ${colsSql},\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\n);`;
   };
 
   const buildAddColumnSQL = (
     physicalTableName: string,
-    column: ColumnDefinition
+    column: ColumnDefinition,
   ) => {
     return `ALTER TABLE "${sanitizeIdentifier(
-      physicalTableName
+      physicalTableName,
     )}" ADD COLUMN IF NOT EXISTS "${sanitizeIdentifier(
-      column.name
+      column.name,
     )}" ${mapColumnTypeToSql(column.type)};`;
   };
 
   const buildDropColumnSQL = (physicalTableName: string, colName: string) => {
     return `ALTER TABLE "${sanitizeIdentifier(
-      physicalTableName
+      physicalTableName,
     )}" DROP COLUMN IF EXISTS "${sanitizeIdentifier(colName)}";`;
   };
 
@@ -154,7 +154,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
     if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(tableName.trim())) {
       showNotification(
         "error",
-        "Table name must start with a letter and contain only letters, numbers, and underscores"
+        "Table name must start with a letter and contain only letters, numbers, and underscores",
       );
       return;
     }
@@ -170,12 +170,12 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         (_, i) => ({
           name: `column_${i + 1}`,
           type: "text",
-        })
+        }),
       );
       setColumns(newColumns);
 
       const physicalTableName = sanitizeIdentifier(
-        `${tableName}_${currentUser.id}`
+        `${tableName}_${currentUser.id}`,
       );
       const { data: tableData, error: tableError } = await supabase
         .from("custom_tables")
@@ -198,7 +198,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       if (!tableData.physical_table_name) {
         console.error("physical_table_name is null after insert:", tableData);
         throw new Error(
-          "Failed to set physical_table_name. Check RLS or database triggers."
+          "Failed to set physical_table_name. Check RLS or database triggers.",
         );
       }
 
@@ -267,7 +267,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
   const handleDeleteTable = async (table: CustomTable) => {
     if (
       !confirm(
-        `Are you sure you want to delete table "${table.name}"? This cannot be undone.`
+        `Are you sure you want to delete table "${table.name}"? This cannot be undone.`,
       )
     ) {
       return;
@@ -275,7 +275,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
     if (!table.physical_table_name) {
       showNotification(
         "error",
-        `Cannot delete table "${table.name}" due to missing physical name.`
+        `Cannot delete table "${table.name}" due to missing physical name.`,
       );
       return;
     }
@@ -320,13 +320,13 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       }
       showNotification(
         "success",
-        `Table "${table.name}" deleted successfully!`
+        `Table "${table.name}" deleted successfully!`,
       );
     } catch (error: any) {
       console.error("Delete table error:", error);
       showNotification(
         "error",
-        `Failed to delete table "${table.name}": ${error.message}`
+        `Failed to delete table "${table.name}": ${error.message}`,
       );
     } finally {
       setIsLoading(false);
@@ -337,7 +337,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
     if (!table.physical_table_name) {
       showNotification(
         "error",
-        `Table "${table.name}" has invalid configuration (missing physical name). Skipping.`
+        `Table "${table.name}" has invalid configuration (missing physical name). Skipping.`,
       );
       return;
     }
@@ -372,7 +372,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
       console.error("Load table error:", error);
       showNotification(
         "error",
-        `Failed to load table "${table.name}": ${error.message}`
+        `Failed to load table "${table.name}": ${error.message}`,
       );
     } finally {
       setIsLoading(false);
@@ -440,7 +440,7 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
         data.map((row) => {
           const { [colName]: _, ...rest } = row;
           return { ...rest, id: row.id };
-        })
+        }),
       );
       setPendingChanges((prev) => {
         const newChanges = { ...prev };
@@ -524,7 +524,9 @@ const ExcelLikeTable: React.FC<Props> = ({ currentUser, showNotification }) => {
 
   const handleCellChange = (rowId: string, colName: string, value: string) => {
     setData((prev) =>
-      prev.map((row) => (row.id === rowId ? { ...row, [colName]: value } : row))
+      prev.map((row) =>
+        row.id === rowId ? { ...row, [colName]: value } : row,
+      ),
     );
     setPendingChanges((prev) => ({
       ...prev,

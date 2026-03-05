@@ -1,27 +1,33 @@
-import React from "react";
+import type { TourFormData } from "../types/type";
 
 interface ShanghaiTemplateProps {
-  onSelect: (templateData: {
-    title: string;
-    name: string;
-    hotels: string;
-    services: string;
-    description: string;
-  }) => void;
+  onSelect: (data: Partial<TourFormData>) => void;
 }
 
-export default function ShanghaiTemplate({ onSelect }: ShanghaiTemplateProps) {
-  const templateData = {
-    title: "Shanghai",
-    name: "Shanghai Tour",
-    hotels: "Golden, Apart",
-    services: "",
-    description: "Shanghai Yvah 7 honogiin aylal",
-  };
+const SHANGHAI_TEMPLATE: Partial<TourFormData> = {
+  title: "Shanghai Tour",
+  description:
+    "Classic Shanghai city itinerary with historical waterfront and skyline highlights.",
+  country: "China",
+  genre: "City",
+  hotel: "Shanghai HOTEL",
+  country_temperature: "18",
+  duration_day: "7",
+  duration_night: "6",
+  group_size: "+20",
+  seats: "20",
+  is_featured: true,
+  airlines: "MIAT",
+  hotels: "Golden Hotel, Apart Hotel",
+  services: "City tour, Museum pass",
+  image_key:
+    "https://res.cloudinary.com/dgl5ewohj/image/upload/v1769488976/Shanghai_cqld9b_xkpbwx.png",
+};
 
+export default function ShanghaiTemplate({ onSelect }: ShanghaiTemplateProps) {
   return (
     <button
-      onClick={() => onSelect(templateData)}
+      onClick={() => onSelect(SHANGHAI_TEMPLATE)}
       className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
     >
       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

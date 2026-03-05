@@ -4,7 +4,9 @@ import {
   changeUserRoleAdmin,
   deleteUserAdmin,
   listUsersAdmin,
+  listPendingUsersAdmin,
 } from "../api/admin";
+import { supabase } from "../supabaseClient";
 import type { User } from "../types/type";
 import { Trash2, AlertTriangle, Loader2, UserCheck, Mail } from "lucide-react";
 
@@ -14,7 +16,107 @@ interface RoleChangerProps {
   currentUser: User;
 }
 
-const roles = ["user", "provider", "admin", "superadmin", "manager"];
+type PendingUserRow = {
+  id: string;
+  email: string;
+  username?: string | null;
+  role_requested?: string | null;
+  status?: "pending" | "approved" | "declined";
+  created_at?: string | null;
+};
+
+const EMPTY_USER: Omit<User, "id" | "email"> = {
+  userId: "",
+  first_name: "",
+  last_name: "",
+  username: "",
+  role: "user",
+  phone: "",
+  password: "",
+  blacklist: false,
+  company: "",
+  access: "active",
+  status: "approved",
+  birth_date: "",
+  id_card_number: "",
+  travel_history: [],
+  passport_number: "",
+  passport_expire: "",
+  allergy: "",
+  emergency_phone: "",
+  membership_rank: "",
+  membership_points: 0,
+  registered_by: "",
+  createdBy: "",
+  createdAt: "",
+  updatedAt: "",
+  auth_user_id: "",
+};
+
+function toTimestamp(user: Partial<User>) {
+  const value =
+    user.createdAt ||
+    (user as any).created_at ||
+    user.updatedAt ||
+    (user as any).updated_at ||
+    "";
+  return String(value || "");
+}
+
+function normalizeUserRow(row: any): User | null {
+  if (!row || typeof row !== "object") return null;
+
+  const id =
+    String(row.id || row.user_id || row.auth_user_id || "").trim() || null;
+  if (!id) return null;
+
+  const email =
+    String(
+      row.email ||
+        row.auth_email ||
+        row.user_email ||
+        row.raw_user_meta_data?.email ||
+        "",
+    ).trim() || `unknown+${id}@local`;
+
+  return {
+    ...EMPTY_USER,
+    ...row,
+    id,
+    userId: id,
+    email,
+    username:
+      typeof row.username === "string" && row.username.trim().length > 0
+        ? row.username
+        : email.split("@")[0],
+    role:
+      typeof row.role === "string" && row.role.trim().length > 0
+        ? row.role
+        : "user",
+    status:
+      row.status === "pending" || row.status === "declined" || row.status === "approved"
+        ? row.status
+        : "approved",
+    access:
+      row.access === "pending" || row.access === "suspended" || row.access === "active"
+        ? row.access
+        : "active",
+    createdAt:
+      String(row.createdAt || row.created_at || "") || EMPTY_USER.createdAt,
+    updatedAt:
+      String(row.updatedAt || row.updated_at || "") || EMPTY_USER.updatedAt,
+  };
+}
+
+const roles = [
+  "user",
+  "provider",
+  "subcontractor",
+  "agent",
+  "admin",
+  "superadmin",
+  "manager",
+];
 
 function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -24,16 +126,84 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   );
 
   const fetchUsers = async () => {
+    const byId = new Map<string, User>();
+
     try {
       const adminUsers = await listUsersAdmin<User>();
-      setUsers(adminUsers || []);
+      for (const row of adminUsers || []) {
+        const normalized = normalizeUserRow(row);
+        if (!normalized) continue;
+        byId.set(normalized.id, normalized);
+      }
     } catch (err: any) {
-      console.error("💥 Unexpected error fetching users:", err);
-      alert(
-        `Unexpected error fetching users: ${err.message || "Unknown error"}`,
+      console.warn(
+        "Admin function unavailable, using fallback users source",
+        err,
       );
-      setUsers([]);
     }
+
+    const { data: fallbackUsersPlain, error: fallbackPlain } = await supabase
+      .from("users")
+      .select("*");
+
+    if (!fallbackPlain) {
+      for (const row of fallbackUsersPlain || []) {
+        const normalized = normalizeUserRow(row);
+        if (!normalized) continue;
+        byId.set(normalized.id, normalized);
+      }
+    }
+
+    try {
+      const pendingUsers = await listPendingUsersAdmin<PendingUserRow>();
+      const existingEmails = new Set(
+        Array.from(byId.values())
+          .map((user) => String(user.email || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+
+      for (const pending of pendingUsers || []) {
+        const pendingEmail = String(pending.email || "").trim();
+        if (!pendingEmail) continue;
+
+        const emailKey = pendingEmail.toLowerCase();
+        if (existingEmails.has(emailKey)) continue;
+
+        const syntheticId = `pending:${pending.id}`;
+        const synthetic: User = {
+          ...EMPTY_USER,
+          id: syntheticId,
+          userId: syntheticId,
+          email: pendingEmail,
+          username:
+            typeof pending.username === "string" && pending.username.trim().length > 0
+              ? pending.username
+              : pendingEmail.split("@")[0],
+          role:
+            typeof pending.role_requested === "string" && pending.role_requested.trim().length > 0
+              ? pending.role_requested
+              : "user",
+          status: pending.status === "declined" ? "declined" : "pending",
+          access: "pending",
+          createdAt: String(pending.created_at || ""),
+          updatedAt: String(pending.created_at || ""),
+        };
+
+        byId.set(syntheticId, synthetic);
+      }
+    } catch (pendingError) {
+      console.warn("Failed to load pending users for role table", pendingError);
+    }
+
+    const mergedUsers = Array.from(byId.values()).sort((a, b) =>
+      toTimestamp(b).localeCompare(toTimestamp(a)),
+    );
+
+    if (mergedUsers.length === 0 && fallbackPlain) {
+      console.error("💥 Unexpected error fetching users:", fallbackPlain);
+    }
+
+    setUsers(mergedUsers);
   };
 
   useEffect(() => {
@@ -41,6 +211,11 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   }, []);
 
   const handleChangeRole = async (userId: string, newRole: string) => {
+    if (userId.startsWith("pending:")) {
+      alert("Pending request users must be approved first from Account Requests.");
+      return;
+    }
+
     setLoading((prev) => ({ ...prev, [userId]: true }));
 
     try {
@@ -55,6 +230,11 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (userId.startsWith("pending:")) {
+      alert("Pending request users cannot be deleted from this table.");
+      return;
+    }
+
     if (showDeleteConfirm === userId) {
       setDeleting((prev) => ({ ...prev, [userId]: true }));
       setShowDeleteConfirm(null);
@@ -77,7 +257,7 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
   };
 
   // Filter out invalid users and ensure current user is included
-  const displayUsers = users.filter((user) => user && user.id && user.email);
+  const displayUsers = users.filter((user) => user && user.id);
   const currentUserExists = displayUsers.find((u) => u.id === currentUser.id);
   if (!currentUserExists && currentUser.id && currentUser.email) {
     displayUsers.push({
@@ -202,14 +382,20 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
               ) : (
                 displayUsers.map((user, index) => {
                   const isCurrentUser = user.id === currentUser.id;
+                  const isPendingRequest =
+                    user.id.startsWith("pending:") ||
+                    user.status === "pending" ||
+                    user.access === "pending";
                   const displayName = getDisplayName(user);
 
                   return (
                     <tr
                       key={`${user.id}-${index}`}
-                      className={`transition-colors ${
+                        className={`transition-colors ${
                         isCurrentUser
                           ? "bg-slate-50 border-l-4 border-slate-400"
+                          : isPendingRequest
+                            ? "bg-amber-50"
                           : index % 2 === 0
                             ? "bg-white"
                             : "bg-gray-50"
@@ -233,6 +419,11 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                                 👤 YOU
                               </span>
                             )}
+                            {isPendingRequest && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-200 text-amber-800 ml-2">
+                                PENDING
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -252,13 +443,19 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                            user.role === "admin" || user.role === "superadmin"
+                            isPendingRequest
+                              ? "bg-amber-100 text-amber-800"
+                              : user.role === "admin" || user.role === "superadmin"
                               ? "bg-red-100 text-red-800"
-                              : user.role === "provider"
+                              : user.role === "provider" ||
+                                  user.role === "agent"
                                 ? "bg-blue-100 text-blue-800"
-                                : user.role === "manager"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-gray-100 text-gray-800"
+                                : user.role === "user" ||
+                                    user.role === "subcontractor"
+                                  ? "bg-gray-100 text-gray-800"
+                                  : user.role === "manager"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-100 text-gray-800"
                           }`}
                         >
                           {user.role || "user"}
@@ -267,12 +464,12 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                       <td className="px-4 py-4 whitespace-nowrap">
                         <select
                           value={user.role || "user"}
-                          disabled={loading[user.id] || isCurrentUser}
+                          disabled={loading[user.id] || isCurrentUser || isPendingRequest}
                           onChange={(e) =>
                             handleChangeRole(user.id, e.target.value)
                           }
                           className={`w-full max-w-[100px] px-2 py-1 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            loading[user.id] || isCurrentUser
+                            loading[user.id] || isCurrentUser || isPendingRequest
                               ? "bg-gray-100 cursor-not-allowed border-gray-300"
                               : "border-gray-300 hover:border-gray-400"
                           }`}
@@ -294,10 +491,12 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                           )}
                           <button
                             onClick={() => handleDeleteUser(user.id)}
-                            disabled={deleting[user.id] || isCurrentUser}
+                            disabled={deleting[user.id] || isCurrentUser || isPendingRequest}
                             className={`p-2 rounded transition-colors flex items-center justify-center ${
                               isCurrentUser
                                 ? "opacity-50 cursor-not-allowed text-gray-400"
+                                : isPendingRequest
+                                  ? "opacity-50 cursor-not-allowed text-amber-500"
                                 : deleting[user.id]
                                   ? "text-gray-400 cursor-not-allowed"
                                   : "text-red-600 hover:text-red-800 hover:bg-red-50"
@@ -305,6 +504,8 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
                             title={
                               isCurrentUser
                                 ? "Cannot delete yourself"
+                                : isPendingRequest
+                                  ? "Approve or decline this request in Account Requests"
                                 : "Delete user"
                             }
                           >
@@ -328,9 +529,20 @@ function RoleChanger({ users, setUsers, currentUser }: RoleChangerProps) {
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
-            {confirmDeleteMessage(
-              users.find((u) => u.id === showDeleteConfirm)!,
-            )}
+            {(() => {
+              const selected = users.find((u) => u.id === showDeleteConfirm);
+              if (!selected) {
+                return (
+                  <div className="p-4">
+                    <p className="text-sm text-gray-600">
+                      User no longer available. Please refresh.
+                    </p>
+                  </div>
+                );
+              }
+
+              return confirmDeleteMessage(selected);
+            })()}
           </div>
         </div>
       )}

@@ -32,7 +32,7 @@ interface RoomSlot {
 
 // Helper: Group passengers by main passenger
 const buildGroups = (
-  passengers: RoomPassenger[]
+  passengers: RoomPassenger[],
 ): { main: RoomPassenger; members: RoomPassenger[] }[] => {
   const groups: { main: RoomPassenger; members: RoomPassenger[] }[] = [];
   const passengerMap = new Map<string | number, RoomPassenger>();
@@ -66,7 +66,7 @@ const buildGroups = (
 
   // Sort groups by main's serial_no
   groups.sort((a, b) =>
-    (a.main.serial_no || "").localeCompare(b.main.serial_no || "")
+    (a.main.serial_no || "").localeCompare(b.main.serial_no || ""),
   );
   return groups;
 };
@@ -74,13 +74,13 @@ const buildGroups = (
 export const assignRoomAllocation = async (
   allPassengers: Passenger[],
   currentPassenger: Passenger,
-  departureDate: string
+  departureDate: string,
 ): Promise<string> => {
   // === 1. Fetch DB passengers ===
   const { data: dbData, error } = await supabase
     .from("passengers")
     .select(
-      "id, serial_no, main_passenger_id, roomType, departure_date, room_allocation"
+      "id, serial_no, main_passenger_id, roomType, departure_date, room_allocation",
     )
     .eq("departure_date", departureDate);
 
@@ -150,7 +150,7 @@ export const assignRoomAllocation = async (
     // Try to fill existing under-used rooms of same type
     while (remaining > 0) {
       const availableSlot = roomSlots.find(
-        (r) => r.roomType === roomType && r.used < r.capacity
+        (r) => r.roomType === roomType && r.used < r.capacity,
       );
 
       if (

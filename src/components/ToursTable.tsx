@@ -18,6 +18,22 @@ import type { Tour, TourFormData } from "../types/type";
 
 type Status = "active" | "inactive" | "full" | "completed";
 
+const getSourceLabel = (sourceTag?: Tour["source_tag"]) => {
+  if (sourceTag === "global") return "Global";
+  if (sourceTag === "global+local") return "Global + Local";
+  return "Local";
+};
+
+const getSourceClassName = (sourceTag?: Tour["source_tag"]) => {
+  if (sourceTag === "global") {
+    return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  }
+  if (sourceTag === "global+local") {
+    return "bg-blue-100 text-blue-700 border-blue-200";
+  }
+  return "bg-gray-100 text-gray-700 border-gray-200";
+};
+
 interface ToursTableProps {
   tours: Tour[];
   onSave: (tourId: string, data: TourFormData) => Promise<void>;
@@ -38,6 +54,9 @@ export default function ToursTable({
   // FILTERS
   const [searchTitle, setSearchTitle] = useState("");
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  const [sourceFilter, setSourceFilter] = useState<
+    "all" | "global" | "global+local" | "local"
+  >("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -48,6 +67,9 @@ export default function ToursTable({
         .includes(searchTitle.toLowerCase());
       const matchesStatus =
         statusFilter === "all" || tour.status === statusFilter;
+      const normalizedSource = tour.source_tag ?? "local";
+      const matchesSource =
+        sourceFilter === "all" || normalizedSource === sourceFilter;
       const tourDate = tour.departure_date;
 
       const matchesDateFrom = !dateFrom || (tourDate && tourDate >= dateFrom);
@@ -56,11 +78,12 @@ export default function ToursTable({
       return (
         (matchesTitle ?? true) &&
         matchesStatus &&
+        matchesSource &&
         matchesDateFrom &&
         matchesDateTo
       );
     });
-  }, [tours, searchTitle, statusFilter, dateFrom, dateTo]);
+  }, [tours, searchTitle, statusFilter, sourceFilter, dateFrom, dateTo]);
 
   const startEdit = (tour: Tour) => {
     setEditingId(tour.id);
@@ -122,7 +145,7 @@ export default function ToursTable({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
             <input
@@ -143,6 +166,20 @@ export default function ToursTable({
             <option value="inactive">Inactive</option>
             <option value="full">Full</option>
             <option value="completed">Completed</option>
+          </select>
+          <select
+            value={sourceFilter}
+            onChange={(e) =>
+              setSourceFilter(
+                e.target.value as "all" | "global" | "global+local" | "local",
+              )
+            }
+            className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Sources</option>
+            <option value="global">Global</option>
+            <option value="global+local">Global + Local</option>
+            <option value="local">Local</option>
           </select>
           <input
             type="date"
@@ -238,8 +275,15 @@ export default function ToursTable({
                               <div className="font-semibold text-gray-900 truncate">
                                 {tour.title || "Untitled Tour"}
                               </div>
-                              <div className="text-xs text-gray-500">
-                                #{tour.tour_number || tour.id.slice(0, 6)}
+                              <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
+                                <span>#{tour.tour_number || tour.id.slice(0, 6)}</span>
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium ${getSourceClassName(
+                                    tour.source_tag,
+                                  )}`}
+                                >
+                                  {getSourceLabel(tour.source_tag)}
+                                </span>
                               </div>
                             </>
                           )}

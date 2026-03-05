@@ -18,6 +18,22 @@ import type { Tour, TourFormData } from "../../types/type";
 
 type Status = "active" | "inactive" | "full" | "completed";
 
+const getSourceLabel = (sourceTag?: Tour["source_tag"]) => {
+  if (sourceTag === "global") return "Global";
+  if (sourceTag === "global+local") return "Global + Local";
+  return "Local";
+};
+
+const getSourceClassName = (sourceTag?: Tour["source_tag"]) => {
+  if (sourceTag === "global") {
+    return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  }
+  if (sourceTag === "global+local") {
+    return "bg-blue-100 text-blue-700 border-blue-200";
+  }
+  return "bg-gray-100 text-gray-700 border-gray-200";
+};
+
 interface TourCardProps {
   tour: Tour;
   isEditing: boolean;
@@ -63,6 +79,85 @@ export default function TourCard({
           }
           className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
         />
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            placeholder="Country"
+            value={editForm.country || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, country: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Genre"
+            value={editForm.genre || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, genre: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Duration Day"
+            value={editForm.duration_day || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, duration_day: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Duration Night"
+            value={editForm.duration_night || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, duration_night: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Group Size"
+            value={editForm.group_size || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, group_size: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Main Hotel"
+            value={editForm.hotel || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, hotel: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Country Temp"
+            value={editForm.country_temperature || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({
+                ...f,
+                country_temperature: e.target.value,
+              }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            placeholder="Airlines (comma-separated)"
+            value={editForm.airlines || ""}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, airlines: e.target.value }))
+            }
+            className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={Boolean(editForm.is_featured)}
+            onChange={(e) =>
+              setEditForm((f) => ({ ...f, is_featured: e.target.checked }))
+            }
+          />
+          Featured Tour
+        </label>
         <input
           type="date"
           value={editForm.departure_date || ""}
@@ -204,10 +299,10 @@ export default function TourCard({
               tour.status === "active"
                 ? "bg-green-100 text-green-800"
                 : tour.status === "inactive"
-                ? "bg-gray-100 text-gray-800"
-                : tour.status === "full"
-                ? "bg-red-100 text-red-800"
-                : "bg-purple-100 text-purple-800"
+                  ? "bg-gray-100 text-gray-800"
+                  : tour.status === "full"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-purple-100 text-purple-800"
             }`}
           >
             {tour.status || "active"}
@@ -220,6 +315,45 @@ export default function TourCard({
           <MapPin className="w-4 h-4 mr-2 text-gray-400" />
           {tour.title || "Unnamed Tour"}
         </h4>
+        {(tour.country || tour.genre) && (
+          <p className="text-sm text-gray-600">
+            {[tour.country, tour.genre].filter(Boolean).join(" • ")}
+          </p>
+        )}
+        <div>
+          <span
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-xs font-medium ${getSourceClassName(
+              tour.source_tag,
+            )}`}
+          >
+            {getSourceLabel(tour.source_tag)}
+          </span>
+          {tour.is_featured && (
+            <span className="inline-flex items-center ml-2 px-2.5 py-0.5 rounded-full border text-xs font-medium bg-amber-100 text-amber-700 border-amber-200">
+              Featured
+            </span>
+          )}
+        </div>
+
+        {(tour.duration_day || tour.group_size) && (
+          <div className="flex gap-2 flex-wrap">
+            {tour.duration_day && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-sky-100 text-sky-700">
+                {tour.duration_day} day
+              </span>
+            )}
+            {tour.duration_night && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700">
+                {tour.duration_night} night
+              </span>
+            )}
+            {tour.group_size && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">
+                Group {tour.group_size}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
           <div className="flex items-center">

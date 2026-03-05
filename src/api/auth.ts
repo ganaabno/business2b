@@ -1,12 +1,10 @@
 import { supabase } from "../supabaseClient";
 import type { User, Role } from "../types/type";
+import { normalizeRole } from "../utils/roles";
 
 // Convert DB role to Role type
 function toRole(value: any): Role {
-  const v = String(value ?? "user") as Role;
-  return ["user", "provider", "admin", "superadmin", "manager"].includes(v)
-    ? v
-    : "user";
+  return normalizeRole(value);
 }
 
 // Login function

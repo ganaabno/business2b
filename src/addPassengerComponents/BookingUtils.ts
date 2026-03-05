@@ -67,10 +67,10 @@ export const createNewPassenger = (
     last_name?: string;
     phone?: string;
     main_passenger_id?: string | null;
-  } = {}
+  } = {},
 ): Passenger => {
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
-    currentUser.role || "user"
+    currentUser.role || "user",
   );
   const serialNo = (existingPassengers.length + 1).toString();
   const lastPassenger = existingPassengers[existingPassengers.length - 1];
@@ -150,10 +150,10 @@ export function createNewPassengerLocal(
     roomType?: string;
     room_allocation?: string;
     serial_no?: string;
-  } = {}
+  } = {},
 ): Passenger {
   const isPowerUser = ["admin", "manager", "superadmin"].includes(
-    user.role || "user"
+    user.role || "user",
   );
   const baseSerial = (passengers.length + 1).toString();
   const defaultHotel = hotels.length > 0 ? hotels[0] : "";

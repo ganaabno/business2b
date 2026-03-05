@@ -203,6 +203,18 @@ export default function PassengersTab({
   );
   const mountCount = useRef(0);
   const fetchCount = useRef(0);
+  const lastToursFetchAtRef = useRef(0);
+  const lastPassengersFetchAtRef = useRef(0);
+  const toursCountRef = useRef(0);
+  const passengersCountRef = useRef(0);
+
+  useEffect(() => {
+    toursCountRef.current = tours.length;
+  }, [tours.length]);
+
+  useEffect(() => {
+    passengersCountRef.current = passengers.length;
+  }, [passengers.length]);
 
   // Function to calculate age from DOB
   const calculateAge = (dob: string | null | undefined): number => {
@@ -252,7 +264,15 @@ export default function PassengersTab({
 
   // Fetch tours for the tour dropdown
   const fetchTours = useRef(
-    _.debounce(async () => {
+    _.debounce(async (force = false, silent = true) => {
+      const now = Date.now();
+      if (
+        !force &&
+        now - lastToursFetchAtRef.current < 15000 &&
+        toursCountRef.current > 0
+      ) {
+        return;
+      }
       try {
         let query = supabase
           .from("tours")
@@ -260,22 +280,38 @@ export default function PassengersTab({
           .eq("status", "active");
         const { data, error } = await query;
         if (error) {
-          showNotification("error", `Failed to fetch tours: ${error.message}`);
+          if (!silent) {
+            showNotification(
+              "error",
+              `Failed to fetch tours: ${error.message}`,
+            );
+          }
           return;
         }
         setTours(data as TourOption[]);
+        lastToursFetchAtRef.current = Date.now();
       } catch (error) {
-        showNotification(
-          "error",
-          "An unexpected error occurred while fetching tours.",
-        );
+        if (!silent) {
+          showNotification(
+            "error",
+            "An unexpected error occurred while fetching tours.",
+          );
+        }
       }
     }, 500),
   ).current;
 
   // Debounced fetchPassengers
   const fetchPassengers = useRef(
-    _.debounce(async () => {
+    _.debounce(async (force = false, silent = true) => {
+      const now = Date.now();
+      if (
+        !force &&
+        now - lastPassengersFetchAtRef.current < 5000 &&
+        passengersCountRef.current > 0
+      ) {
+        return;
+      }
       fetchCount.current += 1;
       try {
         let query = supabase.from("passengers").select(`
@@ -295,10 +331,12 @@ export default function PassengersTab({
         }
         const { data, error } = await query;
         if (error) {
-          showNotification(
-            "error",
-            `Failed to fetch passengers: ${error.message}`,
-          );
+          if (!silent) {
+            showNotification(
+              "error",
+              `Failed to fetch passengers: ${error.message}`,
+            );
+          }
           return;
         }
         const enrichedPassengers = data.map((p: any) => ({
@@ -316,11 +354,14 @@ export default function PassengersTab({
           notes: p.notes || "",
         })) as Passenger[];
         setPassengers(enrichedPassengers);
+        lastPassengersFetchAtRef.current = Date.now();
       } catch (error) {
-        showNotification(
-          "error",
-          "An unexpected error occurred while fetching passengers.",
-        );
+        if (!silent) {
+          showNotification(
+            "error",
+            "An unexpected error occurred while fetching passengers.",
+          );
+        }
       }
     }, 1000),
   ).current;
@@ -332,8 +373,12 @@ export default function PassengersTab({
 
   // Fetch tours and setup real-time subscription
   useEffect(() => {
-    fetchTours();
-    fetchPassengers();
+    if (tours.length === 0) {
+      fetchTours(true, false);
+    }
+    if (passengers.length === 0) {
+      fetchPassengers(true, false);
+    }
 
     if (!subscriptionRef.current) {
       subscriptionRef.current = supabase
@@ -351,7 +396,7 @@ export default function PassengersTab({
           },
           (payload) => {
             if (["INSERT", "UPDATE", "DELETE"].includes(payload.eventType)) {
-              fetchPassengers();
+              fetchPassengers(false, true);
             }
           },
         )
