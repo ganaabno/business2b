@@ -529,7 +529,10 @@ export default function ConversationalChat() {
           try {
             const tourActivities = await fetchTourItineraries(tour.id);
             setTourItineraries(tourActivities);
-            console.log("[Chat] Tour activities loaded:", tourActivities.length);
+            console.log(
+              "[Chat] Tour activities loaded:",
+              tourActivities.length,
+            );
           } catch (err) {
             console.warn("[Chat] Failed to load tour activities:", err);
             setTourItineraries([]);
@@ -900,16 +903,20 @@ export default function ConversationalChat() {
           let priceValue = 0;
 
           // Check if it's a TourItinerary or ItineraryItem
-          const tourItinerary = activity as unknown as { price_modifier?: number; price_model?: string; price_value?: number };
-          
+          const tourItinerary = activity as unknown as {
+            price_modifier?: number;
+            price_model?: string;
+            price_value?: number;
+          };
+
           // TourItinerary uses price_modifier, ItineraryItem uses price_value
-          if ('price_modifier' in activity) {
+          if ("price_modifier" in activity) {
             priceValue = tourItinerary.price_modifier || 0;
             activityTotal = priceValue; // Fixed price for tour activities
-          } else if ('price_value' in activity) {
+          } else if ("price_value" in activity) {
             priceValue = tourItinerary.price_value || 0;
             const priceModel = (activity as ItineraryItem).price_model;
-            
+
             if (priceModel === "per_person") {
               activityQuantity = numTravelers;
               activityTotal = priceValue * numTravelers;
@@ -1142,7 +1149,8 @@ export default function ConversationalChat() {
 
     if (currentState === "itinerary_selection") {
       // Use tour-specific activities (tourItineraries) instead of global (itineraryItems)
-      const currentActivities = tourItineraries.length > 0 ? tourItineraries : itineraryItems;
+      const currentActivities =
+        tourItineraries.length > 0 ? tourItineraries : itineraryItems;
 
       // Helper to toggle activity selection
       const toggleActivity = (itemId: string) => {
@@ -1205,12 +1213,13 @@ export default function ConversationalChat() {
           <div className="flex flex-wrap gap-2 mb-3">
             {currentActivities.map((item, idx) => {
               const isSelected = tempSelectedActivityIds.includes(item.id);
-              
+
               // Get price - TourItinerary uses price_modifier, ItineraryItem uses price_value
-              const priceValue = 'price_modifier' in item 
-                ? (item as TourItinerary).price_modifier 
-                : (item as ItineraryItem).price_value;
-              
+              const priceValue =
+                "price_modifier" in item
+                  ? (item as TourItinerary).price_modifier
+                  : (item as ItineraryItem).price_value;
+
               return (
                 <button
                   key={item.id}

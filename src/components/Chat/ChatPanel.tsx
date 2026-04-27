@@ -249,7 +249,7 @@ export default function ChatPanel({ currentUser, onClose }: ChatPanelProps) {
               )}
               <div ref={messagesEndRef} />
             </div>
-              
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
