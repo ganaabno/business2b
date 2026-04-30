@@ -140,6 +140,10 @@ export const env = {
   b2bSerialEnforcementEnabled:
     String(process.env.B2B_SERIAL_ENFORCEMENT_ENABLED || "true").toLowerCase() !== "false",
   b2bAllowLegacyDb: toBool(process.env.B2B_ALLOW_LEGACY_DB, false),
+  // Groq AI Configuration
+  groqApiKey: process.env.GROQ_API_KEY || "",
+  groqModel: process.env.GROQ_MODEL || "llama3-70b-8192",
+  // Legacy Gemini Configuration (deprecated, use Groq instead)
   geminiApiKey: process.env.GEMINI_AI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
   geminiMaxTokens: toPositiveInt(process.env.GEMINI_MAX_TOKENS, 1024),

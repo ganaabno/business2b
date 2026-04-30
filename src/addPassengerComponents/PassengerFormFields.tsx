@@ -51,15 +51,13 @@ type SectionHeaderProps = {
 
 function SectionHeader({ icon: Icon, title, hint }: SectionHeaderProps) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700">
-          <Icon className="h-4 w-4" />
-        </span>
-        <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+    <div className="flex items-center justify-between mb-0.5">
+      <div className="flex items-center gap-1">
+        <Icon className="h-3 w-3 text-gray-500" />
+        <h4 className="text-[10px] font-medium text-gray-900 uppercase tracking-wide">{title}</h4>
       </div>
 
-      {hint ? <span className="text-xs text-gray-500">{hint}</span> : null}
+      {hint ? <span className="text-[9px] text-gray-500">{hint}</span> : null}
     </div>
   );
 }
@@ -294,18 +292,18 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
     const requiredTotal = REQUIRED_PASSENGER_FIELDS.length;
     const requiredCompleted = requiredTotal - missingRequiredFields.length;
     const completionPercent = Math.round((requiredCompleted / requiredTotal) * 100);
-    const labelClass =
-      "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600";
-    const errorClass = "mt-1 text-xs text-red-600";
+const labelClass =
+      "mb-0 block text-[9px] font-medium uppercase tracking-wide text-gray-600";
+    const errorClass = "mt-0 text-[9px] text-red-600";
     const inputClass = (hasError: boolean) =>
       `mono-input ${hasError ? "border-red-400" : ""}`;
     const selectClass = (hasError: boolean) =>
       `mono-select ${hasError ? "border-red-400" : ""}`;
 
     return (
-      <div className="space-y-5 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mono-panel p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+<div className="space-y-1.5 rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
+        <div className="mono-panel p-1.5">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {t("passengerFormProgressLabel")}
@@ -333,7 +331,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
             </span>
           </div>
 
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-200">
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200">
             <div
               className={`h-full transition-all duration-300 ${
                 missingRequiredFields.length === 0
@@ -354,23 +352,23 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
           )}
         </div>
 
-        {!passenger.main_passenger_id && (
-          <div className="mono-panel border-blue-200 bg-blue-50/70 p-4">
-            <div className="flex flex-wrap items-start gap-3">
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-900">
+{!passenger.main_passenger_id && (
+          <div className="mono-panel border-blue-200 bg-blue-50/70 p-1.5">
+            <div className="flex flex-wrap items-start gap-1">
+              <label className="flex items-center gap-1 text-xs font-medium text-gray-900">
                 <input
                   type="checkbox"
                   checked={passenger.has_sub_passengers || false}
                   onChange={(e) =>
                     immediateUpdate("hasSubPassengers", e.target.checked)
                   }
-                  className="h-4 w-4 rounded border-gray-300"
+                  className="h-3 w-3 rounded border-gray-300"
                 />
                 {t("passengerFormHasSubPassengers")}
               </label>
 
               {passenger.has_sub_passengers && (
-                <div className="ml-auto grid w-full gap-2 sm:max-w-sm">
+                <div className="ml-auto grid w-full gap-1 sm:max-w-sm">
                   <label className={labelClass}>
                     {t("passengerFormSubPassengerCount")}
                   </label>
@@ -399,11 +397,11 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="mono-panel p-4">
+<div className="grid grid-cols-1 gap-1 xl:grid-cols-2">
+          <section className="mono-panel p-1.5">
             <SectionHeader icon={UserRound} title={t("passengerFormIdentitySection")} />
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-1 md:grid-cols-3">
               <div>
                 <label className={labelClass}>{t("passengerFormSerialNo")}</label>
                 <input
@@ -451,7 +449,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="mt-1 grid grid-cols-1 gap-1 md:grid-cols-3">
               <div>
                 <label className={labelClass}>{t("passengerFormPaxType")} *</label>
                 <select
@@ -524,10 +522,10 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
             </div>
           </section>
 
-          <section className="mono-panel p-4">
+<section className="mono-panel p-1.5">
             <SectionHeader icon={Contact} title={t("passengerFormContactSection")} />
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-1">
               <div>
                 <label className={labelClass}>{t("email")} *</label>
                 <input
@@ -542,7 +540,7 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
                 )}
               </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+<div className="grid grid-cols-1 gap-1 md:grid-cols-2">
                 <div>
                   <label className={labelClass}>{t("phone")} *</label>
                   <input
@@ -576,11 +574,11 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
           </section>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="mono-panel p-4">
+<div className="grid grid-cols-1 gap-1.5 xl:grid-cols-2">
+          <section className="mono-panel p-1.5">
             <SectionHeader icon={VenetianMask} title={t("passengerFormDemographicsSection")} />
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
               <div>
                 <label className={labelClass}>{t("dob")} *</label>
                 <input
@@ -638,10 +636,10 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
             </div>
           </section>
 
-          <section className="mono-panel p-4">
+<section className="mono-panel p-1.5">
             <SectionHeader icon={IdCard} title={t("passengerFormPassportSection")} />
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
               <div>
                 <label className={labelClass}>{t("passportNumber")} *</label>
                 <input
@@ -678,17 +676,17 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
               </div>
             </div>
 
-            <div className="mt-3 mono-panel p-3">
+<div className="mt-1 mono-panel p-1.5">
               <label className={labelClass}>{t("passengerFormPassportUpload")}</label>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1">
                 <input
                   type="file"
                   accept="image/*,.pdf"
                   onChange={handlePassportUpload}
-                  className="text-sm text-gray-600 file:mr-2 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-50"
+                  className="text-[10px] text-gray-600 file:mr-1 file:rounded-sm file:border file:border-gray-300 file:bg-white file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-gray-700 hover:file:bg-gray-50"
                 />
                 {(fieldLoading[`${passenger.id}-passport_upload`] || uploadLoading) && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-700" />
+                  <div className="h-3 w-3 animate-spin rounded-full border-b-2 border-gray-700" />
                 )}
                 <span
                   className={`mono-badge ${
@@ -704,10 +702,10 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
           </section>
         </div>
 
-        <section className="mono-panel p-4">
+<section className="mono-panel p-1.5">
           <SectionHeader icon={BedDouble} title={t("passengerFormStaySection")} />
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-1 md:grid-cols-3">
             <div>
               <label className={labelClass}>{t("roomType")} *</label>
               <select
@@ -730,10 +728,10 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
               )}
             </div>
 
-            <div>
+<div>
               <label className={labelClass}>{t("roomAllocation")}</label>
-              <div className="mono-panel flex min-h-[46px] items-center px-3">
-                <span className="mono-badge">
+              <div className="mono-panel flex min-h-[32px] items-center px-1.5">
+                <span className="mono-badge text-[10px]">
                   {passenger.room_allocation || t("notSet")}
                 </span>
               </div>
@@ -760,20 +758,20 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
           </div>
         </section>
 
-        <section className="mono-panel p-4">
+<section className="mono-panel p-1.5">
           <SectionHeader
             icon={Sparkles}
             title={t("passengerFormExtrasSection")}
             hint={managerMode ? t("managerOptionalDetails") : undefined}
           />
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-1 lg:grid-cols-2">
             <div>
               <label className={labelClass}>{t("passengerFormAdditionalServices")}</label>
               {selectedTourData?.services && selectedTourData.services.length > 0 ? (
-                <div className="mono-panel max-h-40 space-y-2 overflow-y-auto p-3">
+                <div className="mono-panel max-h-20 space-y-0.5 overflow-y-auto p-1.5">
                   {selectedTourData.services.map((s) => (
-                    <label key={s.name} className="flex items-center gap-2 text-sm text-gray-700">
+                    <label key={s.name} className="flex items-center gap-1 text-[10px] text-gray-700">
                       <input
                         type="checkbox"
                         checked={(passenger.additional_services || []).includes(
@@ -809,14 +807,14 @@ export const PassengerFormFields: React.FC<PassengerFormFieldsProps> = memo(
             </div>
           </div>
 
-          <div className="mt-4">
+<div className="mt-1">
             <SectionHeader icon={FileText} title={t("notes")} />
             <textarea
               value={passenger.notes || ""}
               onChange={(e) => debouncedUpdate("notes", e.target.value)}
-              className="mono-input min-h-[110px]"
+              className="mono-input min-h-[40px] text-[10px]"
               placeholder={t("passengerFormNotesPlaceholder")}
-              rows={4}
+              rows={1}
             />
           </div>
         </section>

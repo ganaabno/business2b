@@ -1,4 +1,10 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+/**
+ * Groq AI Client for Chatbot
+ *
+ * This module provides a clean, production-ready integration with Groq API
+ * for generating AI responses in the travel chatbot.
+ */
+
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
 import { db } from "../../db/client.js";
@@ -18,17 +24,27 @@ export interface BookingDetails {
 export interface TourForAI {
   id: string;
   title: string;
-  destination: string;
+  name?: string;
+  description?: string;
   base_price: number;
-  departure_date: string;
-  duration_day: number;
+  departure_date?: string;
+  departuredate?: string;
+  duration_day?: number;
   seats: number;
+  available_seats?: number;
+  status?: string;
   tour_type?: string;
   image_key?: string;
 }
 
-const TOUR_FIELDS = `id, title, destination, base_price, departure_date, duration_day, seats, tour_type, image_key`;
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
+const TOUR_FIELDS = `id, title, name, description, departure_date, departuredate, base_price, seats, available_seats, status, tour_type, duration_day, image_key`;
+
+// Database functions (kept from original implementation)
 async function getToursFromDB(limit = 20): Promise<TourForAI[]> {
   try {
     const result = await db.query(
@@ -75,12 +91,13 @@ async function searchToursByDestinationDB(
   limit = 10,
 ): Promise<TourForAI[]> {
   try {
+    // Search in title and description instead of destination column
     const result = await db.query(
       `
       SELECT ${TOUR_FIELDS}
       FROM tours
-      WHERE status = 'active' AND seats > 0 
-        AND (destination ILIKE $1 OR title ILIKE $1)
+      WHERE status = 'active' AND seats > 0
+        AND (title ILIKE $1 OR name ILIKE $1 OR description ILIKE $1)
       ORDER BY base_price ASC
       LIMIT $2
     `,
@@ -93,10 +110,11 @@ async function searchToursByDestinationDB(
   }
 }
 
+// System prompts (kept from original implementation)
 const CHAT_SYSTEM_PROMPT = `Та нь GTrip аялалын AI зөвлөх.
 
 🎯 Таны зорилго:
-- Хэрэглэгчид хамгийн тохирох аяллыг ОЛЖ өгөх
+- Хэрэглэгчид хамгийн тохирох аялалыг ОЛЖ ӨГӨХ
 - Зүгээр хариулах биш → ШИЙДЭЛ санал болгох
 - Хэрэглэгчийг шийдвэр гаргахад туслах
 
@@ -112,11 +130,11 @@ const CHAT_SYSTEM_PROMPT = `Та нь GTrip аялалын AI зөвлөх.
 - Хэрвээ мэдээлэл дутуу → асуулт асуу
 
 📊 Та эдгээр өгөгдлийг ашиглана:
-- title, destination, base_price, duration_day, departure_date, seats
+- title, name, base_price, duration_day, departure_date, departuredate, seats
 
 🚫 ХОРИГЛОХ:
 - Хоосон ерөнхий яриа
-- “Мэдэхгүй” гэж шууд хэлэх
+- "Мэдэхгүй" гэж шууд хэлэх
 - Урт нуршсан текст
 
 ✅ ҮР ДҮН:
@@ -140,35 +158,7 @@ const CHAT_SYSTEM_PROMPT = `Та нь GTrip аялалын AI зөвлөх.
 - Товч, тодорхой
 - Эерэг, мэндчилгээтэй
 - Хэрэв мэдээлэл дутуу бол дараах асуултуудыг асуух
-- Хэрэглэгчид өөрийн бодолтой, байгалийн хэлээр хариулах
-
-Түүх:
-- Солонгос, Япон, Хятад, Тайланд, Вьетнам, Монгол, Турк, АНЭ-р гэх мэт алдартай чиглэлүүд
-- Сезон: Зун (6-8 сар) - үнэ өндөр, Өвөл (12-2 сар) - хямдарч болох
-- Хүний тоо ихэвэл группdiscount байж болно
-
-АЯЛЫН МЭДЭЭЛЛЭЛ:
-- Миний өмнөөөө энэ системд идэвхтэй аялууд байгаа. Би тэдгээрийг цаг алдалгүй авах боломжтой.
-- Аял бүрт: title ( нэр), destination ( газар), base_price ( үнэ), departure_date ( огноо), duration_day ( хоног), seats ( суудал тоо) бий.
-- Хамгийн бага үнэтэй аялыг олохын тулд getCheapestTours() эсвэл getAllTours() функцийг АШИГЛААРАЙ.
-
-Тооцоо талаар:
-- flight: Эдийн засаг (1x), Бизнес (2.5x), Фирст (4x)
-- Зочид: 3★ (150,000₮), 4★ (250,000₮), 5★ (400,000₮) ойнөрөө
-- Гид: 100,000₮/өдөр
-- Тээвэр: 80,000₮/өдөр
-- Даатгал: 50,000₮/хүн
-
-Хариулах үед:
-- Аялын үнэ, огноо, хугацаа, суудал тоог заавал бич
-- Markdown хэлбэрээр (list, bold) ашиглан сайтар бүтүүлээрэй
-- Хэрэглэгчид сонгох боломж өгөө
-
-ЗӨВЛӨХҮЙН ДҮРЭМ:
-- Хэрэглэгч хамгийн хямд аялыг асуусан бол base_price-аар эрэмбэлж, хамгийн доод үнийг тодотгосонтойгоор санал болгоно уу
-- Хэрэглэгч зөвлөх/санал болгосон бол тус бүрийн давуу талыг товч тайлбарлана уу
-- Хэрэглэгч хамгийн сайн/шилдэг аялыг асуусан бол үнэ болон чанарыг хослуулан үнэлж, хамгийн өндөр үнэ цэнэтэй аялыг сонгоно уу
-- Өөрийн үгээр, байгалийн хэлээр хариулах - товч, мэдээлэлтэй, хүндэтгэлтэй байх`;
+- Хэрэглэгчид өөрийн бодолтой, байгалийн хэлээр хариулах`;
 
 const RECOMMENDATION_SYSTEM_PROMPT = `Та нь GTrip аялалын зөвлөх AI. Хэрэглэгчээс аялалын талаар асуусан бөгөөд тэдгээрийн хүсэлтэд тохирсон аялуудыг санал болгох болно.
 
@@ -194,30 +184,86 @@ const RECOMMENDATION_SYSTEM_PROMPT = `Та нь GTrip аялалын зөвлө�
 
 const RECOMMENDATION_FALLBACK = `Хэрэглэгчийн хүсэлтэд нийцэх аялууд олдлоо:`;
 
-export class GeminiClient {
-  private genAI: GoogleGenerativeAI | null = null;
-  private isConfigured = false;
+/**
+ * Groq Client Class
+ */
+export class GroqClient {
+  private apiKey: string;
+  private baseUrl: string;
+  private model: string;
+  private isConfigured: boolean;
   private toursCache: { data: TourForAI[]; timestamp: number } | null = null;
-  private CACHE_TTL = 5 * 60 * 1000;
+  private CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
-    if (env.geminiApiKey) {
-      try {
-        this.genAI = new GoogleGenerativeAI(env.geminiApiKey);
-        this.isConfigured = true;
-        logger.info("Gemini client initialized", { model: env.geminiModel });
-      } catch (error) {
-        logger.warn("Failed to initialize Gemini client", error);
-      }
+    this.apiKey = env.groqApiKey || process.env.GROQ_API_KEY || "";
+    this.baseUrl = "https://api.groq.com/openai/v1";
+    this.model = env.groqModel || "llama3-70b-8192";
+    this.isConfigured = !!this.apiKey;
+
+    if (this.isConfigured) {
+      logger.info("Groq client initialized", { model: this.model });
     } else {
-      logger.warn("GEMINI_AI_API_KEY not configured");
+      logger.warn("GROQ_API_KEY not configured");
     }
   }
 
+  /**
+   * Check if client is properly configured
+   */
   isEnabled(): boolean {
-    return this.isConfigured && this.genAI !== null;
+    return this.isConfigured;
   }
 
+  /**
+   * Generate AI response from messages
+   */
+  async generateAIResponse(messages: ChatMessage[]): Promise<string> {
+    if (!this.isEnabled()) {
+      throw new Error("Groq API key not configured");
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 1024,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        logger.error("Groq API error", error);
+        throw new Error(`Groq API error: ${error.error?.message || "Unknown error"}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+
+      if (!content) {
+        throw new Error("No content in Groq response");
+      }
+
+      return content;
+    } catch (error) {
+      logger.error("Groq generateAIResponse error", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get tours for AI (with caching)
+   */
   async getToursForAI(limit = 20): Promise<TourForAI[]> {
     if (
       this.toursCache &&
@@ -230,6 +276,9 @@ export class GeminiClient {
     return tours;
   }
 
+  /**
+   * Get cheapest tours
+   */
   async getCheapestToursForAI(
     count = 5,
     maxPrice?: number,
@@ -238,6 +287,9 @@ export class GeminiClient {
     return getToursFromDB(count);
   }
 
+  /**
+   * Search tours by destination
+   */
   async searchToursByDestinationForAI(
     destination: string,
     limit = 10,
@@ -245,29 +297,37 @@ export class GeminiClient {
     return searchToursByDestinationDB(destination, limit);
   }
 
+  /**
+   * Format tours for AI context
+   */
   private formatToursForAI(tours: TourForAI[]): string {
     if (tours.length === 0) return "Аял олдсонгүй.";
 
     return tours
       .map((t, i) => {
         const price = (t.base_price || 0).toLocaleString("mn-MN");
-        const date = t.departure_date
-          ? new Date(t.departure_date).toISOString().split("T")[0]
+        // Handle both departure_date and departuredate column names
+        const departureDate = t.departure_date || t.departuredate;
+        const date = departureDate
+          ? new Date(departureDate).toISOString().split("T")[0]
           : "unknown";
+        const duration = t.duration_day ? `${t.duration_day} days` : "unknown";
 
         return `
-          [${i + 1}]
-          title: ${t.title}
-          destination: ${t.destination}
-          price: ${price}₮
-          duration: ${t.duration_day} days
-          date: ${date}
-          seats: ${t.seats}
-          `;
+[${i + 1}]
+title: ${t.title}
+price: ${price}₮
+duration: ${duration}
+date: ${date}
+seats: ${t.seats}
+`;
       })
       .join("\n");
   }
 
+  /**
+   * Generate response (compatible with existing interface)
+   */
   async generateResponse(
     userMessage: string,
     context?: {
@@ -275,52 +335,55 @@ export class GeminiClient {
       userPreferences?: Record<string, unknown>;
     },
   ): Promise<string> {
-    if (!this.isEnabled() || !this.genAI) {
+    if (!this.isEnabled()) {
       return "Уучлаарай, AI тусгай ажиллахгүй байна. Та админтай холбоо барина уу.";
     }
+
     try {
       const tours = await this.getToursForAI(20);
       const toursContext = this.formatToursForAI(tours);
       const enhancedSystemPrompt = `${CHAT_SYSTEM_PROMPT}\n\n---ХОЙВОЛТ ЗАСАЛ---\n${toursContext}\n---ТӨГСӨЛ---\n\nЭдгээрийг ашиглан хэрэглэгчид тусална уу. Үнэ харьцуулахдаа бодит base_price-аар тооцоо.`;
 
-      const model = this.genAI.getGenerativeModel({
-        model: env.geminiModel,
-        generationConfig: {
-          maxOutputTokens: env.geminiMaxTokens,
-          temperature: env.geminiTemperature,
-        },
-      });
-
-      const history: { role: "user" | "model"; parts: { text: string }[] }[] = [
-        { role: "user", parts: [{ text: enhancedSystemPrompt }] },
+      // Build messages array
+      const messages: ChatMessage[] = [
         {
-          role: "model",
-          parts: [
-            {
-              text: "Сайн байна уу! Би танд аялалын зөвлөхөнд тусална. Ямар улс/хотруу явахыг хүсэж байна вэ?",
-            },
-          ],
+          role: "system",
+          content: enhancedSystemPrompt,
+        },
+        {
+          role: "assistant",
+          content: "Сайн байна уу! Би танд аялалын зөвлөхөнд тусална. Ямар улс/хотруу явахыг хүсэж байна вэ?",
         },
       ];
 
+      // Add conversation history
       if (context?.conversationHistory) {
         for (const msg of context.conversationHistory.slice(-10)) {
-          const role = msg.startsWith("Bot:") ? "model" : "user";
-          history.push({ role, parts: [{ text: msg }] });
+          const role = msg.startsWith("Bot:") ? "assistant" : "user";
+          const content = msg.replace(/^(Bot:|User:)\s*/, "");
+          messages.push({ role, content });
         }
       }
 
-      const chat = model.startChat({ history });
-      const result = await chat.sendMessage(userMessage);
-      return result.response.text() || "Уучлаарай, хариу гаргаж чадсангүй.";
+      // Add current user message
+      messages.push({
+        role: "user",
+        content: userMessage,
+      });
+
+      return await this.generateAIResponse(messages);
     } catch (error) {
-      logger.error("Gemini generateResponse error", error);
+      logger.error("Groq generateResponse error", error);
       return "Уучлаарай, алдаа гарлаа. Дахин оролдоно уу.";
     }
   }
 
+  /**
+   * Extract booking details from message
+   */
   async extractBookingDetails(userMessage: string): Promise<BookingDetails> {
-    if (!this.isEnabled() || !this.genAI) return {};
+    if (!this.isEnabled()) return {};
+
     const extractionPrompt = `Энэ мессежээс дараах мэдээллийг JSON форматаар гаргаж өгөөх. Зөвхөн JSON л гаргаг, өөр юм бичихгүй:
 
 {
@@ -336,14 +399,22 @@ export class GeminiClient {
 }
 
 Мессеж: ${userMessage}`;
+
     try {
-      const model = this.genAI.getGenerativeModel({
-        model: env.geminiModel,
-        generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
-      });
-      const result = await model.generateContent(extractionPrompt);
-      const response = result.response.text();
+      const messages: ChatMessage[] = [
+        {
+          role: "system",
+          content: "Та нь JSON форматад мэргэшсэн туслах. Зөвхөн JSON гаргана.",
+        },
+        {
+          role: "user",
+          content: extractionPrompt,
+        },
+      ];
+
+      const response = await this.generateAIResponse(messages);
       const jsonMatch = response.match(/\{[\s\S]*\}/);
+
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         return {
@@ -364,6 +435,9 @@ export class GeminiClient {
     return {};
   }
 
+  /**
+   * Generate follow-up question
+   */
   async generateFollowUp(
     currentDetails: BookingDetails,
     missingFields: string[],
@@ -381,6 +455,9 @@ export class GeminiClient {
     return suggestions.join(" ") || "Та өөр асуух зүйл байна уу?";
   }
 
+  /**
+   * Generate quote summary
+   */
   async generateQuoteSummary(
     details: BookingDetails,
     totalPrice: number,
@@ -402,6 +479,9 @@ export class GeminiClient {
     return breakdown.join("\n");
   }
 
+  /**
+   * Generate tour recommendation
+   */
   async generateTourRecommendation(
     userMessage: string,
     tours: TourForAI[],
@@ -411,22 +491,25 @@ export class GeminiClient {
       userPreferences?: Record<string, unknown>;
     },
   ): Promise<string> {
-    if (!this.isEnabled() || !this.genAI) {
+    if (!this.isEnabled()) {
       return "Уучлаарай, AI тусгай ажиллахгүй байна. Та админтай холбоо барина уу.";
     }
 
     try {
       const toursList = tours
         .map(
-          (t, i) => `
-            [${i + 1}]
-            ${t.title}
-            📍 ${t.destination}
-            💰 ${(t.base_price || 0).toLocaleString()}₮
-            📅 ${t.departure_date || "N/A"}
-            ⏱ ${t.duration_day} хоног
-            💺 ${t.seats}
-            `,
+          (t, i) => {
+            const departureDate = t.departure_date || t.departuredate;
+            const duration = t.duration_day ? `${t.duration_day} хоног` : "Тодорхойгүй";
+            return `
+[${i + 1}]
+${t.title}
+💰 ${(t.base_price || 0).toLocaleString()}₮
+📅 ${departureDate || "N/A"}
+⏱ ${duration}
+💺 ${t.seats}
+`;
+          },
         )
         .join("\n");
 
@@ -437,38 +520,36 @@ export class GeminiClient {
         .replace("{INTENT_CONTEXT}", intentContext || RECOMMENDATION_FALLBACK)
         .replace("{USER_MESSAGE}", userMessage);
 
-      const model = this.genAI.getGenerativeModel({
-        model: env.geminiModel,
-        generationConfig: {
-          maxOutputTokens: env.geminiMaxTokens,
-          temperature: env.geminiTemperature,
-        },
-      });
-
-      const history: { role: "user" | "model"; parts: { text: string }[] }[] = [
-        { role: "user", parts: [{ text: prompt }] },
+      // Build messages array
+      const messages: ChatMessage[] = [
         {
-          role: "model",
-          parts: [
-            {
-              text: "理解了！我会根据您的需求和可用 tours，为您推荐最合适的选项。",
-            },
-          ],
+          role: "system",
+          content: prompt,
+        },
+        {
+          role: "assistant",
+          content: "Сайн байна уу! Би танд аялалын зөвлөхөнд тусална.",
         },
       ];
 
+      // Add conversation history
       if (context?.conversationHistory) {
         for (const msg of context.conversationHistory.slice(-5)) {
-          const role = msg.startsWith("Bot:") ? "model" : "user";
-          history.push({ role, parts: [{ text: msg }] });
+          const role = msg.startsWith("Bot:") ? "assistant" : "user";
+          const content = msg.replace(/^(Bot:|User:)\s*/, "");
+          messages.push({ role, content });
         }
       }
 
-      const chat = model.startChat({ history });
-      const result = await chat.sendMessage(userMessage);
-      return result.response.text() || "Уучлаарай, хариу гаргаж чадсангүй.";
+      // Add current user message
+      messages.push({
+        role: "user",
+        content: userMessage,
+      });
+
+      return await this.generateAIResponse(messages);
     } catch (error) {
-      logger.error("Gemini generateTourRecommendation error", error);
+      logger.error("Groq generateTourRecommendation error", error);
       return (
         RECOMMENDATION_FALLBACK +
         "\n\n" +
@@ -483,6 +564,9 @@ export class GeminiClient {
     }
   }
 
+  /**
+   * Generate greeting
+   */
   async generateGreeting(
     userPreferences?: Record<string, unknown>,
   ): Promise<string> {
@@ -513,4 +597,8 @@ export class GeminiClient {
   }
 }
 
-export const geminiClient = new GeminiClient();
+// Export singleton instance
+export const groqClient = new GroqClient();
+
+// Export legacy alias for compatibility
+export const geminiClient = groqClient;

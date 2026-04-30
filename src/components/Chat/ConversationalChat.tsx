@@ -62,6 +62,28 @@ import {
 } from "../../api/chat";
 import PriceBreakdown from "./PriceBreakdown";
 import { formatMnt } from "../../utils/priceCalculator";
+import { sendChatMessage } from "../Chatbot/api/chatApi";
+
+const INTENT_PATTERNS = {
+  cheapest: /хямд|cheap|cheapest|hamgiin.*hymd|hymd|hamgiin.*low/i,
+  recommend: /зөвлө|recommend|suggest|sanal.*bol|zuvluh|which.*tour|what.*tour/i,
+  best: /шилдэг|best|hamgiin.*sain|top.*tour|shiilderg/i,
+  hotel: /буудал|hotel|buudal|resort|зочид/i,
+};
+
+const isIntentQuery = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  return (
+    INTENT_PATTERNS.cheapest.test(lower) ||
+    INTENT_PATTERNS.recommend.test(lower) ||
+    INTENT_PATTERNS.best.test(lower) ||
+    INTENT_PATTERNS.hotel.test(lower) ||
+    lower.includes('аял') ||
+    lower.includes('tour') ||
+    lower.includes('hamgiin') ||
+    lower.includes('aylal')
+  );
+};
 
 interface Message {
   id: string;
@@ -481,6 +503,40 @@ export default function ConversationalChat() {
     addMessage("user", userInput);
     setInputValue("");
     setIsTyping(true);
+
+    // AI Override: Check for intent-based questions FIRST
+    if (isIntentQuery(userInput)) {
+      try {
+        const conversationHistory = messages
+          .slice(-10)
+          .map((m) => `${m.role === "user" ? "User" : "Bot"}: ${m.content}`)
+          .join("\n");
+
+        const response = await sendChatMessage(userInput, {
+          conversationHistory: conversationHistory.split("\n"),
+          locale: "mn",
+        });
+
+        // Add AI response
+        let aiResponse = response.reply;
+        
+        // If AI returned tours, show them as numbered list
+        if (response.tours && response.tours.length > 0) {
+          aiResponse += "\n\n🎯 Идэвхтэй аялууд:\n";
+          response.tours.forEach((t, i) => {
+            aiResponse += `${i + 1}. ${t.title} - ${formatMnt(t.base_price)}₮\n`;
+          });
+          aiResponse += "\nАялаа сонгохын тулд дугаар бичнэ үү (1-" + response.tours.length + ")";
+        }
+
+        addMessage("bot", aiResponse);
+        setIsTyping(false);
+        return;
+      } catch (err) {
+        console.error("AI chat error:", err);
+        // Fall through to normal flow if AI fails
+      }
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 

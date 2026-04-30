@@ -819,84 +819,99 @@ export default function OrdersTab({
     setShowBackToTop(false);
   };
   return (
-    <div className="saas-table-wrapper">
-       {/* Table Header — structured section with filters */}
-       <div className="saas-table-header flex-wrap gap-3">
-         <div className="flex flex-col sticky top-[64px] z-999">
-           <div className="flex items-center gap-2 mb-0.5">
-             <span
-               className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
-               style={{ background: 'rgba(29,78,216,0.1)', color: '#1d4ed8' }}
-             >
-               Orders
-             </span>
-             <span
-               className="text-[10px] font-medium px-2 py-0.5 rounded-full"
-               style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-soft)', border: '1px solid var(--mono-border)' }}
-             >
-               Auto-save
-             </span>
-           </div>
-           <h3
-             className="text-base font-bold"
-             style={{ color: 'var(--mono-text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-display)' }}
-           >
-             {t("ordersManagement")}
-           </h3>
-           <p className="text-xs mt-0.5" style={{ color: 'var(--mono-text-soft)' }}>
-             All changes save instantly · Complete/Undo entire date group · MODIFIED
-           </p>
-         </div>
-         <div className="flex flex-wrap gap-2 items-center ml-auto sticky top-[64px] z-999">
-           <input
-             placeholder="Customer name..."
-             value={customerNameFilter}
-             onChange={(e) => setCustomerNameFilter(e.target.value)}
-             className="mono-input mono-input--sm"
-             style={{ width: '150px' }}
-           />
-           <input
-             placeholder="Tour title..."
-             value={tourTitleFilter}
-             onChange={(e) => setTourTitleFilter(e.target.value)}
-             className="mono-input mono-input--sm"
-             style={{ width: '140px' }}
-           />
-           <select
-             value={departureDateFilter}
-             onChange={(e) => setDepartureDateFilter(e.target.value)}
-             className="mono-input mono-input--sm"
-             style={{ width: '150px' }}
-           >
-             <option value="">{t("allDates")}</option>
-             {Array.from(new Set(orders.map((o) => o.departureDate)))
-               .filter(Boolean)
-               .sort()
-               .map((d) => (
-                 <option key={d} value={d!}>
-                   {formatDate(d!)}
-                 </option>
-               ))}
-           </select>
-           <select
-             value={sourceFilter}
-             onChange={(e) =>
-               setSourceFilter(e.target.value as "all" | "global" | "local")
-             }
-             className="mono-input mono-input--sm"
-             style={{ width: '130px' }}
-           >
-             <option value="all">All Sources</option>
-             <option value="global">Global Travel</option>
-             <option value="local">Local Gtrip</option>
-           </select>
-         </div>
-       </div>
-       {/* Tab bar */}
-       <div
-         style={{ borderBottom: '1.5px solid var(--mono-border)', background: 'var(--mono-surface)' }}
-       >
-         <div className="px-4 py-2.5 overflow-x-auto sticky top-[112px] z-999">
+    <div className="fixed inset-0 flex flex-col z-50 bg-white">
+      {/* Table Header — structured section with filters */}
+      <div className="saas-table-header flex-wrap gap-3 shrink-0">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+              style={{ background: "rgba(29,78,216,0.1)", color: "#1d4ed8" }}
+            >
+              Orders
+            </span>
+            <span
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+              style={{
+                background: "var(--mono-surface-muted)",
+                color: "var(--mono-text-soft)",
+                border: "1px solid var(--mono-border)",
+              }}
+            >
+              Auto-save
+            </span>
+          </div>
+          <h3
+            className="text-base font-bold"
+            style={{
+              color: "var(--mono-text)",
+              letterSpacing: "-0.02em",
+              fontFamily: "var(--font-display)",
+            }}
+          >
+            {t("ordersManagement")}
+          </h3>
+          <p
+            className="text-xs mt-0.5"
+            style={{ color: "var(--mono-text-soft)" }}
+          >
+            All changes save instantly · Complete/Undo entire date group ·
+            MODIFIED
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center ml-auto">
+          <input
+            placeholder="Customer name..."
+            value={customerNameFilter}
+            onChange={(e) => setCustomerNameFilter(e.target.value)}
+            className="mono-input mono-input--sm"
+            style={{ width: "150px" }}
+          />
+          <input
+            placeholder="Tour title..."
+            value={tourTitleFilter}
+            onChange={(e) => setTourTitleFilter(e.target.value)}
+            className="mono-input mono-input--sm"
+            style={{ width: "140px" }}
+          />
+          <select
+            value={departureDateFilter}
+            onChange={(e) => setDepartureDateFilter(e.target.value)}
+            className="mono-input mono-input--sm"
+            style={{ width: "150px" }}
+          >
+            <option value="">{t("allDates")}</option>
+            {Array.from(new Set(orders.map((o) => o.departureDate)))
+              .filter(Boolean)
+              .sort()
+              .map((d) => (
+                <option key={d} value={d!}>
+                  {formatDate(d!)}
+                </option>
+              ))}
+          </select>
+          <select
+            value={sourceFilter}
+            onChange={(e) =>
+              setSourceFilter(e.target.value as "all" | "global" | "local")
+            }
+            className="mono-input mono-input--sm"
+            style={{ width: "130px" }}
+          >
+            <option value="all">All Sources</option>
+            <option value="global">Global Travel</option>
+            <option value="local">Local Gtrip</option>
+          </select>
+        </div>
+      </div>
+      {/* Tab bar */}
+      <div
+        style={{
+          borderBottom: "1.5px solid var(--mono-border)",
+          background: "var(--mono-surface)",
+        }}
+      >
+        <div className="px-4 py-2.5 overflow-x-auto">
           <div className="flex items-center gap-1 min-w-max">
             {tabs.map((tab) => (
               <button
@@ -906,26 +921,30 @@ export default function OrdersTab({
                 style={
                   activeTab === tab.id
                     ? {
-                        background: 'linear-gradient(135deg, #1d4ed8, #1e3a8a)',
-                        color: '#fff',
-                        boxShadow: '0 2px 8px rgba(29,78,216,0.25)',
+                        background: "linear-gradient(135deg, #1d4ed8, #1e3a8a)",
+                        color: "#fff",
+                        boxShadow: "0 2px 8px rgba(29,78,216,0.25)",
                       }
                     : {
-                        background: 'transparent',
-                        color: 'var(--mono-text-muted)',
-                        border: '1px solid transparent',
+                        background: "transparent",
+                        color: "var(--mono-text-muted)",
+                        border: "1px solid transparent",
                       }
                 }
                 onMouseEnter={(e) => {
                   if (activeTab !== tab.id) {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--mono-surface-muted)';
-                    (e.currentTarget as HTMLElement).style.borderColor = 'var(--mono-border)';
+                    (e.currentTarget as HTMLElement).style.background =
+                      "var(--mono-surface-muted)";
+                    (e.currentTarget as HTMLElement).style.borderColor =
+                      "var(--mono-border)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (activeTab !== tab.id) {
-                    (e.currentTarget as HTMLElement).style.background = 'transparent';
-                    (e.currentTarget as HTMLElement).style.borderColor = 'transparent';
+                    (e.currentTarget as HTMLElement).style.background =
+                      "transparent";
+                    (e.currentTarget as HTMLElement).style.borderColor =
+                      "transparent";
                   }
                 }}
               >
@@ -933,8 +952,12 @@ export default function OrdersTab({
                 <span
                   className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
                   style={{
-                    background: activeTab === tab.id ? 'rgba(255,255,255,0.2)' : 'var(--mono-surface-muted)',
-                    color: activeTab === tab.id ? '#fff' : 'var(--mono-text-soft)',
+                    background:
+                      activeTab === tab.id
+                        ? "rgba(255,255,255,0.2)"
+                        : "var(--mono-surface-muted)",
+                    color:
+                      activeTab === tab.id ? "#fff" : "var(--mono-text-soft)",
                   }}
                 >
                   {tab.count}
@@ -944,12 +967,11 @@ export default function OrdersTab({
           </div>
         </div>
       </div>
-       <div
-         ref={containerRef}
-         className="overflow-auto"
-         style={{ maxHeight: "calc(100vh - 200px)" }}
-         onScroll={(e) => setShowBackToTop(e.currentTarget.scrollTop > 300)}
-       >
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-auto"
+        onScroll={(e) => setShowBackToTop(e.currentTarget.scrollTop > 300)}
+      >
         <style>{`
           .date-group-header {
             position: sticky;
@@ -980,32 +1002,45 @@ export default function OrdersTab({
                       <div
                         className="date-group-header px-4 py-3 flex items-center justify-between"
                         style={{
-                          background: 'linear-gradient(135deg, var(--mono-surface-muted), var(--mono-bg-strong))',
-                          borderTop: '2px solid var(--mono-border)',
-                          borderBottom: '1.5px solid var(--mono-border)',
+                          background:
+                            "linear-gradient(135deg, var(--mono-surface-muted), var(--mono-bg-strong))",
+                          borderTop: "2px solid var(--mono-border)",
+                          borderBottom: "1.5px solid var(--mono-border)",
                         }}
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <span
                             className="text-sm font-bold"
-                            style={{ color: 'var(--mono-text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}
+                            style={{
+                              color: "var(--mono-text)",
+                              fontFamily: "var(--font-display)",
+                              letterSpacing: "-0.01em",
+                            }}
                           >
                             {mainTourTitle}
                           </span>
-                          <span style={{ color: 'var(--mono-border-strong)' }}>·</span>
-                          <span className="departure-badge">
-                            {dg.display}
+                          <span style={{ color: "var(--mono-border-strong)" }}>
+                            ·
                           </span>
+                          <span className="departure-badge">{dg.display}</span>
                           <span
                             className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                            style={{ background: 'rgba(29,78,216,0.08)', color: '#1d4ed8', border: '1px solid rgba(29,78,216,0.15)' }}
+                            style={{
+                              background: "rgba(29,78,216,0.08)",
+                              color: "#1d4ed8",
+                              border: "1px solid rgba(29,78,216,0.15)",
+                            }}
                           >
                             {totalOrders} order{totalOrders !== 1 ? "s" : ""}
                           </span>
                           {hasCompleted && (
                             <span
                               className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                              style={{ background: 'rgba(20,184,166,0.1)', color: '#0f766e', border: '1px solid rgba(20,184,166,0.2)' }}
+                              style={{
+                                background: "rgba(20,184,166,0.1)",
+                                color: "#0f766e",
+                                border: "1px solid rgba(20,184,166,0.2)",
+                              }}
                             >
                               Completed
                             </span>
@@ -1017,7 +1052,10 @@ export default function OrdersTab({
                               onClick={() => handleCompleteAllInDate(dg.key)}
                               disabled={!!completingDateKey || !!undoingDateKey}
                               className="btn-teal"
-                              style={{ fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}
+                              style={{
+                                fontSize: "0.75rem",
+                                padding: "0.4rem 0.75rem",
+                              }}
                             >
                               {completingDateKey === dg.key
                                 ? "Completing..."
@@ -1045,55 +1083,185 @@ export default function OrdersTab({
                   </tr>
 
                   {/* Sticky table column headers */}
-                  <tr className="table-header" style={{ background: 'var(--mono-surface-muted)' }}>
-                    <th className="sticky left-0 z-30 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] w-14 min-w-14 max-w-[56px]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                  <tr
+                    className="table-header"
+                    style={{ background: "var(--mono-surface-muted)" }}
+                  >
+                    <th
+                      className="sticky left-0 z-30 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] w-14 min-w-14 max-w-14"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       #
                     </th>
-                    <th className="sticky left-14 z-20 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] w-32 min-w-32 max-w-[128px]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="sticky left-14 z-20 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] w-32 min-w-32 max-w-32"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("orderId")}
                     </th>
-                    <th className="sticky left-35.5 z-10 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-35" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="sticky left-35.5 z-10 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-35"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("lastName")}
                     </th>
-                    <th className="sticky left-70.5 z-10 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-35" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="sticky left-70.5 z-10 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-35"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("firstName")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("gender")}
                     </th>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("email")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("phone")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("price")}
                     </th>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("payment")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("status")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("hotel")}
                     </th>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("roomType")}
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("room")}
                     </th>
-                    <th className="px-6 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-[320px]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                    <th
+                      className="px-6 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] min-w-[320px]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                        borderRight: "1px solid var(--mono-border)",
+                      }}
+                    >
                       {t("notes")}
                     </th>
                     {hasShowInProvider && (
-                      <th className="px-2 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)', borderRight: '1px solid var(--mono-border)' }}>
+                      <th
+                        className="px-2 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                        style={{
+                          background: "var(--mono-surface-muted)",
+                          color: "var(--mono-text-muted)",
+                          borderBottom: "1.5px solid var(--mono-border-strong)",
+                          borderRight: "1px solid var(--mono-border)",
+                        }}
+                      >
                         Prov
                       </th>
                     )}
-                    <th className="px-12 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]" style={{ background: 'var(--mono-surface-muted)', color: 'var(--mono-text-muted)', borderBottom: '1.5px solid var(--mono-border-strong)' }}>
+                    <th
+                      className="px-12 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em]"
+                      style={{
+                        background: "var(--mono-surface-muted)",
+                        color: "var(--mono-text-muted)",
+                        borderBottom: "1.5px solid var(--mono-border-strong)",
+                      }}
+                    >
                       {t("actions")}
                     </th>
                   </tr>
@@ -1159,11 +1327,11 @@ export default function OrdersTab({
                             key={o.id}
                             className="hover:bg-gray-50 transition-colors"
                           >
-                            <td className="sticky left-0 z-30 px-3 py-3 text-xs font-bold text-gray-700 bg-white border-r border-gray-200 w-14 min-w-[56px] max-w-[56px]">
+                            <td className="sticky left-0 z-30 px-3 py-3 text-xs font-bold text-gray-700 bg-white border-r border-gray-200 w-14 min-w-14 max-w-14">
                               {orderIndex + 1}
                             </td>
                             <td
-                              className="sticky left-14 z-20 px-3 py-3 text-xs font-medium bg-white border-r border-gray-200 w-32 min-w-[128px] max-w-[128px] whitespace-nowrap overflow-hidden text-ellipsis"
+                              className="sticky left-14 z-20 px-3 py-3 text-xs font-medium bg-white border-r border-gray-200 w-32 min-w-32 max-w-32 whitespace-nowrap overflow-hidden text-ellipsis"
                               title={String(o.id)}
                             >
                               <div className="flex flex-col gap-1">
@@ -1210,7 +1378,11 @@ export default function OrdersTab({
                               <td
                                 rowSpan={arr.length}
                                 className="sticky left-0 z-30 px-3 py-3 text-xs font-bold w-14 min-w-14 max-w-14"
-                                style={{ ...rowCellStyle, borderRight: '1px solid var(--mono-border)', color: 'var(--mono-text-muted)' }}
+                                style={{
+                                  ...rowCellStyle,
+                                  borderRight: "1px solid var(--mono-border)",
+                                  color: "var(--mono-text-muted)",
+                                }}
                               >
                                 {orderIndex + 1}
                               </td>
@@ -1219,11 +1391,19 @@ export default function OrdersTab({
                               <td
                                 rowSpan={arr.length}
                                 className="sticky left-14 z-20 px-3 py-3 text-xs font-medium w-32 min-w-32 max-w-32 whitespace-nowrap overflow-hidden text-ellipsis"
-                                style={{ ...rowCellStyle, borderRight: '1px solid var(--mono-border)' }}
+                                style={{
+                                  ...rowCellStyle,
+                                  borderRight: "1px solid var(--mono-border)",
+                                }}
                                 title={String(o.id)}
                               >
                                 <div className="flex flex-col gap-1.5">
-                                  <span className="font-bold" style={{ color: 'var(--mono-text)' }}>#{shortOrderId(o.id)}</span>
+                                  <span
+                                    className="font-bold"
+                                    style={{ color: "var(--mono-text)" }}
+                                  >
+                                    #{shortOrderId(o.id)}
+                                  </span>
                                   <span
                                     className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold w-fit ${sourceBadgeClass(
                                       o.source,
@@ -1242,7 +1422,7 @@ export default function OrdersTab({
                               {safe(pax.last_name)}
                             </td>
                             <td
-                              className="sticky left-[282px] z-10 px-3 py-3 text-xs font-semibold text-gray-900 min-w-[140px] border-r border-gray-200"
+                              className="sticky left-70.5 z-10 px-3 py-3 text-xs font-semibold text-gray-900 min-w-35 border-r border-gray-200"
                               style={rowCellStyle}
                             >
                               {safe(pax.first_name)}
@@ -1276,7 +1456,7 @@ export default function OrdersTab({
                                     })
                                   }
                                   disabled={o.source === "global"}
-                                  className="w-full min-w-[120px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
+                                  className="w-full min-w-30 px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
                                 >
                                   <option>Cash</option>
                                   <option>Card</option>
@@ -1295,7 +1475,7 @@ export default function OrdersTab({
                                     })
                                   }
                                   disabled={o.source === "global"}
-                                  className="w-full min-w-[170px] px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
+                                  className="w-full min-w-42.5 px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500"
                                 >
                                   {VALID_ORDER_STATUSES.map((s) => (
                                     <option key={s} value={s}>
@@ -1329,7 +1509,7 @@ export default function OrdersTab({
                                       updateRoomType(o.id, e.target.value);
                                     }
                                   }}
-                                  className="w-full min-w-[140px] px-2 py-2 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full min-w-35 px-2 py-2 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                   placeholder="Twin, Single..."
                                 />
                               </td>
@@ -1466,7 +1646,7 @@ export default function OrdersTab({
         {showBackToTop && (
           <button
             onClick={scrollToTop}
-            className="fixed bottom-8 right-8 z-50 p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full shadow-2xl hover:scale-110 transition"
+            className="fixed bottom-8 right-8 z-50 p-4 bg-linear-to-r from-indigo-600 to-purple-600 text-white rounded-full shadow-2xl hover:scale-110 transition"
           >
             <ArrowUp className="w-6 h-6" />
           </button>

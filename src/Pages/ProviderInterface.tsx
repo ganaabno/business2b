@@ -726,7 +726,8 @@ function ProviderInterface({
               `,
               filter,
             },
-            (payload) => {
+            (payload: any) => {
+              if (!payload) return;
               if (providerScopeMode === "assigned") {
                 const payloadAny = payload as any;
                 const scopeTourId = String(
@@ -1009,7 +1010,8 @@ function ProviderInterface({
                 ? "show_in_provider=eq.true"
                 : undefined,
           },
-          (payload) => {
+          (payload: any) => {
+            if (!payload) return;
             const mapToTour = (data: any): Tour => ({
               id: String(data.id),
               title: data.title || "Untitled Tour",
@@ -1107,7 +1109,8 @@ function ProviderInterface({
             select:
               "id,first_name,last_name,age,date_of_birth,gender,passport_number,passport_expire,nationality,notes,booking_number,roomType,room_allocation",
           },
-          (payload) => {
+          (payload: any) => {
+            if (!payload) return;
             fetchOrders(); // Refresh orders to update passengers
           },
         );
@@ -1626,7 +1629,7 @@ function ProviderInterface({
                 </>
               )}
 
-              <div className="mono-stack">
+<div className="mono-stack flex flex-col h-full min-h-0">
                 {providerScopeMode === "assigned" &&
                   providerAssignedTourIds.length === 0 && (
                     <div className="mono-card p-5 text-sm text-gray-500">

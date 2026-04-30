@@ -34,7 +34,15 @@ export const passengerSchema = z.object({
   allergy: z.string().optional().nullable(),
   emergency_phone: z.string().optional().nullable(),
   status: z
-    .enum(["pending", "approved", "rejected", "active", "inactive", "cancelled", "completed"])
+    .enum([
+      "pending",
+      "approved",
+      "rejected",
+      "active",
+      "inactive",
+      "cancelled",
+      "completed",
+    ])
     .default("pending"),
   pax_type: z.enum(["Adult", "Child", "Infant"]).default("Adult"),
 });
@@ -59,7 +67,17 @@ export const userSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
   last_name: z.string().min(1, "Last name is required"),
   phone: z.string().min(1, "Phone number is required"),
-  role: z.enum(["user", "provider", "admin", "superadmin", "manager", "subcontractor", "agent"]).default("user"),
+  role: z
+    .enum([
+      "user",
+      "provider",
+      "admin",
+      "superadmin",
+      "manager",
+      "subcontractor",
+      "agent",
+    ])
+    .default("user"),
   company: z.string().optional().nullable(),
   birth_date: z.string().optional().nullable(),
   id_card_number: z.string().optional().nullable(),
@@ -73,38 +91,42 @@ export const loginSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-export const signupSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
-  confirmPassword: z.string(),
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  first_name: z.string().min(1, "First name is required"),
-  last_name: z.string().min(1, "Last name is required"),
-  phone: z.string().min(1, "Phone number is required"),
-  role: z.enum(["user", "subcontractor", "agent"]).default("user"),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+export const signupSchema = z
+  .object({
+    email: z.string().email("Invalid email address"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/[0-9]/, "Password must contain at least one number"),
+    confirmPassword: z.string(),
+    username: z.string().min(3, "Username must be at least 3 characters"),
+    first_name: z.string().min(1, "First name is required"),
+    last_name: z.string().min(1, "Last name is required"),
+    phone: z.string().min(1, "Phone number is required"),
+    role: z.enum(["user", "subcontractor", "agent"]).default("user"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
-  confirmPassword: z.string(),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/[0-9]/, "Password must contain at least one number"),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
 
 export const tourSchema = z.object({
   id: z.string().optional(),
@@ -114,15 +136,21 @@ export const tourSchema = z.object({
   seats: z.number().min(1, "At least 1 seat is required").max(500),
   base_price: z.number().min(0, "Price cannot be negative"),
   hotels: z.array(z.string()).default([]),
-  services: z.array(z.object({
-    name: z.string(),
-    price: z.number(),
-  })).default([]),
+  services: z
+    .array(
+      z.object({
+        name: z.string(),
+        price: z.number(),
+      }),
+    )
+    .default([]),
   country: z.string().optional().nullable(),
   duration_day: z.number().optional().nullable(),
   duration_night: z.number().optional().nullable(),
   is_featured: z.boolean().default(false),
-  status: z.enum(["active", "inactive", "full", "completed", "hidden", "pending"]).default("active"),
+  status: z
+    .enum(["active", "inactive", "full", "completed", "hidden", "pending"])
+    .default("active"),
 });
 
 export const orderSchema = z.object({
@@ -158,4 +186,6 @@ export type SignupInput = z.infer<typeof signupSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type TourInput = z.infer<typeof tourSchema>;
 export type OrderInput = z.infer<typeof orderSchema>;
-export type BookingConfirmationInput = z.infer<typeof bookingConfirmationSchema>;
+export type BookingConfirmationInput = z.infer<
+  typeof bookingConfirmationSchema
+>;

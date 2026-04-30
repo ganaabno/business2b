@@ -315,38 +315,38 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
         {isExpanded && (
           <div className="border-t border-gray-200">
             {/* Desktop Table View */}
-            <div className="hidden lg:block p-4 lg:p-6 overflow-x-auto">
+            <div className="hidden lg:block p-2 lg:p-3 overflow-auto max-h-[calc(100vh-20rem)]">
               <table className="min-w-full mono-table mono-table--compact mono-table--plain table-fixed">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 sticky top-0 z-30">
                   <tr>
-                    <th className="sticky left-0 z-20 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] text-center">
+                    <th className="sticky left-0 z-40 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em] text-center">
                       #
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Order ID
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Passenger
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Tour
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Departure
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Hotel
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Room Type
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Room
                     </th>
-                    <th className="px-20 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-16 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Note
                     </th>
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
+                    <th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-[0.2em]">
                       Status
                     </th>
                   </tr>
@@ -782,22 +782,22 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       </div>
     );
 
-  return (
-    <div className="mono-stack">
-      <div className="mono-card p-4 sm:p-5">
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 flex-1">
+return (
+    <div className="fixed inset-0 flex flex-col bg-white z-40">
+      <div className="p-3 sm:p-4 border-b border-gray-200 flex-shrink-0">
+        <div className="flex flex-col lg:flex-row gap-2 lg:items-center lg:justify-between">
+          <div className="flex flex-col sm:flex-row gap-2 flex-1">
             <input
               type="text"
               placeholder={t("searchOrders")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="mono-input"
+              className="mono-input text-sm"
             />
             <select
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="mono-input sm:max-w-[220px]"
+              className="mono-input text-sm sm:max-w-[180px]"
             >
               <option value="">{t("allDates")}</option>
               {uniqueDates.map((date) => (
@@ -810,32 +810,14 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
           <button
             onClick={exportOrdersToCSV}
             disabled={exportLoading}
-            className="mono-button w-full sm:w-auto"
+            className="mono-button w-full sm:w-auto text-sm"
           >
             {exportLoading ? t("exporting") : t("exportToCSV")}
           </button>
         </div>
-
-        <div className="mono-divider my-4" />
-
-        <div className="overflow-x-auto scrollbar-hide">
-          <div className="mono-nav min-w-max">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`mono-nav-item ${
-                  activeTab === tab.id ? "mono-nav-item--active" : ""
-                }`}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
-      <div>
+      <div className="flex-1 overflow-auto">
         {visibleGroups.length === 0 ? (
           <div className="mono-card p-6 text-center text-gray-500 text-sm">
             {activeTab === "active"

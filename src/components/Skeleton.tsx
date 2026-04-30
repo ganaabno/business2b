@@ -29,7 +29,7 @@ export function Skeleton({
 
   return (
     <div
-      className={`bg-[var(--mono-border)] ${variantClasses[variant]} ${animationClasses[animation]} ${className}`}
+      className={`bg-(--mono-border) ${variantClasses[variant]} ${animationClasses[animation]} ${className}`}
       style={{ width, height }}
     />
   );
@@ -221,10 +221,10 @@ export function LoadingOverlay({
 
   return (
     <div className="relative">
-      <div className="absolute inset-0 bg-[var(--mono-surface)]/80 backdrop-blur-sm z-10 flex items-center justify-center">
+      <div className="absolute inset-0 bg-(--mono-surface)/80 backdrop-blur-sm z-10 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-[var(--mono-border)] border-solid rounded-full animate-spin border-t-[var(--mono-accent)]" />
-          <span className="text-sm text-[var(--mono-text-muted)]">Loading...</span>
+          <div className="w-10 h-10 border-4 border-(--mono-border) border-solid rounded-full animate-spin border-t-[var(--mono-accent)]" />
+          <span className="text-sm text-(--mono-text-muted)">Loading...</span>
         </div>
       </div>
       {children}

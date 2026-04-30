@@ -1,9 +1,13 @@
 import { Router } from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
-import { badRequest } from "../../shared/http/errors.js";
-import { geminiClient } from "../../integrations/gemini/gemini.client.js";
+import { badRequest, serviceUnavailable } from "../../shared/http/errors.js";
+import { groqClient } from "../../integrations/groq/groq.client.js";
+import { logger } from "../../shared/logger.js";
 import type { Request, Response } from "express";
+import { TourForAI, BookingDetails } from "../../integrations/groq/groq.client.js";
+import { fsmService, BotState, ChatContext } from "./fsm.service.js";
+import { hybridRouter, HybridResponse } from "./hybridRouter.js";
 
 export const chatRouter = Router();
 
@@ -17,124 +21,95 @@ chatRouter.post(
       context?: {
         conversationHistory?: string[];
         userPreferences?: Record<string, unknown>;
+        chatContext?: ChatContext;
       };
     };
 
     if (!message || typeof message !== "string") {
-      throw badRequest("Message is required");
+      throw badRequest("Мессеж шаардлагатай");
     }
 
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      logger.warn("Chat AI called but Groq not configured");
+      throw serviceUnavailable("AI ажиллахгүй байна.");
     }
 
-    // Check if message is tour-related
-    const tourKeywords = [
-      'аял', 'tour', 'travel', 'trip', 'cheap', 'expensive', 'best',
-      'хамгийн', 'хямд', 'үнэтэй', 'чиглэл', 'суудал',
-      'thailand', 'japan', 'korea', 'vietnam', 'china', 'singapore',
-      'москва', 'дубай', 'турк', 'явчих', 'явна', 'явдаг'
-    ];
-    
-    const normalizedMessage = message.toLowerCase();
-    const isTourQuery = tourKeywords.some(k => normalizedMessage.includes(k));
-    
-    let result: {
-      reply: string;
-      tours?: Array<{
-        id: string;
-        title: string;
-        destination: string;
-        base_price: number;
-        departure_date: string;
-        duration_day: number;
-        seats: number;
-      }>;
-      type: 'tour_results' | 'conversation';
-      suggestions?: string[];
-    } = { reply: '', type: 'conversation' };
-    
-    if (isTourQuery) {
-      // Fetch tours based on query
-      const tours = await geminiClient.getToursForAI(10);
-      
-      // Filter based on query if needed
-      let filteredTours = tours;
-      
-      if (normalizedMessage.includes('хамгийн') || normalizedMessage.includes('хямд') || normalizedMessage.includes('cheap')) {
-        filteredTours = tours.slice(0, 5);
-        result.type = 'tour_results';
-      } else if (normalizedMessage.includes('thailand') || normalizedMessage.includes('тайланд')) {
-        filteredTours = tours.filter(t => 
-          t.destination?.toLowerCase().includes('thailand') || 
-          t.title?.toLowerCase().includes('thailand')
-        ).slice(0, 5);
-        result.type = 'tour_results';
-      } else if (normalizedMessage.includes('japan') || normalizedMessage.includes('солонгос')) {
-        filteredTours = tours.filter(t => 
-          t.destination?.toLowerCase().includes('japan') || 
-          t.title?.toLowerCase().includes('japan')
-        ).slice(0, 5);
-        result.type = 'tour_results';
-      } else if (normalizedMessage.includes('vietnam') || normalizedMessage.includes('вьетнам')) {
-        filteredTours = tours.filter(t => 
-          t.destination?.toLowerCase().includes('vietnam') || 
-          t.title?.toLowerCase().includes('vietnam')
-        ).slice(0, 5);
-        result.type = 'tour_results';
+    logger.info("🤖 Hybrid Chat Processing", { message });
+
+    try {
+      // Use the hybrid router for intelligent processing
+      const hybridResponse: HybridResponse = await hybridRouter.routeMessage(
+        message,
+        context?.chatContext,
+        context?.conversationHistory
+      );
+
+      // Update the router's context if provided
+      if (context?.chatContext) {
+        hybridRouter.updateContext(context.chatContext);
       }
-      
-      // Format tour data
-      result.tours = filteredTours.map(t => ({
-        id: t.id,
-        title: t.title,
-        destination: t.destination,
-        base_price: t.base_price,
-        departure_date: t.departure_date,
-        duration_day: t.duration_day,
-        seats: t.seats
-      }));
-      
-      // Generate friendly response text
-      if (result.tours.length > 0) {
-        if (result.type === 'tour_results' && (normalizedMessage.includes('хамгийн') || normalizedMessage.includes('хямд') || normalizedMessage.includes('cheap'))) {
-          result.reply = `🎯 Таны хүсэлтэд нийцүүлэн хамгийн хямд ${result.tours.length} аялыг олж авлаа:\n\n`;
-        } else {
-          result.reply = `🎯 Одоогоор идэвхтэй ${result.tours.length} аял олдлоо:\n\n`;
-        }
-        
-        // Add tour names to reply for history
-        result.tours.forEach((t, i) => {
-          result.reply += `${i + 1}. ${t.title} - ${(t.base_price || 0).toLocaleString()}₮\n`;
+
+      // Format the response for the frontend
+      const response = {
+        reply: hybridResponse.reply,
+        type: hybridResponse.usedFSM ? "fsm_response" : "conversation",
+        isAIGenerative: hybridResponse.usedAI,
+        chatContext: hybridResponse.conversationContext,
+        tours: hybridResponse.tours,
+        intentType: hybridResponse.intentType,
+        aiData: hybridResponse.aiData,
+        suggestedActions: hybridResponse.suggestedActions,
+        needsUserAction: hybridResponse.needsUserAction,
+        routingInfo: {
+          usedFSM: hybridResponse.usedFSM,
+          usedAI: hybridResponse.usedAI,
+          isFSMTriggered: hybridResponse.isFSMTriggered,
+          newState: hybridResponse.newState,
+        },
+      };
+
+      logger.info("🤖 Hybrid Chat Response", {
+        routingInfo: response.routingInfo,
+        hasTours: !!hybridResponse.tours,
+        intentType: hybridResponse.intentType,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error("🔥 Hybrid Chat Error", error);
+
+      // Fallback to basic AI response
+      try {
+        const fallbackResponse = await groqClient.generateResponse(message, context);
+        res.json({
+          reply: fallbackResponse,
+          type: "conversation",
+          isAIGenerative: true,
+          chatContext: hybridRouter.getCurrentContext(),
+          routingInfo: {
+            usedFSM: false,
+            usedAI: true,
+            isFSMTriggered: false,
+            newState: BotState.IDLE,
+          },
         });
-        
-        result.suggestions = [
-          "Дэлгэрэнгүй аврах",
-          "Өөр чиглэл хайх",
-          "Үнэ тооцоо хийх"
-        ];
-      } else {
-        result.reply = "Уучлаарай, таны хүсэлтэд нийцэх аял олдсонгүй. Өөр чиглэл сонгоно уу?";
+      } catch (fallbackError) {
+        logger.error("🔥 Fallback AI Error", fallbackError);
+        throw serviceUnavailable("AI ажиллахгүй байна.");
       }
-    } else {
-      // Normal conversation
-      const reply = await geminiClient.generateResponse(message, context);
-      result.reply = reply;
     }
-
-    res.json(result);
   }),
 );
 
 chatRouter.get(
   "/tours",
   asyncHandler(async (req: Request, res: Response) => {
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
     const limit = parseInt(req.query.limit as string) || 20;
-    const tours = await geminiClient.getToursForAI(limit);
+    const tours = await groqClient.getToursForAI(limit);
 
     res.json({ tours });
   }),
@@ -143,12 +118,12 @@ chatRouter.get(
 chatRouter.get(
   "/tours/cheapest",
   asyncHandler(async (req: Request, res: Response) => {
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
     const count = parseInt(req.query.count as string) || 5;
-    const tours = await geminiClient.getCheapestToursForAI(count);
+    const tours = await groqClient.getCheapestToursForAI(count);
 
     res.json({ tours });
   }),
@@ -157,16 +132,16 @@ chatRouter.get(
 chatRouter.get(
   "/tours/search",
   asyncHandler(async (req: Request, res: Response) => {
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
     const destination = req.query.destination as string;
     if (!destination) {
-      throw badRequest("destination is required");
+      throw badRequest("чиглэл шаардлагатай");
     }
 
-    const tours = await geminiClient.searchToursByDestinationForAI(destination);
+    const tours = await groqClient.searchToursByDestinationForAI(destination);
 
     res.json({ tours });
   }),
@@ -178,14 +153,14 @@ chatRouter.post(
     const { message } = req.body as { message?: string };
 
     if (!message || typeof message !== "string") {
-      throw badRequest("Message is required");
+      throw badRequest("Мессеж шаардлагатай");
     }
 
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
-    const details = await geminiClient.extractBookingDetails(message);
+    const details = await groqClient.extractBookingDetails(message);
 
     res.json({ details });
   }),
@@ -198,13 +173,13 @@ chatRouter.post(
       userPreferences?: Record<string, unknown>;
     };
 
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
-    const greeting = await geminiClient.generateGreeting(userPreferences);
+    const greeting = await groqClient.generateGreeting(userPreferences);
 
-    res.json({ greeting });
+    res.json({ greeting, isAIGenerative: true });
   }),
 );
 
@@ -216,15 +191,48 @@ chatRouter.post(
       missingFields?: string[];
     };
 
-    if (!geminiClient.isEnabled()) {
-      throw badRequest("AI service is not configured");
+    if (!groqClient.isEnabled()) {
+      throw serviceUnavailable("AI тусгай ажиллахгүй байна");
     }
 
-    const followUp = await geminiClient.generateFollowUp(
-      currentDetails as any,
+    const followUp = await groqClient.generateFollowUp(
+      currentDetails as BookingDetails,
       missingFields || [],
     );
 
-    res.json({ followUp });
+    res.json({ followUp, isAIGenerative: true });
+  }),
+);
+
+// Get current chat context
+chatRouter.get(
+  "/context",
+  asyncHandler(async (req: Request, res: Response) => {
+    const currentContext = hybridRouter.getCurrentContext();
+    res.json({ context: currentContext });
+  }),
+);
+
+// Reset chat context
+chatRouter.post(
+  "/context/reset",
+  asyncHandler(async (req: Request, res: Response) => {
+    hybridRouter.resetContext();
+    res.json({ success: true, message: "Chat context reset successfully" });
+  }),
+);
+
+// Update chat context
+chatRouter.post(
+  "/context",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { context } = req.body as { context?: Partial<ChatContext> };
+
+    if (context) {
+      hybridRouter.updateContext(context);
+    }
+
+    const updatedContext = hybridRouter.getCurrentContext();
+    res.json({ context: updatedContext });
   }),
 );

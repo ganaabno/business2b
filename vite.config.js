@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
                         }
                         if (id.includes("/src/components/AddPassengerTab.tsx") ||
                             id.includes("/src/components/AddTourTab.tsx")) {
-                            return "manager-booking";
+                            return "vendor-ui";
                         }
                         if (id.includes("/src/components/PassengerRequests.tsx") ||
                             id.includes("/src/components/BlackList.tsx") ||
@@ -58,14 +58,15 @@ export default defineConfig(({ mode }) => {
                         if (id.includes("/src/components/tasks/ManagerTasksTab.tsx")) {
                             return "manager-tasks";
                         }
-                        if (!id.includes("node_modules")) {
-                            return;
-                        }
                         if (id.includes("node_modules/react") ||
                             id.includes("node_modules/react-dom") ||
                             id.includes("node_modules/react-router") ||
-                            id.includes("node_modules/scheduler")) {
-                            return "vendor-react";
+                            id.includes("node_modules/scheduler") ||
+                            id.includes("node_modules/lucide-react") ||
+                            id.includes("node_modules/react-hot-toast") ||
+                            id.includes("node_modules/react-toastify") ||
+                            id.includes("node_modules/framer-motion")) {
+                            return "vendor-ui";
                         }
                         if (id.includes("node_modules/@supabase")) {
                             return "vendor-supabase";

@@ -8,6 +8,8 @@ export interface ChatMessage {
   streaming?: boolean;
   tours?: TourResult[];
   messageType?: 'tour_results' | 'conversation';
+  isAIGenerative?: boolean;
+  intentType?: 'cheapest' | 'recommend' | 'best' | 'general';
 }
 
 export interface TourForAI {
@@ -42,6 +44,8 @@ export interface ChatApiResponse {
   tours?: TourResult[];
   type?: 'tour_results' | 'conversation';
   suggestions?: string[];
+  isAIGenerative?: boolean;
+  intentType?: 'cheapest' | 'recommend' | 'best' | 'general';
 }
 
 export interface TourResult {

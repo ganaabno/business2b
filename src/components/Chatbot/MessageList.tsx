@@ -64,6 +64,8 @@ const MessageList: React.FC = () => {
           isFirst={index === 0}
           tours={message.tours}
           messageType={message.messageType}
+          isAIGenerative={message.isAIGenerative}
+          intentType={message.intentType}
         />
       ))}
       {(isLoading || isStreaming) && <TypingIndicator />}

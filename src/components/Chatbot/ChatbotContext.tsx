@@ -95,6 +95,8 @@ const useChatbotStore = create<ChatbotState>((set, get) => ({
           streaming: true,
           tours,
           messageType,
+          isAIGenerative: response.isAIGenerative,
+          intentType: response.intentType,
         }],
       }));
 

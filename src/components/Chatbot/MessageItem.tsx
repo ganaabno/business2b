@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChatbot } from './ChatbotContext';
 import ReactMarkdown from 'react-markdown';
-import { Clipboard, RefreshCw, Check, Copy, Bot, User } from 'lucide-react';
+import { Clipboard, RefreshCw, Check, Copy, Bot, User, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import type { TourResult } from './types';
 import TourResultCard from './components/TourResultCard';
@@ -18,6 +18,8 @@ interface MessageItemProps {
   isFirst?: boolean;
   tours?: TourResult[];
   messageType?: 'tour_results' | 'conversation';
+  isAIGenerative?: boolean;
+  intentType?: 'cheapest' | 'recommend' | 'best' | 'general';
 }
 
 const MessageItem: React.FC<MessageItemProps> = ({
@@ -31,6 +33,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
   isFirst,
   tours,
   messageType,
+  isAIGenerative,
+  intentType,
 }) => {
   const { retryMessage, locale } = useChatbot();
   const [copied, setCopied] = useState(false);
@@ -70,14 +74,27 @@ const MessageItem: React.FC<MessageItemProps> = ({
       className={`flex items-end gap-2 mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
       {!isUser && (
-        <motion.div
-          className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md"
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Bot className="w-4 h-4 text-white" />
-        </motion.div>
+        <div className="flex-shrink-0 relative">
+          <motion.div
+            className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md"
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Bot className="w-4 h-4 text-white" />
+          </motion.div>
+          {isAIGenerative && (
+            <motion.div
+              className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center border-2 border-white"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2 }}
+              title="AI Powered"
+            >
+              <Sparkles className="w-2.5 h-2.5 text-white" />
+            </motion.div>
+          )}
+        </div>
       )}
 
       <div className={`relative max-w-[80%] ${isUser ? 'order-1' : ''}`}>
